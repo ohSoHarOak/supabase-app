@@ -40,18 +40,19 @@ Each week has two lists:
   - Built on Supabase Auth from the start — no custom JWT ever existed in this rebuild.
 - [x] Build professional signup + login API endpoints
   - Verified end-to-end 2026-07-13: `scripts/week1-test.ps1` passes all 4 steps (health → signup → login → authenticated session) against live Supabase.
-- [d] Deploy service to Render, confirm publicly reachable
-  - Waiting on founder: create Render account + connect repo. `render.yaml` blueprint is ready in the repo root.
+- [x] Deploy service to Render, confirm publicly reachable
+  - Deployed 2026-07-13 after two fixes: build command needed `--include=dev` (Render sets NODE_ENV=production, which skips the TypeScript compiler), and the service-key env var needed the exact name `SUPABASE_SERVICE_KEY`. Founder ran `week1-test.ps1` against the live URL — all 4 steps passed.
 - [x] Write a manual test script for founder to run (signup → login → get session)
   - `scripts/week1-test.ps1` — run it in PowerShell after migrations + deploy.
 
 ### 🧑 Founder Tasks
 - [x] Create Supabase account, create project, note connection credentials
-- [ ] Create Render account, connect GitHub repo
-- [ ] Add environment variables to Render (never commit secrets to git)
+- [x] Create Render account, connect GitHub repo
+- [x] Add environment variables to Render (never commit secrets to git)
 - [x] Provide Claude Code with Supabase credentials via `.env` (not chat)
-- [ ] Run Week 1 test script — sign up and log in through the live API
-- [ ] Confirm status: mark this week done, or note what broke
+- [x] Run Week 1 test script — sign up and log in through the live API
+- [x] Confirm status: mark this week done, or note what broke
+  - Confirmed 2026-07-13: test passed against the live Render deployment. Week 1 done.
 
 ---
 
@@ -217,7 +218,7 @@ Each week has two lists:
 
 | Week | Claude Code Status | Founder Status |
 |---|---|---|
-| 1 — Foundation | Done except Render deploy (waiting on founder's Render account) | In progress |
+| 1 — Foundation | ✅ Done | ✅ Done |
 | 2 — CRM | Not started | Not started |
 | 3 — Contracts (in-person) | Not started | Not started |
 | 4 — Contracts Hardening + UI | Not started | Not started |
