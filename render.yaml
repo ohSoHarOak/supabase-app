@@ -1,0 +1,20 @@
+# Render Blueprint — creates the PetPro Connect web service.
+# In Render: New -> Blueprint -> connect this repo. Then add the environment
+# variables listed below in the Render dashboard (never commit secrets).
+services:
+  - type: web
+    name: petpro-connect
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: PORT
+        value: 10000

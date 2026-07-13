@@ -1,0 +1,355 @@
+/**
+ * PetPro Connect — source of truth for all data shapes.
+ * These mirror the SQL schema in src/db/migrations/ (001–010).
+ * If a field isn't here, it isn't in the database — add it deliberately.
+ */
+
+// ---------------------------------------------------------------------------
+// Accounts (Seam 1: typed accounts)
+// ---------------------------------------------------------------------------
+
+export type AccountType = 'professional' | 'business' | 'owner';
+export type AccountStatus = 'active' | 'suspended' | 'deactivated';
+
+export interface Account {
+  id: string;
+  auth_user_id: string | null; // Supabase Auth user id
+  account_type: AccountType;
+  email: string;
+  phone: string | null;
+  status: AccountStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProfessionalProfile {
+  account_id: string;
+  full_name: string;
+  business_name: string | null;
+  bio: string | null;
+  years_experience: number | null;
+  service_areas: string[];
+  profile_photo_url: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OwnerProfile {
+  account_id: string;
+  full_name: string;
+  address: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type BusinessRole = 'account_owner' | 'manager' | 'employee';
+
+export interface CredentialDocument {
+  id: string;
+  account_id: string;
+  kind: 'license' | 'insurance' | 'certification';
+  title: string;
+  document_url: string | null;
+  issued_on: string | null;
+  expires_on: string | null;
+  created_at: string;
+}
+
+// ---------------------------------------------------------------------------
+// CRM — clients & pets
+// ---------------------------------------------------------------------------
+
+export type ClientStatus = 'prospect' | 'active' | 'inactive';
+
+export interface Client {
+  id: string;
+  professional_account_id: string;
+  owner_account_id: string | null;
+  full_name: string;
+  email: string | null;
+  phone: string | null;
+  address: string | null;
+  emergency_contact_name: string | null;
+  emergency_contact_phone: string | null;
+  cancellation_window_hours: number | null;
+  no_show_fee_cents: number | null;
+  entry_instructions: string | null;
+  general_notes: string | null;
+  status: ClientStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Pet {
+  id: string;
+  client_id: string;
+  name: string;
+  photo_url: string | null;
+  breed: string | null;
+  date_of_birth: string | null;
+  weight_kg: number | null;
+  color: string | null;
+  microchip_number: string | null;
+  medical_conditions: string | null;
+  behavior_notes: string | null;
+  feeding_notes: string | null;
+  emergency_vet: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface VaccinationRecord {
+  id: string;
+  pet_id: string;
+  vaccine_name: string;
+  administered_on: string | null;
+  expires_on: string | null;
+  document_url: string | null;
+  created_at: string;
+}
+
+// ---------------------------------------------------------------------------
+// Services (service-type abstraction — future professions plug in here)
+// ---------------------------------------------------------------------------
+
+export type ServiceType =
+  | 'group_walk'
+  | 'private_walk'
+  | 'training_session'
+  | 'grooming'
+  | 'sitting'
+  | 'boarding'
+  | 'other';
+
+export type BillingCadence =
+  | 'weekly'
+  | 'biweekly'
+  | 'monthly'
+  | 'per_visit'
+  | 'per_package'
+  | 'one_time';
+
+export type ServiceStatus = 'draft' | 'active' | 'paused' | 'ended';
+
+export interface Service {
+  id: string;
+  client_id: string;
+  professional_account_id: string;
+  service_type: ServiceType;
+  name: string;
+  description: string | null;
+  duration_minutes: number | null;
+  price_cents: number;
+  billing_cadence: BillingCadence;
+  start_date: string | null;
+  end_date: string | null;
+  status: ServiceStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+// ---------------------------------------------------------------------------
+// Contracts
+// ---------------------------------------------------------------------------
+
+export type ContractStatus = 'draft' | 'sent' | 'signed' | 'declined' | 'voided';
+export type SigningMethod = 'in_person' | 'electronic';
+
+export interface ContractTemplate {
+  id: string;
+  professional_account_id: string;
+  name: string;
+  body_html: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Contract {
+  id: string;
+  professional_account_id: string;
+  client_id: string;
+  service_id: string | null;
+  template_id: string | null;
+  generated_html: string; // immutable snapshot once status = 'signed'
+  status: ContractStatus;
+  signing_method: SigningMethod | null;
+  signer_name: string | null;
+  signature_image_url: string | null;
+  signed_pdf_url: string | null;
+  esign_envelope_id: string | null;
+  signed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// ---------------------------------------------------------------------------
+// Scheduling
+// ---------------------------------------------------------------------------
+
+export type AppointmentStatus = 'scheduled' | 'completed' | 'cancelled' | 'no_show';
+
+export interface Appointment {
+  id: string;
+  service_id: string;
+  client_id: string;
+  professional_account_id: string;
+  starts_at: string;
+  ends_at: string;
+  status: AppointmentStatus;
+  recurrence_rule: string | null;
+  recurrence_parent_id: string | null;
+  notes: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// ---------------------------------------------------------------------------
+// Payments (Seam 4: generic billing)
+// ---------------------------------------------------------------------------
+
+export type BillingPeriod = 'one_time' | 'week' | 'month';
+export type InvoiceStatus = 'draft' | 'open' | 'paid' | 'void' | 'uncollectible';
+export type TransactionStatus = 'pending' | 'succeeded' | 'failed' | 'refunded';
+
+export interface StripeProduct {
+  id: string;
+  account_id: string; // billable item attached to an account — not "walker subscription"
+  stripe_product_id: string | null;
+  stripe_price_id: string | null;
+  name: string;
+  unit_amount_cents: number;
+  billing_period: BillingPeriod;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface Invoice {
+  id: string;
+  professional_account_id: string;
+  client_id: string;
+  service_id: string | null;
+  stripe_invoice_id: string | null;
+  amount_cents: number;
+  currency: string;
+  status: InvoiceStatus;
+  due_date: string | null;
+  paid_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PaymentTransaction {
+  id: string;
+  invoice_id: string | null;
+  stripe_payment_intent_id: string | null;
+  stripe_event_id: string | null; // idempotency key
+  amount_cents: number;
+  status: TransactionStatus;
+  occurred_at: string;
+  created_at: string;
+}
+
+// ---------------------------------------------------------------------------
+// Events (Seam 2: append-only event log)
+// ---------------------------------------------------------------------------
+
+export type EventType =
+  | 'account_created'
+  | 'client_created'
+  | 'contract_generated'
+  | 'contract_signed'
+  | 'appointment_scheduled'
+  | 'walk_completed'
+  | 'payment_received'
+  | 'qr_scan'
+  | (string & {}); // open set — new event types are added, never migrated
+
+export interface DomainEvent {
+  id: string;
+  actor_account_id: string | null;
+  event_type: EventType;
+  subject_type: string | null;
+  subject_id: string | null;
+  location: { lat: number; lng: number } | null;
+  metadata: Record<string, unknown>;
+  occurred_at: string;
+  created_at: string;
+}
+
+// ---------------------------------------------------------------------------
+// Messaging
+// ---------------------------------------------------------------------------
+
+export interface MessageThread {
+  id: string;
+  professional_account_id: string;
+  client_id: string;
+  last_message_at: string | null;
+  created_at: string;
+}
+
+export interface Message {
+  id: string;
+  thread_id: string;
+  sender_account_id: string;
+  body: string | null;
+  image_url: string | null;
+  is_system: boolean;
+  client_draft_id: string | null;
+  read_at: string | null;
+  created_at: string;
+}
+
+// ---------------------------------------------------------------------------
+// Notifications
+// ---------------------------------------------------------------------------
+
+export type NotificationChannel = 'push' | 'email' | 'sms';
+export type NotificationStatus = 'pending' | 'sent' | 'failed' | 'cancelled';
+
+export interface NotificationPreference {
+  account_id: string;
+  category: string;
+  channel: NotificationChannel;
+  enabled: boolean;
+  quiet_hours_start: string | null;
+  quiet_hours_end: string | null;
+}
+
+export interface QueuedNotification {
+  id: string;
+  account_id: string;
+  category: string;
+  channel: NotificationChannel;
+  payload: Record<string, unknown>;
+  status: NotificationStatus;
+  scheduled_for: string;
+  sent_at: string | null;
+  error: string | null;
+  created_at: string;
+}
+
+// ---------------------------------------------------------------------------
+// API envelope
+// ---------------------------------------------------------------------------
+
+export interface ApiSuccess<T> {
+  ok: true;
+  data: T;
+}
+
+export interface ApiFailure {
+  ok: false;
+  error: { code: string; message: string };
+}
+
+export type ApiResponse<T> = ApiSuccess<T> | ApiFailure;
+
+/** Session returned to clients after signup/login (Supabase Auth tokens). */
+export interface AuthSession {
+  access_token: string;
+  refresh_token: string;
+  expires_at: number | null;
+  account: Account;
+}
