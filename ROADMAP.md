@@ -59,11 +59,13 @@ Each week has two lists:
 ## Week 2 — Client & Pet Management (CRM)
 
 ### 🤖 Claude Code Tasks
-- [ ] Build `ClientService` — CRUD for clients
-- [ ] Build Pet CRUD — profiles, vaccination records, medical notes
-- [ ] Build search/filter across client + pet fields
-- [ ] Add input validation (required fields, email/phone format)
-- [ ] Write manual test script (add clients/pets, search, confirm results)
+- [x] Build `ClientService` — CRUD for clients
+- [x] Build Pet CRUD — profiles, vaccination records, medical notes
+- [x] Build search/filter across client + pet fields
+  - `GET /api/clients?q=...` matches client name/email/phone/address AND pet name/breed (a pet hit surfaces its client).
+- [x] Add input validation (required fields, email/phone format)
+- [x] Write manual test script (add clients/pets, search, confirm results)
+  - `scripts/week2-test.ps1` — all 7 steps verified 2026-07-13 against live Supabase. Run it against the Render URL with `-BaseUrl`.
 
 ### 🧑 Founder Tasks
 - [ ] Run test script — add 3 clients with 2 pets each
@@ -219,7 +221,7 @@ Each week has two lists:
 | Week | Claude Code Status | Founder Status |
 |---|---|---|
 | 1 — Foundation | ✅ Done | ✅ Done |
-| 2 — CRM | Not started | Not started |
+| 2 — CRM | ✅ Done (verified locally; founder to test on Render) | Not started |
 | 3 — Contracts (in-person) | Not started | Not started |
 | 4 — Contracts Hardening + UI | Not started | Not started |
 | 5 — Payments | Not started | Not started |

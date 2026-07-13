@@ -10,15 +10,10 @@ export interface ProfessionalSignupInput {
   phone?: string;
 }
 
-export class AccountServiceError extends Error {
-  constructor(
-    public code: string,
-    message: string,
-    public httpStatus = 400
-  ) {
-    super(message);
-  }
-}
+import { ServiceError } from './errors';
+
+// Backwards-compatible alias — all services now share ServiceError.
+export { ServiceError as AccountServiceError };
 
 /**
  * Accounts + authentication.
@@ -37,7 +32,7 @@ export class AccountService {
       .eq('email', email)
       .maybeSingle();
     if (existing) {
-      throw new AccountServiceError('email_taken', 'An account with this email already exists.', 409);
+      throw new ServiceError('email_taken', 'An account with this email already exists.', 409);
     }
 
     // email_confirm: true skips the confirmation email — fine for the build
@@ -48,7 +43,7 @@ export class AccountService {
       email_confirm: true,
     });
     if (authError || !created.user) {
-      throw new AccountServiceError('auth_failed', authError?.message ?? 'Could not create auth user.', 400);
+      throw new ServiceError('auth_failed', authError?.message ?? 'Could not create auth user.', 400);
     }
 
     const { data: account, error: accountError } = await supabaseAdmin
@@ -64,7 +59,7 @@ export class AccountService {
     if (accountError) {
       // Roll back the orphaned auth user so the email isn't stuck half-registered.
       await supabaseAdmin.auth.admin.deleteUser(created.user.id);
-      throw new AccountServiceError('account_failed', accountError.message, 500);
+      throw new ServiceError('account_failed', accountError.message, 500);
     }
 
     const { error: profileError } = await supabaseAdmin.from('professional_profiles').insert({
@@ -73,7 +68,7 @@ export class AccountService {
       business_name: input.businessName ?? null,
     });
     if (profileError) {
-      throw new AccountServiceError('profile_failed', profileError.message, 500);
+      throw new ServiceError('profile_failed', profileError.message, 500);
     }
 
     await eventService.publish({
@@ -94,12 +89,12 @@ export class AccountService {
       password,
     });
     if (error || !data.session || !data.user) {
-      throw new AccountServiceError('invalid_credentials', 'Invalid email or password.', 401);
+      throw new ServiceError('invalid_credentials', 'Invalid email or password.', 401);
     }
 
     const account = await this.getAccountByAuthUserId(data.user.id);
     if (!account) {
-      throw new AccountServiceError('no_account', 'Auth user has no PetPro account.', 404);
+      throw new ServiceError('no_account', 'Auth user has no PetPro account.', 404);
     }
 
     return {
@@ -116,7 +111,7 @@ export class AccountService {
       .select('*')
       .eq('auth_user_id', authUserId)
       .maybeSingle();
-    if (error) throw new AccountServiceError('lookup_failed', error.message, 500);
+    if (error) throw new ServiceError('lookup_failed', error.message, 500);
     return (data as Account) ?? null;
   }
 
@@ -126,7 +121,7 @@ export class AccountService {
       .select('*')
       .eq('account_id', accountId)
       .maybeSingle();
-    if (error) throw new AccountServiceError('lookup_failed', error.message, 500);
+    if (error) throw new ServiceError('lookup_failed', error.message, 500);
     return (data as ProfessionalProfile) ?? null;
   }
 }

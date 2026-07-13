@@ -1,5 +1,6 @@
 import express from 'express';
 import { authRouter } from './routes/auth';
+import { clientsRouter, petsRouter } from './routes/clients';
 import { errorHandler } from './middleware/errorHandler';
 
 export function createServer(): express.Express {
@@ -11,6 +12,8 @@ export function createServer(): express.Express {
   });
 
   app.use('/api/auth', authRouter);
+  app.use('/api/clients', clientsRouter);
+  app.use('/api/pets', petsRouter);
 
   app.use((_req, res) => {
     res.status(404).json({ ok: false, error: { code: 'not_found', message: 'Route not found.' } });

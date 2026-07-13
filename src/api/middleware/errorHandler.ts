@@ -1,8 +1,8 @@
 import { NextFunction, Request, Response } from 'express';
-import { AccountServiceError } from '../../services/AccountService';
+import { ServiceError } from '../../services/errors';
 
 export function errorHandler(err: unknown, _req: Request, res: Response, _next: NextFunction): void {
-  if (err instanceof AccountServiceError) {
+  if (err instanceof ServiceError) {
     res.status(err.httpStatus).json({ ok: false, error: { code: err.code, message: err.message } });
     return;
   }
