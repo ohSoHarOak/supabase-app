@@ -70,7 +70,8 @@ Each week has two lists:
 ### 🧑 Founder Tasks
 - [ ] Run test script — add 3 clients with 2 pets each
 - [ ] Search by pet name and owner email, confirm results are accurate
-- [ ] Note any client/pet fields that don't match how real walkers actually track this info
+- [~] Note any client/pet fields that don't match how real walkers actually track this info
+  - 2026-07-13: pet weight changed from kg to pounds per founder feedback (migration 011, `weight_lb`).
 - [ ] Confirm status: mark this week done, or note what broke
 
 ---

@@ -35,7 +35,7 @@ const petSchema = z.object({
   photo_url: z.string().url().nullish(),
   breed: z.string().nullish(),
   date_of_birth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'date_of_birth must be YYYY-MM-DD.').nullish(),
-  weight_kg: z.number().positive().max(500).nullish(),
+  weight_lb: z.number().positive().max(500).nullish(),
   color: z.string().nullish(),
   microchip_number: z.string().nullish(),
   medical_conditions: z.string().nullish(),

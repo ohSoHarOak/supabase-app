@@ -64,7 +64,7 @@ try {
       $pet = Post "/api/clients/$($client.data.id)/pets" @{
         name = $petName
         breed = "Golden Retriever"
-        weight_kg = 24.5
+        weight_lb = 54.0
         behavior_notes = "Friendly, pulls on leash"
       } $token
       if (-not $pet.ok) { Fail "Add pets" ($pet | ConvertTo-Json -Depth 5) }

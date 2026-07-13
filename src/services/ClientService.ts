@@ -22,7 +22,7 @@ export interface PetInput {
   photo_url?: string | null;
   breed?: string | null;
   date_of_birth?: string | null;
-  weight_kg?: number | null;
+  weight_lb?: number | null;
   color?: string | null;
   microchip_number?: string | null;
   medical_conditions?: string | null;
