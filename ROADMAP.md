@@ -68,11 +68,12 @@ Each week has two lists:
   - `scripts/week2-test.ps1` — all 7 steps verified 2026-07-13 against live Supabase. Run it against the Render URL with `-BaseUrl`.
 
 ### 🧑 Founder Tasks
-- [ ] Run test script — add 3 clients with 2 pets each
-- [ ] Search by pet name and owner email, confirm results are accurate
-- [~] Note any client/pet fields that don't match how real walkers actually track this info
+- [x] Run test script — add 3 clients with 2 pets each
+- [x] Search by pet name and owner email, confirm results are accurate
+- [x] Note any client/pet fields that don't match how real walkers actually track this info
   - 2026-07-13: pet weight changed from kg to pounds per founder feedback (migration 011, `weight_lb`).
-- [ ] Confirm status: mark this week done, or note what broke
+- [x] Confirm status: mark this week done, or note what broke
+  - Confirmed 2026-07-13: all 7 steps of `week2-test.ps1` passed against the live Render deployment (https://petpro-app.onrender.com). Week 2 done. (Along the way: the Supabase service key on Render had to be re-pasted — a bad copy was rejected by Supabase as "Invalid API key".)
 
 ---
 
@@ -222,7 +223,7 @@ Each week has two lists:
 | Week | Claude Code Status | Founder Status |
 |---|---|---|
 | 1 — Foundation | ✅ Done | ✅ Done |
-| 2 — CRM | ✅ Done (verified locally; founder to test on Render) | Not started |
+| 2 — CRM | ✅ Done | ✅ Done |
 | 3 — Contracts (in-person) | Not started | Not started |
 | 4 — Contracts Hardening + UI | Not started | Not started |
 | 5 — Payments | Not started | Not started |
