@@ -159,6 +159,7 @@ Each week has two lists:
 - [ ] Build `appointments` CRUD with weekly recurrence
 - [ ] Build conflict detection (prevent double-booking a time slot)
 - [ ] Wire "mark appointment complete" → fires `walk_completed` event → triggers invoice
+- [ ] Capture structured completion data on "mark complete" — actual start/end time, walk notes, good-dog and got-a-treat flags — stored on the appointment and included in the `walk_completed` event payload (seam for the Phase 2 walk-report auto-message; see backlog item P2-2)
 - [ ] Extend the UI: calendar/list view of appointments, "mark complete" button
 - [ ] Write manual test script (schedule recurring walk → complete → confirm auto-invoice)
 
@@ -177,6 +178,7 @@ Each week has two lists:
 - [ ] Wire real-time delivery via Supabase Realtime
 - [ ] Build offline draft sync endpoint
 - [ ] Build email notifications for: contract ready, contract signed, payment received, appointment reminder
+- [ ] Keep notification sending channel-agnostic (template + recipient + channel), with email as the only channel for now — so SMS walk reports (backlog P2-2) plug in later without rework
 - [ ] Extend the UI: simple message thread view
 - [ ] Write manual test script (send message → confirm real-time delivery → trigger event → confirm email)
 
@@ -207,12 +209,42 @@ Each week has two lists:
 
 ---
 
+## Phase 2 Backlog — Captured, Not Scheduled
+
+*Founder feature requests logged 2026-07-13. These are out of scope for the 8-week Phase 1 build (the Week 8 demo doesn't depend on them), but Weeks 6–7 lay seams for them so nothing has to be rebuilt. Do not start these until Phase 1 is done and the founder pulls them in.*
+
+### P2-1: Walker ratings (1–5 dogs)
+Clients rate walkers on a 1–5 **dog** scale (not stars), 5 = best, 1 = needs improvement. Half-dog ratings (e.g. 4.5) are supported — store as a numeric with one decimal place, validated to 0.5 increments.
+- Natural home: owner portal (extends Week 8's portal). Ratings attach to the walker's *account*, keeping the marketplace seam — a future Phase 3 marketplace can surface the same ratings unchanged.
+- Needs a new `ratings` table + type in `src/types/index.ts` (deliberate addition — flag at build time per CLAUDE.md).
+
+### P2-2: Walk-report auto-message on completion
+Walker can opt in (per-walker setting) to: scan-in/scan-out ends the walk, and completion automatically sends the client a message with walk stats — time of walk, distance, "were they a good dog," "did they get a treat," free-form notes. If the appointment is recurring, the message includes the date/time of the next walk.
+- **Seam laid in Week 6:** completion data (times, notes, flags) is captured on the appointment and carried in the `walk_completed` event payload — the auto-message is then just an event consumer.
+- Next-walk date comes from Week 6's recurrence data; no new scheduling work needed.
+- ⚠️ **Founder decisions required before build:**
+  - "Automated **text**" means SMS — the locked stack has email only (Resend/SendGrid). SMS needs a new provider (e.g. Twilio) and per-message cost. Alternative: in-app message + email first, SMS later. Per the marketplace seams, SMS would go behind a provider adapter, and Week 7's channel-agnostic notification structure is the hook for it.
+  - "Scanned in" mechanism is undecided — QR tag on the leash/collar, NFC, or a plain check-in/out button in the walker's app. Distance stats additionally require GPS tracking during the walk (a mobile-app-sized feature; note the maps-adapter seam).
+
+### P2-3: Photos + notes attached to the walk report
+Walker can save pictures and notes during/after a walk that get attached to the P2-2 completion message.
+- Notes are already captured by the Week 6 seam. Photos add: upload to Supabase Storage (already in stack), attachment references in the `walk_completed` payload, and media handling in whichever channel sends the report (email embeds are easy; SMS becomes MMS — another provider consideration).
+
+### P2-4: Walker calendar sync with live check-in updates
+Walker can subscribe their personal calendar (Google/Apple/Outlook) to their walk schedule, and the calendar updates automatically after every check-in (e.g. a walk shows as started/completed, recurring instances stay current).
+- Week 6 already builds the in-app calendar/list view — Phase 1 stops there.
+- Phase 2 adds an authenticated iCal feed URL (simplest: calendars poll the feed, so "updates after every check-in" falls out for free) — full two-way Google Calendar API sync only if the feed proves insufficient.
+- Depends on P2-2's check-in mechanism existing.
+
+---
+
 ## Running Notes / Blockers Log
 
 *Use this space for anything that doesn't fit neatly into a single week's checklist — a decision that needs revisiting, a recurring issue, a scope question.*
 
 - 2026-07-13: `files.zip` (the original scaffold from a prior session) is gone. Full scaffold rebuilt from `PHASE_1_SUMMARY.md` + `SPEC.md`. `PHASE_1_SUMMARY.md` still describes the old plan (custom JWT, S3, Heroku) — the code follows `CLAUDE.md`'s locked stack instead (Supabase Auth, Supabase Storage, Render).
 - 2026-07-13: `DATABASE_URL` received; migrations applied and full auth flow verified locally. Remaining Week 1 blocker: Render deploy (founder: create Render account, connect the GitHub repo, add the three Supabase env vars in Render's dashboard — `render.yaml` handles the rest).
+- 2026-07-13: Founder logged 4 feature requests (ratings, walk-report auto-text, photos on reports, calendar sync). Captured as Phase 2 Backlog P2-1…P2-4 above; two small seam tasks added to Weeks 6 and 7 so they bolt on later without rework. Open founder decision parked in P2-2: SMS provider (Twilio?) vs. email/in-app first, and the scan-in mechanism.
 
 ---
 
