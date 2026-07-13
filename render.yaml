@@ -6,7 +6,9 @@ services:
     name: petpro-connect
     runtime: node
     plan: free
-    buildCommand: npm install && npm run build
+    # --include=dev: Render sets NODE_ENV=production, which would otherwise
+    # skip devDependencies — and the TypeScript compiler lives there.
+    buildCommand: npm install --include=dev && npm run build
     startCommand: npm start
     healthCheckPath: /health
     envVars:
