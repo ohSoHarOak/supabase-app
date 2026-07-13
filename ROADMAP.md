@@ -34,12 +34,12 @@ Each week has two lists:
   - Note (2026-07-13): the original scaffold zip (`files.zip`) no longer exists, so the structure was rebuilt from scratch per `PHASE_1_SUMMARY.md`, adapted to the locked stack (Supabase Auth/Storage, Render, in-person signing only).
 - [x] Connect to Supabase project once founder provides credentials
   - Verified with `npx tsx scripts/check-supabase.ts` — URL + service key work.
-- [!] Run all 10 migrations against Supabase Postgres
-  - Blocked: `.env` has the API keys but not the direct Postgres connection string. Founder: add `DATABASE_URL=` to `.env` (Supabase Dashboard → Connect → Session pooler URI — it includes the database password). Then Claude runs `npm run migrate`. All 10 migration files are written and ready in `src/db/migrations/`.
+- [x] Run all 10 migrations against Supabase Postgres
+  - Applied 2026-07-13 (26 tables). Verified live: the events append-only trigger blocks UPDATE and DELETE as designed.
 - [x] Replace custom JWT auth with Supabase Auth (email/password for professionals)
   - Built on Supabase Auth from the start — no custom JWT ever existed in this rebuild.
-- [~] Build professional signup + login API endpoints
-  - Code complete (`POST /api/auth/signup`, `POST /api/auth/login`, `GET /api/auth/me`); login path verified against live Supabase Auth. Full signup verification blocked on migrations (needs the `accounts` table).
+- [x] Build professional signup + login API endpoints
+  - Verified end-to-end 2026-07-13: `scripts/week1-test.ps1` passes all 4 steps (health → signup → login → authenticated session) against live Supabase.
 - [d] Deploy service to Render, confirm publicly reachable
   - Waiting on founder: create Render account + connect repo. `render.yaml` blueprint is ready in the repo root.
 - [x] Write a manual test script for founder to run (signup → login → get session)
@@ -49,8 +49,7 @@ Each week has two lists:
 - [x] Create Supabase account, create project, note connection credentials
 - [ ] Create Render account, connect GitHub repo
 - [ ] Add environment variables to Render (never commit secrets to git)
-- [~] Provide Claude Code with Supabase credentials via `.env` (not chat)
-  - API keys received and verified. Still needed: `DATABASE_URL` (Session pooler URI with database password) so migrations can run.
+- [x] Provide Claude Code with Supabase credentials via `.env` (not chat)
 - [ ] Run Week 1 test script — sign up and log in through the live API
 - [ ] Confirm status: mark this week done, or note what broke
 
@@ -208,7 +207,7 @@ Each week has two lists:
 *Use this space for anything that doesn't fit neatly into a single week's checklist — a decision that needs revisiting, a recurring issue, a scope question.*
 
 - 2026-07-13: `files.zip` (the original scaffold from a prior session) is gone. Full scaffold rebuilt from `PHASE_1_SUMMARY.md` + `SPEC.md`. `PHASE_1_SUMMARY.md` still describes the old plan (custom JWT, S3, Heroku) — the code follows `CLAUDE.md`'s locked stack instead (Supabase Auth, Supabase Storage, Render).
-- 2026-07-13: Two blockers for finishing Week 1, both founder-side: (1) add `DATABASE_URL` to `.env` so migrations can run, (2) create Render account + connect the GitHub repo. Everything Claude-side is ready to go the moment those land.
+- 2026-07-13: `DATABASE_URL` received; migrations applied and full auth flow verified locally. Remaining Week 1 blocker: Render deploy (founder: create Render account, connect the GitHub repo, add the three Supabase env vars in Render's dashboard — `render.yaml` handles the rest).
 
 ---
 
@@ -218,7 +217,7 @@ Each week has two lists:
 
 | Week | Claude Code Status | Founder Status |
 |---|---|---|
-| 1 — Foundation | In progress — blocked on `DATABASE_URL` + Render account (see Week 1 notes) | In progress |
+| 1 — Foundation | Done except Render deploy (waiting on founder's Render account) | In progress |
 | 2 — CRM | Not started | Not started |
 | 3 — Contracts (in-person) | Not started | Not started |
 | 4 — Contracts Hardening + UI | Not started | Not started |

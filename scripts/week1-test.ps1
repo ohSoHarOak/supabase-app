@@ -1,4 +1,4 @@
-# PetPro Connect — Week 1 manual test: signup -> login -> get session
+# PetPro Connect - Week 1 manual test: signup -> login -> get session
 #
 # Usage (local):    .\scripts\week1-test.ps1
 # Usage (Render):   .\scripts\week1-test.ps1 -BaseUrl "https://petpro-connect.onrender.com"
@@ -29,7 +29,7 @@ Write-Host ""
 try {
   $health = Invoke-RestMethod -Uri "$BaseUrl/health" -Method Get
   if (-not $health.ok) { Fail "Health check" ($health | ConvertTo-Json) }
-  Write-Host "[PASS] 1. Health check — API is reachable" -ForegroundColor Green
+  Write-Host "[PASS] 1. Health check - API is reachable" -ForegroundColor Green
 } catch {
   Fail "Health check" "Could not reach the API at $BaseUrl. Is the server running? ($_)"
 }
@@ -45,7 +45,7 @@ try {
   $signup = Invoke-RestMethod -Uri "$BaseUrl/api/auth/signup" -Method Post -Body $signupBody -ContentType "application/json"
   if (-not $signup.ok) { Fail "Signup" ($signup | ConvertTo-Json -Depth 5) }
   if ($signup.data.account.account_type -ne "professional") { Fail "Signup" "account_type was not 'professional'" }
-  Write-Host "[PASS] 2. Signup — professional account created ($email)" -ForegroundColor Green
+  Write-Host "[PASS] 2. Signup - professional account created ($email)" -ForegroundColor Green
 } catch {
   Fail "Signup" $_
 }
@@ -57,7 +57,7 @@ try {
   if (-not $login.ok) { Fail "Login" ($login | ConvertTo-Json -Depth 5) }
   if (-not $login.data.access_token) { Fail "Login" "No access token returned" }
   $token = $login.data.access_token
-  Write-Host "[PASS] 3. Login — received session token" -ForegroundColor Green
+  Write-Host "[PASS] 3. Login - received session token" -ForegroundColor Green
 } catch {
   Fail "Login" $_
 }
@@ -68,7 +68,7 @@ try {
   if (-not $me.ok) { Fail "Get session" ($me | ConvertTo-Json -Depth 5) }
   if ($me.data.account.email -ne $email) { Fail "Get session" "Returned account email doesn't match" }
   if ($me.data.profile.full_name -ne "Week One Tester") { Fail "Get session" "Profile full_name doesn't match" }
-  Write-Host "[PASS] 4. Session — /me returned the right account + profile" -ForegroundColor Green
+  Write-Host "[PASS] 4. Session - /me returned the right account + profile" -ForegroundColor Green
 } catch {
   Fail "Get session" $_
 }
