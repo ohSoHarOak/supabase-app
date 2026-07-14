@@ -230,6 +230,8 @@ export interface Invoice {
   client_id: string;
   service_id: string | null;
   stripe_invoice_id: string | null;
+  stripe_checkout_session_id: string | null; // Checkout Session collecting this invoice (012)
+  description: string | null; // line item shown in the UI and on Stripe Checkout (012)
   amount_cents: number;
   currency: string;
   status: InvoiceStatus;

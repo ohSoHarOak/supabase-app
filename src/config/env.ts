@@ -28,5 +28,9 @@ export const env = {
   supabaseServiceKey: required('SUPABASE_SERVICE_KEY'),
   /** Direct Postgres connection — only needed for migrations. */
   databaseUrl: optional('DATABASE_URL'),
+  /** Stripe (test mode during build). Optional so the app still boots
+   *  without them — payment endpoints return 503 until keys are set. */
+  stripeSecretKey: optional('STRIPE_SECRET_KEY'),
+  stripeWebhookSecret: optional('STRIPE_WEBHOOK_SECRET'),
   port: Number(process.env.PORT) || 3000,
 };

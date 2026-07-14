@@ -1,5 +1,5 @@
-/* PetPro Connect — Week 4 professional UI.
-   Vanilla JS single-page app, hash-routed, talking to the Week 1–3 REST API.
+/* PetPro Connect — professional UI (Week 4, extended with Week 5 billing).
+   Vanilla JS single-page app, hash-routed, talking to the REST API.
    No build step: this file is served as-is by the Express server. */
 
 (() => {
@@ -75,6 +75,14 @@
   }
   function fmtDate(iso) {
     return new Date(iso).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  }
+  function fmtMoney(cents) {
+    return `$${(cents / 100).toFixed(2)}`;
+  }
+  // "$30", "30.00", "$30.50" -> integer cents (or null if unparseable)
+  function parseMoney(text) {
+    const n = parseFloat(String(text).replace(/[^0-9.]/g, ''));
+    return Number.isFinite(n) && n > 0 ? Math.round(n * 100) : null;
   }
   const PAW = `<svg width="26" height="26" viewBox="0 0 44 44" aria-hidden="true"><circle cx="22" cy="22" r="22" fill="#1C4C64"/><g fill="#F7F2EB"><ellipse cx="15" cy="16" rx="3.4" ry="4.4" transform="rotate(-18 15 16)"/><ellipse cx="29" cy="16" rx="3.4" ry="4.4" transform="rotate(18 29 16)"/><ellipse cx="9.5" cy="23.5" rx="2.8" ry="3.6" transform="rotate(-38 9.5 23.5)"/><ellipse cx="34.5" cy="23.5" rx="2.8" ry="3.6" transform="rotate(38 34.5 23.5)"/><path d="M22 21c4.4 0 8.4 3.5 8.4 7.6 0 2.9-2.2 4.6-4.7 4.6-1.5 0-2.6-0.6-3.7-0.6s-2.2 0.6-3.7 0.6c-2.5 0-4.7-1.7-4.7-4.6C13.6 24.5 17.6 21 22 21z"/></g></svg>`;
   const PAW_LOGIN = PAW.replace('width="26" height="26"', 'width="44" height="44"').replace('#1C4C64', '#2B7192');
@@ -349,11 +357,13 @@
   // ------------------------------------------------------ client detail ----
   async function renderClient(clientId, opts = {}) {
     appEl.innerHTML = header('clients') + `<div class="page loading">Loading client…</div>`;
-    let client, contracts;
+    let client, contracts, invoices, billItems;
     try {
-      [client, contracts] = await Promise.all([
+      [client, contracts, invoices, billItems] = await Promise.all([
         api('GET', `/api/clients/${clientId}`),
         api('GET', `/api/contracts?client_id=${clientId}`),
+        api('GET', `/api/invoices?client_id=${clientId}`),
+        api('GET', '/api/billable-items'),
       ]);
     } catch (err) {
       toast(err.message);
@@ -400,6 +410,29 @@
         </div>
       </div>`);
 
+    const invoicePill = {
+      draft: '<span class="pill pill-draft">draft</span>',
+      open: '<span class="pill pill-draft">awaiting payment</span>',
+      paid: '<span class="pill pill-sage">paid</span>',
+      void: '<span class="pill pill-alert">void</span>',
+      uncollectible: '<span class="pill pill-alert">uncollectible</span>',
+    };
+    const invoiceRows = invoices.map((inv) => `
+      <div class="card contract-row">
+        <div class="what">
+          <div class="title">${esc(fmtMoney(inv.amount_cents))} — ${esc(inv.description || 'Services')}</div>
+          <div class="meta">${inv.status === 'paid'
+            ? `Paid ${esc(fmtDate(inv.paid_at))}`
+            : `Created ${esc(fmtDate(inv.created_at))}${inv.due_date ? ` · due ${esc(fmtDate(inv.due_date))}` : ''}`}</div>
+        </div>
+        ${invoicePill[inv.status] ?? ''}
+        <div class="row-actions">
+          ${inv.status === 'open' || inv.status === 'draft' ? `
+            <button class="btn btn-ghost" data-void-invoice="${inv.id}">Void</button>
+            <button class="btn btn-quiet" data-checkout-invoice="${inv.id}">Collect payment</button>` : ''}
+        </div>
+      </div>`);
+
     appEl.innerHTML = header('clients') + `
       <div class="page">
         <a class="backlink" href="#/today">‹ All clients</a>
@@ -442,6 +475,32 @@
 
         <div class="eyebrow">Contracts</div>
         <div class="stack">${contractRows.join('') || '<div class="card empty">No contracts yet — generate the first one with the button above.</div>'}</div>
+
+        <div class="eyebrow">Billing</div>
+        <div class="stack">${invoiceRows.join('') || '<div class="card empty">No invoices yet — create the first one below.</div>'}</div>
+
+        <div class="card fieldset" style="margin-top:12px">
+          <strong style="font-size:14px">New invoice</strong>
+          <form id="inv-form"><div class="form-grid">
+            <div><label for="inv-item">Bill for</label>
+              <select id="inv-item">
+                ${billItems.map((i) => `<option value="${i.id}">${esc(i.name)} — ${fmtMoney(i.unit_amount_cents)}${i.billing_period === 'one_time' ? '' : ` / ${esc(i.billing_period)}`}</option>`).join('')}
+                <option value="">Custom amount…</option>
+              </select></div>
+            <div id="inv-qty-wrap"><label for="inv-qty">Quantity <span class="hint">e.g. number of visits</span></label>
+              <input id="inv-qty" type="number" min="1" max="1000" value="1" class="num" /></div>
+            <div id="inv-amount-wrap" hidden><label for="inv-amount">Amount</label>
+              <input id="inv-amount" class="money" placeholder="$30.00" /></div>
+            <div class="full" id="inv-desc-wrap" hidden><label for="inv-desc">Description <span class="hint">— appears on the payment page</span></label>
+              <input id="inv-desc" placeholder="e.g. Week of July 14 — 3 private walks" /></div>
+            <div class="full" id="inv-save-wrap" hidden><label style="display:flex; gap:8px; align-items:center; text-transform:none; letter-spacing:0">
+              <input type="checkbox" id="inv-save" style="width:auto" /> Save as a reusable billable item</label></div>
+          </div>
+          <div class="form-foot" style="margin-top:0">
+            <div class="spacer"></div>
+            <button class="btn btn-quiet" type="submit">Create invoice</button>
+          </div></form>
+        </div>
       </div>`;
 
     document.getElementById('pet-form').onsubmit = async (e) => {
@@ -465,9 +524,128 @@
         }
       });
     };
+    // ---------------------------------------------------------- billing --
+    // "Bill for" select: a saved item shows quantity; a custom amount shows
+    // description + amount + the save-as-item checkbox.
+    const invItem = document.getElementById('inv-item');
+    function syncInvoiceFields() {
+      const custom = invItem.value === '';
+      document.getElementById('inv-qty-wrap').hidden = custom;
+      document.getElementById('inv-amount-wrap').hidden = !custom;
+      document.getElementById('inv-desc-wrap').hidden = !custom;
+      document.getElementById('inv-save-wrap').hidden = !custom;
+    }
+    invItem.onchange = syncInvoiceFields;
+    syncInvoiceFields();
+
+    document.getElementById('inv-form').onsubmit = async (e) => {
+      e.preventDefault();
+      const btn = e.target.querySelector('button[type=submit]');
+      await withBusy(btn, async () => {
+        try {
+          let body;
+          if (invItem.value) {
+            body = {
+              client_id: clientId,
+              billable_item_id: invItem.value,
+              quantity: Number(document.getElementById('inv-qty').value) || 1,
+            };
+          } else {
+            const amount = parseMoney(document.getElementById('inv-amount').value);
+            const description = document.getElementById('inv-desc').value.trim();
+            if (!amount) { toast('Enter an amount, e.g. $30.00'); return; }
+            if (!description) { toast('Enter a description for the invoice.'); return; }
+            if (document.getElementById('inv-save').checked) {
+              // Save as reusable first (creates the Stripe product), then
+              // invoice from it so the item and invoice stay linked.
+              const item = await api('POST', '/api/billable-items', {
+                name: description,
+                unit_amount_cents: amount,
+                billing_period: 'one_time',
+              });
+              body = { client_id: clientId, billable_item_id: item.id, quantity: 1 };
+            } else {
+              body = { client_id: clientId, amount_cents: amount, description };
+            }
+          }
+          await api('POST', '/api/invoices', body);
+          toast('Invoice created.', 'ok');
+          renderClient(clientId);
+        } catch (err) {
+          toast(err.message);
+        }
+      });
+    };
+
+    document.querySelectorAll('[data-checkout-invoice]').forEach((btn) => {
+      btn.onclick = () =>
+        withBusy(btn, async () => {
+          try {
+            const { checkout_url } = await api('POST', `/api/invoices/${btn.dataset.checkoutInvoice}/checkout`);
+            // Off to Stripe's hosted payment page; it redirects back to
+            // #/invoice/:id/return when done.
+            window.location.href = checkout_url;
+          } catch (err) {
+            toast(err.message);
+          }
+        });
+    });
+    document.querySelectorAll('[data-void-invoice]').forEach((btn) => {
+      btn.onclick = () =>
+        withBusy(btn, async () => {
+          try {
+            await api('POST', `/api/invoices/${btn.dataset.voidInvoice}/void`);
+            toast('Invoice voided.', 'ok');
+            renderClient(clientId);
+          } catch (err) {
+            toast(err.message);
+          }
+        });
+    });
+
     wireNav();
     wireContractViews();
     if (opts.addpet) document.getElementById('p-name').focus();
+  }
+
+  // ------------------------------------------------- payment return page ----
+  // Stripe Checkout redirects here. The webhook normally records the payment;
+  // the sync call makes the confirmation independent of webhook timing.
+  async function renderInvoiceReturn(invoiceId, canceled) {
+    appEl.innerHTML = header('clients') + `<div class="page loading">Confirming payment…</div>`;
+    let invoice;
+    try {
+      invoice = await api('GET', `/api/invoices/${invoiceId}`);
+    } catch (err) {
+      toast(err.message);
+      location.hash = '#/today';
+      return;
+    }
+    if (canceled) {
+      toast('Payment canceled — the invoice is still open.', 'error');
+      location.hash = `#/client/${invoice.client_id}`;
+      return;
+    }
+    for (let attempt = 0; attempt < 5 && invoice.status !== 'paid'; attempt++) {
+      if (attempt > 0) await new Promise((r) => setTimeout(r, 2000));
+      try {
+        invoice = await api('POST', `/api/invoices/${invoiceId}/sync`);
+      } catch (err) {
+        toast(err.message);
+        break;
+      }
+    }
+    const paid = invoice.status === 'paid';
+    appEl.innerHTML = header('clients') + `
+      <div class="page">
+        ${paid
+          ? `<div class="success-banner">✓ Payment received — ${esc(fmtMoney(invoice.amount_cents))} for ${esc(invoice.description || 'services')}${invoice.paid_at ? `, ${esc(fmtDate(invoice.paid_at))}` : ''}</div>`
+          : `<div class="card empty">Payment hasn't been confirmed yet. If you completed checkout, give it a moment and refresh — the invoice updates automatically once Stripe reports it paid.</div>`}
+        <div style="margin-top:16px">
+          <button class="btn btn-primary" data-nav="#/client/${invoice.client_id}">Back to client</button>
+        </div>
+      </div>`;
+    wireNav();
   }
 
   // -------------------------------------------------------- new contract ----
@@ -752,6 +930,9 @@
       renderClient(parts[1], { addpet: params.get('addpet') === '1' }); return;
     }
     if (parts[0] === 'contract' && parts[1] && parts[2] === 'sign') { renderSign(parts[1]); return; }
+    if (parts[0] === 'invoice' && parts[1] && parts[2] === 'return') {
+      renderInvoiceReturn(parts[1], params.get('canceled') === '1'); return;
+    }
     renderToday(); // default: today (also covers #/clients)
   }
 
