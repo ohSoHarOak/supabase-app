@@ -1,4 +1,4 @@
-# PetPro Connect — 8-Week Roadmap & Task Tracker
+﻿# PetPro Connect — 8-Week Roadmap & Task Tracker
 
 *Place this file as `ROADMAP.md` in the repo root, alongside `CLAUDE.md`. Both Claude Code and the founder update it directly as work progresses — it's the shared source of truth for where things stand.*
 
@@ -119,10 +119,12 @@ Each week has two lists:
   - `scripts/week4-test.ps1` (UI served + API smoke). Full flow also driven in-browser 2026-07-13: signup → client → 2 pets → generate → sign → client flipped to active.
 
 ### 🧑 Founder Tasks
-- [ ] Review the minimal UI — does it feel like something you could put in front of a real dog walker?
-- [ ] Test the full flow through the UI yourself: add a client, generate a contract, sign it in-person
-- [ ] Note anything confusing or missing before it becomes a demo-day surprise
-- [ ] Confirm status: mark this week done, or note what broke
+- [x] Review the minimal UI — does it feel like something you could put in front of a real dog walker?
+- [x] Test the full flow through the UI yourself: add a client, generate a contract, sign it in-person
+- [x] Note anything confusing or missing before it becomes a demo-day surprise
+  - 2026-07-13: founder checked these off after testing the live UI — no blocking issues noted.
+- [x] Confirm status: mark this week done, or note what broke
+  - Confirmed 2026-07-13. Week 4 done. (Founder's checkoff edit briefly reverted the roadmap to a stale copy — reconciled same day; watch for OneDrive/editor stale-copy overwrites when editing this file.)
 
 **Note:** Nitro Sign integration moves to Phase 1.5 (post-demo). The original plan is preserved below for when you pick it up.
 
@@ -278,7 +280,7 @@ New professionals get a mini onboarding right after signup: prompts to add their
 | 1 — Foundation | ✅ Done | ✅ Done |
 | 2 — CRM | ✅ Done | ✅ Done |
 | 3 — Contracts (in-person) | ✅ Done | ✅ Done |
-| 4 — Contracts Hardening + UI | Not started | Not started |
+| 4 — Contracts Hardening + UI | ✅ Done | ✅ Done |
 | 5 — Payments | Not started | Not started |
 | 6 — Scheduling | Not started | Not started |
 | 7 — Messaging | Not started | Not started |
