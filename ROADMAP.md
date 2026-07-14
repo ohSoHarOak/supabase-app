@@ -80,14 +80,20 @@ Each week has two lists:
 ## Week 3 — Contracts Part 1: Generation & In-Person Signing
 
 ### 🤖 Claude Code Tasks
-- [ ] Build contract template storage + variable substitution
-- [ ] Wire `ContractService.generateContract()` to real client/pet/service data
-- [ ] Build in-person signing flow — capture signature image, lock the contract
-- [ ] Confirm the immutability trigger actually blocks edits to signed contracts
-- [ ] Write manual test script (generate → sign → attempt edit → confirm blocked)
+- [x] Build contract template storage + variable substitution
+  - Template CRUD + `POST /api/contract-templates/seed` (copies the packaged CA template, idempotent). Substitution is generic `{{snake_case}}` — any template, any profession.
+- [x] Wire `ContractService.generateContract()` to real client/pet/service data
+  - Pulls client, pets, per-client cancellation window + no-show fee, emergency contact, preferred vet, and provider profile; manual `variables` fill the rest (service data until Weeks 5–6 exist). Response lists any unresolved placeholders.
+- [x] Build in-person signing flow — capture signature image, lock the contract
+  - `POST /api/contracts/:id/sign` — signature stored in private Supabase Storage bucket as evidence AND embedded into the HTML as a data URI (an immutable document can't depend on expiring links), then status→signed in a single UPDATE.
+- [x] Confirm the immutability trigger actually blocks edits to signed contracts
+  - Verified 2026-07-13 against live Supabase: editing HTML or un-signing returns 409 from the DB trigger; editing the client afterward leaves the snapshot untouched.
+- [x] Write manual test script (generate → sign → attempt edit → confirm blocked)
+  - `scripts/week3-test.ps1` — all 8 steps pass locally. Run against Render with `-BaseUrl`.
 
 ### 🧑 Founder Tasks
-- [ ] Draft 1–2 real contract templates (or provide existing ones) — include the notice that terms should be reviewed by your own legal counsel
+- [x] Draft 1–2 real contract templates (or provide existing ones) — include the notice that terms should be reviewed by your own legal counsel
+  - 2026-07-13: Founder provided CA dog-walking agreement; converted to seed template (`templates/contracts/`) with merge fields + legal-review notice, approved by founder. Counsel review of two substantive edits (mutual 7-day termination, payment terms) still recommended before first real client signs.
 - [ ] Run test script — generate a contract, sign it in-person
 - [ ] Try editing the client's info afterward, confirm the signed contract doesn't change
 - [ ] Confirm status: mark this week done, or note what broke
