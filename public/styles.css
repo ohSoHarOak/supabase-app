@@ -1,0 +1,372 @@
+/* PetPro Connect — Week 4 UI. Brand palette per SPEC.md UI/UX Requirements:
+   steel blue = structure, orange = the ONE primary action per screen,
+   sage = success/active, warm neutrals, dark-brown text on orange fills. */
+
+:root {
+  --steel: #2B7192;
+  --steel-deep: #1C4C64;
+  --orange: #F58941;
+  --on-orange: #4B2508;
+  --sage: #6D9280;
+  --paper: #F7F2EB;
+  --hairline: #E5E0D6;
+  --ink: #1E2B33;
+  --ink-soft: #5A6B75;
+  --card: #FFFFFF;
+  --field: #FFFFFF;
+  --alert: #A44A3F;
+  --on-steel: #F7F2EB;
+  --nav-active: rgba(247, 242, 235, 0.16);
+  --shadow: 0 1px 3px rgba(30, 43, 51, 0.08), 0 4px 14px rgba(30, 43, 51, 0.06);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #12262F;
+    --hairline: #2C4653;
+    --ink: #EDE7DC;
+    --ink-soft: #9FB0B8;
+    --card: #1C4C64;
+    --field: #163A4C;
+    --nav-active: rgba(247, 242, 235, 0.14);
+    --shadow: 0 1px 3px rgba(0, 0, 0, 0.3), 0 4px 14px rgba(0, 0, 0, 0.25);
+  }
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: "Segoe UI Variable Text", "Segoe UI", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+}
+body.login-bg { background: var(--steel-deep); }
+
+h1, h2, h3 { line-height: 1.25; text-wrap: balance; margin: 0; }
+.page-title { font-size: 22px; font-weight: 700; }
+.page-sub { color: var(--ink-soft); font-size: 13.5px; margin: 2px 0 0; }
+.eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.13em;
+  color: var(--ink-soft);
+  margin: 30px 0 10px;
+}
+.hint { font-size: 12px; color: var(--ink-soft); font-weight: 400; }
+.money, .num { font-variant-numeric: tabular-nums; }
+
+/* ------------------------------------------------------------- header */
+.app-header { background: var(--steel); color: var(--on-steel); }
+.app-header .inner {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 0 20px;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 14px 0;
+  font-weight: 700;
+  font-size: 16px;
+  white-space: nowrap;
+  color: inherit;
+  text-decoration: none;
+}
+.brand svg { flex: none; }
+.app-nav { display: flex; gap: 2px; margin-left: auto; overflow-x: auto; }
+.app-nav a {
+  color: inherit;
+  text-decoration: none;
+  font-size: 13.5px;
+  padding: 15px 13px;
+  border-bottom: 3px solid transparent;
+  opacity: 0.85;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.app-nav a.active {
+  border-bottom-color: var(--orange);
+  background: var(--nav-active);
+  opacity: 1;
+  font-weight: 600;
+}
+.app-nav a.soon { opacity: 0.45; cursor: default; }
+.app-nav a.soon small { font-size: 9px; text-transform: uppercase; letter-spacing: 0.08em; display: block; line-height: 1; }
+.app-nav a:focus-visible { outline: 2px solid var(--orange); outline-offset: -2px; }
+
+.page { max-width: 860px; margin: 0 auto; padding: 26px 20px 80px; }
+
+/* --------------------------------------------------------------- card */
+.card {
+  background: var(--card);
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+}
+
+/* ------------------------------------------------------------ buttons */
+.btn {
+  font: inherit;
+  font-size: 14.5px;
+  font-weight: 600;
+  border-radius: 8px;
+  padding: 11px 20px;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+.btn:focus-visible { outline: 2px solid var(--steel); outline-offset: 2px; }
+.btn-primary { background: var(--orange); color: var(--on-orange); border-color: var(--orange); }
+.btn-primary:hover { filter: brightness(1.04); }
+.btn-quiet { background: transparent; color: var(--steel); border-color: var(--steel); }
+@media (prefers-color-scheme: dark) { .btn-quiet { color: var(--ink); border-color: var(--ink-soft); } }
+.btn-ghost { background: transparent; border-color: transparent; color: var(--ink-soft); }
+.btn[disabled] { opacity: 0.5; cursor: default; }
+.btn.busy { opacity: 0.7; cursor: progress; }
+
+/* -------------------------------------------------------------- pills */
+.pill {
+  display: inline-block;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 999px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.pill-sage { background: color-mix(in srgb, var(--sage) 18%, transparent); color: var(--sage); border: 1px solid color-mix(in srgb, var(--sage) 45%, transparent); }
+.pill-draft { background: transparent; color: var(--ink-soft); border: 1px dashed var(--ink-soft); }
+.pill-alert { background: color-mix(in srgb, var(--alert) 12%, transparent); color: var(--alert); border: 1px solid color-mix(in srgb, var(--alert) 40%, transparent); }
+
+/* -------------------------------------------------------------- forms */
+input, select, textarea {
+  font: inherit;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--hairline);
+  background: var(--field);
+  color: var(--ink);
+}
+input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 2px solid var(--steel);
+  outline-offset: 1px;
+  border-color: var(--steel);
+}
+label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 5px; }
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.form-grid .full { grid-column: 1 / -1; }
+@media (max-width: 620px) { .form-grid { grid-template-columns: 1fr; } }
+.fieldset { padding: 20px; display: grid; gap: 16px; }
+.form-foot { display: flex; align-items: center; gap: 12px; margin-top: 20px; flex-wrap: wrap; }
+.form-foot .spacer { flex: 1; }
+.field-error { color: var(--alert); font-size: 12.5px; margin-top: 4px; }
+
+.seg { display: flex; border: 1px solid var(--hairline); border-radius: 8px; overflow: hidden; }
+.seg button {
+  font: inherit; font-size: 13.5px; font-weight: 600;
+  flex: 1; padding: 9px 8px; border: none;
+  background: var(--field); color: var(--ink-soft); cursor: pointer;
+}
+.seg button[aria-pressed="true"] { background: var(--steel); color: var(--on-steel); }
+.seg button:focus-visible { outline: 2px solid var(--orange); outline-offset: -2px; }
+
+/* -------------------------------------------------------------- login */
+.login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 40px 20px; }
+.login-card {
+  width: 100%;
+  max-width: 400px;
+  background: var(--card);
+  border-radius: 14px;
+  padding: 36px 32px 32px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.25);
+}
+.login-brand { display: flex; flex-direction: column; align-items: center; gap: 10px; margin-bottom: 26px; text-align: center; }
+.login-brand .wordmark { font-size: 21px; font-weight: 700; }
+.login-brand .tag { font-size: 13px; color: var(--ink-soft); }
+.login-card form { display: grid; gap: 16px; }
+.login-card .btn-primary { width: 100%; margin-top: 4px; }
+.login-foot { text-align: center; font-size: 13px; color: var(--ink-soft); margin-top: 18px; }
+.login-foot a { color: var(--steel); font-weight: 600; text-decoration: none; cursor: pointer; }
+@media (prefers-color-scheme: dark) { .login-foot a { color: #7FB4CD; } }
+
+/* -------------------------------------------------------------- today */
+.cue-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 18px;
+  border-left: 4px solid var(--orange);
+}
+.cue-card .cue-text { flex: 1 1 240px; }
+.cue-card .cue-title { font-weight: 700; font-size: 15px; }
+.cue-card .cue-sub { color: var(--ink-soft); font-size: 13px; }
+.stack { display: grid; gap: 10px; }
+
+.search-row { display: flex; gap: 10px; margin: 14px 0 10px; }
+.search-row input { flex: 1; }
+
+.client-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 13px 16px;
+  cursor: pointer;
+}
+.client-row:hover { border-color: var(--steel); }
+.avatar {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--steel);
+  color: var(--on-steel);
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  font-size: 14px;
+}
+.client-row .who { flex: 1; min-width: 0; }
+.client-row .name { font-weight: 650; }
+.client-row .pets { font-size: 12.5px; color: var(--ink-soft); }
+.chev { color: var(--ink-soft); flex: none; }
+.empty { color: var(--ink-soft); font-size: 13.5px; padding: 18px; text-align: center; }
+
+/* ------------------------------------------------------ client detail */
+.backlink { font-size: 13px; color: var(--steel); text-decoration: none; font-weight: 600; cursor: pointer; }
+@media (prefers-color-scheme: dark) { .backlink { color: #7FB4CD; } }
+.detail-head { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 16px; margin-top: 8px; }
+.detail-head .who { flex: 1 1 300px; }
+.contact-line { color: var(--ink-soft); font-size: 13.5px; }
+
+.policy-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.policy { padding: 12px 14px; }
+.policy .k { font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--ink-soft); }
+.policy .v { font-weight: 700; font-size: 16px; margin-top: 2px; }
+.policy .v.small { font-size: 13.5px; font-weight: 600; }
+
+.pet-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
+.pet-card { padding: 16px; }
+.pet-top { display: flex; align-items: center; gap: 12px; }
+.pet-photo {
+  flex: none;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--sage) 25%, transparent);
+}
+.pet-name { font-weight: 700; font-size: 16px; }
+.pet-breed { font-size: 12.5px; color: var(--ink-soft); }
+.pet-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+
+.contract-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 16px;
+}
+.contract-row .what { flex: 1 1 220px; }
+.contract-row .title { font-weight: 650; font-size: 14px; }
+.contract-row .meta { font-size: 12.5px; color: var(--ink-soft); }
+.row-actions { display: flex; gap: 8px; }
+
+.stepper { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
+.step {
+  font-size: 12px; font-weight: 600;
+  padding: 5px 12px; border-radius: 999px;
+  border: 1px solid var(--hairline); color: var(--ink-soft);
+}
+.step.on { background: var(--steel); border-color: var(--steel); color: var(--on-steel); }
+
+.preview-note {
+  font-size: 13px;
+  color: var(--ink-soft);
+  border-left: 3px solid var(--hairline);
+  padding-left: 12px;
+  margin: 0;
+}
+
+/* ------------------------------------------------------------ signing */
+.sign-layout { display: grid; grid-template-columns: 1.2fr 1fr; gap: 18px; align-items: start; margin-top: 18px; }
+@media (max-width: 760px) { .sign-layout { grid-template-columns: 1fr; } }
+.doc-frame {
+  width: 100%;
+  height: 440px;
+  border: none;
+  border-radius: 10px;
+  background: #fff;
+}
+.sign-pad-card { padding: 20px; display: grid; gap: 14px; }
+#sigpad {
+  width: 100%;
+  height: 150px;
+  border: 1.5px dashed var(--steel);
+  border-radius: 8px;
+  background: #fff;
+  touch-action: none;
+  cursor: crosshair;
+  display: block;
+}
+#sigpad.err { border-color: var(--alert); }
+.sig-hint { font-size: 12px; color: var(--ink-soft); text-align: center; margin: -6px 0 0; }
+.lock-note { display: flex; gap: 8px; font-size: 12.5px; color: var(--ink-soft); align-items: flex-start; }
+.lock-note svg { flex: none; margin-top: 2px; }
+
+.success-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: color-mix(in srgb, var(--sage) 16%, transparent);
+  border: 1px solid var(--sage);
+  color: var(--sage);
+  font-weight: 650;
+  border-radius: 10px;
+  padding: 13px 16px;
+  margin-bottom: 16px;
+}
+
+/* -------------------------------------------------------------- toast */
+.toast {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  left: 16px;
+  max-width: 420px;
+  margin-left: auto;
+  z-index: 100;
+  background: var(--alert);
+  color: #fff;
+  padding: 13px 42px 13px 16px;
+  border-radius: 10px;
+  font-size: 13.5px;
+  font-weight: 600;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
+}
+.toast.ok { background: var(--sage); }
+.toast .toast-x {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  background: none;
+  border: none;
+  color: inherit;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px;
+}
+
+.loading { padding: 60px 20px; text-align: center; color: var(--ink-soft); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .page, .login-wrap { animation: fade 0.18s ease; }
+  @keyframes fade { from { opacity: 0.4; } to { opacity: 1; } }
+}

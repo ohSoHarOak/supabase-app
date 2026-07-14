@@ -108,11 +108,15 @@ Each week has two lists:
 > **Decision locked:** launch with **in-person signing only**. Nitro Sign electronic signing is deferred to a post-demo fast-follow (Phase 1.5). This week's freed-up time goes toward closing the biggest gap for showing potential clients: a minimal usable interface. Weeks 1–3 only built API endpoints — nobody outside a developer can "see" the product through Postman calls alone.
 
 ### 🤖 Claude Code Tasks
-- [ ] Harden in-person signing flow: edge cases (missing signature, retry on failure, clear error states)
-- [ ] Build a minimal web UI for the professional side: login, client list, add client/pet, generate + sign contract
-- [ ] Wire the UI to the Week 1–3 API endpoints (no new backend logic, just a usable front door)
-- [ ] Basic responsive styling — doesn't need to be polished, needs to not look broken on a laptop screen during a demo
-- [ ] Write a manual test script covering the UI flow end-to-end
+- [x] Harden in-person signing flow: edge cases (missing signature, retry on failure, clear error states)
+  - UI blocks empty signature/name with inline errors; sign failures keep the signature on the pad for retry; signed contracts render read-only (no edit/sign controls); duplicate-sign already 409s server-side.
+- [x] Build a minimal web UI for the professional side: login, client list, add client/pet, generate + sign contract
+  - `public/` (index.html + styles.css + app.js) — vanilla JS, no build step, served by the same Express app. Screens per approved mockup: login/signup, Today (needs-attention cues + active clients + search), 3-step new client, client detail (pets, policies, contracts), new contract, sign (drawable signature pad). Brand palette per SPEC.md, light+dark.
+- [x] Wire the UI to the Week 1–3 API endpoints (no new backend logic, just a usable front door)
+  - Only server change: `express.static('public')`. UI-side conveniences: auto-seeds the CA template on first contract, voids the old draft when terms are re-edited, flips a prospect client to active after their first signed contract.
+- [x] Basic responsive styling — doesn't need to be polished, needs to not look broken on a laptop screen during a demo
+- [x] Write a manual test script covering the UI flow end-to-end
+  - `scripts/week4-test.ps1` (UI served + API smoke). Full flow also driven in-browser 2026-07-13: signup → client → 2 pets → generate → sign → client flipped to active.
 
 ### 🧑 Founder Tasks
 - [ ] Review the minimal UI — does it feel like something you could put in front of a real dog walker?
