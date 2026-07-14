@@ -191,6 +191,7 @@ Each week has two lists:
 - [ ] Wire real-time delivery via Supabase Realtime
 - [ ] Build offline draft sync endpoint
 - [ ] Build email notifications for: contract ready, contract signed, payment received, appointment reminder
+  - Founder requirement (2026-07-13): the **contract signed** email goes to the client **with the signed contract included**. Decision to make at build time: attach as PDF (needs an HTML→PDF step) vs. a secure view link to the signed copy — PDF preferred, fall back to link if PDF generation gets heavy.
 - [ ] Keep notification sending channel-agnostic (template + recipient + channel), with email as the only channel for now — so SMS walk reports (backlog P2-2) plug in later without rework
 - [ ] Extend the UI: simple message thread view
 - [ ] Write manual test script (send message → confirm real-time delivery → trigger event → confirm email)
@@ -207,6 +208,7 @@ Each week has two lists:
 ## Week 8 — Owner Portal + End-to-End Testing + Demo Prep
 
 ### 🤖 Claude Code Tasks
+- [ ] Harden password requirements for security compliance (founder request 2026-07-13): raise minimum length to 12, require mixed character classes, reject common/breached passwords, matching validation in both the signup API and Supabase Auth settings — must land before the demo creates real accounts
 - [ ] Build minimal owner portal: magic-link login, view schedule, view/sign contract, view/pay invoice, message the professional
 - [ ] Write full integration test script covering the entire loop: signup → client → pet → contract → sign → schedule → complete walk → invoice → pay → notify
 - [ ] Fix bugs surfaced during founder + tester testing
@@ -248,6 +250,12 @@ Walker can subscribe their personal calendar (Google/Apple/Outlook) to their wal
 - Week 6 already builds the in-app calendar/list view — Phase 1 stops there.
 - Phase 2 adds an authenticated iCal feed URL (simplest: calendars poll the feed, so "updates after every check-in" falls out for free) — full two-way Google Calendar API sync only if the feed proves insufficient.
 - Depends on P2-2's check-in mechanism existing.
+
+### P2-5: Signup onboarding wizard
+New professionals get a mini onboarding right after signup: prompts to add their information, services offered, years in service, profile picture, etc. (founder request 2026-07-13).
+- The data model already supports all of it — `professional_profiles` has `bio`, `years_experience`, `service_areas`, `profile_photo_url` — so this is UI + a photo upload to Supabase Storage, no schema work.
+- "Services offered" should reuse the Week 6 `services` catalog rather than a free-text list, so onboarding feeds scheduling directly.
+- If Week 8 demo prep has slack, a slim 2-screen version (name/photo/years + services) is a strong "wow" for the signup demo — decide then.
 
 ---
 
