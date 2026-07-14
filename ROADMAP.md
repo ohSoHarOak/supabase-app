@@ -94,9 +94,12 @@ Each week has two lists:
 ### 🧑 Founder Tasks
 - [x] Draft 1–2 real contract templates (or provide existing ones) — include the notice that terms should be reviewed by your own legal counsel
   - 2026-07-13: Founder provided CA dog-walking agreement; converted to seed template (`templates/contracts/`) with merge fields + legal-review notice, approved by founder. Counsel review of two substantive edits (mutual 7-day termination, payment terms) still recommended before first real client signs.
-- [ ] Run test script — generate a contract, sign it in-person
-- [ ] Try editing the client's info afterward, confirm the signed contract doesn't change
-- [ ] Confirm status: mark this week done, or note what broke
+- [x] Run test script — generate a contract, sign it in-person
+  - 2026-07-13: founder ran `week3-test.ps1` against the live Render deploy — all 8 steps green.
+- [x] Try editing the client's info afterward, confirm the signed contract doesn't change
+  - Covered by test steps 6–7 (edit blocked with 409; client rename + policy change left the signed snapshot untouched).
+- [x] Confirm status: mark this week done, or note what broke
+  - Confirmed 2026-07-13. Week 3 done.
 
 ---
 
@@ -262,7 +265,7 @@ Walker can subscribe their personal calendar (Google/Apple/Outlook) to their wal
 |---|---|---|
 | 1 — Foundation | ✅ Done | ✅ Done |
 | 2 — CRM | ✅ Done | ✅ Done |
-| 3 — Contracts (in-person) | Not started | Not started |
+| 3 — Contracts (in-person) | ✅ Done | ✅ Done |
 | 4 — Contracts Hardening + UI | Not started | Not started |
 | 5 — Payments | Not started | Not started |
 | 6 — Scheduling | Not started | Not started |
