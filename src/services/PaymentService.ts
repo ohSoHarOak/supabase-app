@@ -59,23 +59,40 @@ export class PaymentService {
     return this.stripeClient;
   }
 
+  /** Surface Stripe failures as readable API errors instead of a bare 500 —
+   *  "Invalid API key" vs "amount too small" matters to whoever is debugging. */
+  private async stripeCall<T>(fn: () => Promise<T>): Promise<T> {
+    try {
+      return await fn();
+    } catch (err) {
+      if (err instanceof Stripe.errors.StripeError) {
+        throw new ServiceError('stripe_error', `Stripe: ${err.message}`, 502);
+      }
+      throw err;
+    }
+  }
+
   // ------------------------------------------------------ billable items ----
 
   /** Create a billable item, backed by a real Stripe Product + Price. */
   async createBillableItem(accountId: string, input: BillableItemInput): Promise<StripeProduct> {
-    const product = await this.stripe.products.create({
-      name: input.name,
-      metadata: { petpro_account_id: accountId },
-    });
-    const price = await this.stripe.prices.create({
-      product: product.id,
-      currency: 'usd',
-      unit_amount: input.unit_amount_cents,
-      // billing_period_enum values map 1:1 onto Stripe recurring intervals.
-      ...(input.billing_period === 'one_time'
-        ? {}
-        : { recurring: { interval: input.billing_period } }),
-    });
+    const product = await this.stripeCall(() =>
+      this.stripe.products.create({
+        name: input.name,
+        metadata: { petpro_account_id: accountId },
+      })
+    );
+    const price = await this.stripeCall(() =>
+      this.stripe.prices.create({
+        product: product.id,
+        currency: 'usd',
+        unit_amount: input.unit_amount_cents,
+        // billing_period_enum values map 1:1 onto Stripe recurring intervals.
+        ...(input.billing_period === 'one_time'
+          ? {}
+          : { recurring: { interval: input.billing_period } }),
+      })
+    );
 
     const { data, error } = await supabaseAdmin
       .from('stripe_products')
@@ -240,7 +257,8 @@ export class PaymentService {
       throw new ServiceError('invoice_not_payable', `A ${invoice.status} invoice cannot be paid.`, 409);
     }
 
-    const session = await this.stripe.checkout.sessions.create({
+    const session = await this.stripeCall(() =>
+      this.stripe.checkout.sessions.create({
       mode: 'payment',
       line_items: [
         {
@@ -254,9 +272,10 @@ export class PaymentService {
       ],
       metadata: { invoice_id: invoice.id },
       payment_intent_data: { metadata: { invoice_id: invoice.id } },
-      success_url: `${origin}/#/invoice/${invoice.id}/return`,
-      cancel_url: `${origin}/#/invoice/${invoice.id}/return?canceled=1`,
-    });
+        success_url: `${origin}/#/invoice/${invoice.id}/return`,
+        cancel_url: `${origin}/#/invoice/${invoice.id}/return?canceled=1`,
+      })
+    );
     if (!session.url) throw new ServiceError('checkout_failed', 'Stripe returned no checkout URL.', 500);
 
     // Remember the session so the sync path can reconcile without a webhook.
@@ -280,7 +299,9 @@ export class PaymentService {
     const invoice = await this.getInvoice(professionalAccountId, invoiceId);
     if (invoice.status === 'paid' || !invoice.stripe_checkout_session_id) return invoice;
 
-    const session = await this.stripe.checkout.sessions.retrieve(invoice.stripe_checkout_session_id);
+    const session = await this.stripeCall(() =>
+      this.stripe.checkout.sessions.retrieve(invoice.stripe_checkout_session_id!)
+    );
     if (session.payment_status === 'paid') {
       await this.recordPayment(invoice.id, {
         paymentIntentId: typeof session.payment_intent === 'string' ? session.payment_intent : null,

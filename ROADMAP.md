@@ -149,8 +149,10 @@ Each week has two lists:
 
 ## Week 5 — Payments: Stripe Integration
 
+> **Scope decision (2026-07-14):** Phase 1 charges the founder's own Stripe account directly (platform charges). Full **Stripe Connect** — where each professional completes Stripe onboarding and gets their own connected account — is deferred to the Phase 3 marketplace; the `PaymentService` seam is built so it slots in without changing callers. Payment collection uses **Stripe Checkout** (hosted payment page): no card data ever touches our server, and the test card `4242 4242 4242 4242` works out of the box.
+
 ### 🤖 Claude Code Tasks
-- [ ] Set up Stripe Connect integration (test mode)
+- [ ] Set up Stripe integration (test mode)
 - [ ] Build `stripe_products` for per-visit billing first (simplest cadence)
 - [ ] Build invoice generation tied to `billing_cadence`
 - [ ] Build Stripe webhook handler with idempotency via `stripe_event_id`
@@ -161,6 +163,8 @@ Each week has two lists:
 ### 🧑 Founder Tasks
 - [ ] Create Stripe account, enable test mode, note API keys
 - [ ] Provide Stripe test keys to Claude Code via `.env` (not chat)
+- [ ] Create the webhook endpoint: Stripe Dashboard → Developers → Webhooks → Add endpoint → URL `https://petpro-app.onrender.com/api/webhooks/stripe`, event `checkout.session.completed` — then put the signing secret in Render as `STRIPE_WEBHOOK_SECRET`
+  - Until this is done the app still works: it confirms payments by asking Stripe directly on return from checkout (the "sync" fallback). The webhook makes it instant and demo-proof.
 - [ ] Run test script — generate an invoice, pay with a Stripe test card
 - [ ] Confirm the payment is recorded and shows in the event log
 - [ ] Confirm status: mark this week done, or note what broke
