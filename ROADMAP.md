@@ -152,17 +152,27 @@ Each week has two lists:
 > **Scope decision (2026-07-14):** Phase 1 charges the founder's own Stripe account directly (platform charges). Full **Stripe Connect** — where each professional completes Stripe onboarding and gets their own connected account — is deferred to the Phase 3 marketplace; the `PaymentService` seam is built so it slots in without changing callers. Payment collection uses **Stripe Checkout** (hosted payment page): no card data ever touches our server, and the test card `4242 4242 4242 4242` works out of the box.
 
 ### 🤖 Claude Code Tasks
-- [ ] Set up Stripe integration (test mode)
-- [ ] Build `stripe_products` for per-visit billing first (simplest cadence)
-- [ ] Build invoice generation tied to `billing_cadence`
-- [ ] Build Stripe webhook handler with idempotency via `stripe_event_id`
-- [ ] Fire `payment_received` event on successful payment
-- [ ] Extend the Week 4 UI: invoice view + Stripe payment screen
-- [ ] Write manual test script (generate invoice → pay with test card → confirm event log)
+- [x] Set up Stripe integration (test mode)
+  - Built 2026-07-14 and deployed to Render. `PaymentService` + `/api/billable-items`, `/api/invoices` (+ `/checkout`, `/sync`, `/void`, `/transactions`), `/api/webhooks/stripe`, `/api/events`. Stripe API failures surface as readable errors, which is how the key problem below was diagnosed.
+- [x] Build `stripe_products` for per-visit billing first (simplest cadence)
+  - Billable items backed by real Stripe Products/Prices; invoice = item × quantity (e.g. 3 visits) or a custom amount. Migration 012 added `invoices.description` + `invoices.stripe_checkout_session_id` (deliberate additions, flagged per CLAUDE.md).
+- [x] Build invoice generation tied to `billing_cadence`
+  - Per-visit (`one_time`) fully wired now; `week`/`month` items create recurring Stripe prices, and Week 6's walk-completion → auto-invoice hook will drive cadence timing.
+- [x] Build Stripe webhook handler with idempotency via `stripe_event_id`
+  - Signature-verified raw-body handler. Idempotent two ways: `stripe_event_id` UNIQUE blocks replays, and a payment-intent check stops the webhook and the sync fallback double-recording the same payment.
+- [x] Fire `payment_received` event on successful payment
+  - Fires exactly once, on the not-paid → paid transition. `invoice_generated` also logged. `GET /api/events` exposes the log.
+- [x] Extend the Week 4 UI: invoice view + Stripe payment screen
+  - Billing section on client detail (invoice list, new-invoice form, void, "Collect payment" → Stripe-hosted Checkout) + payment confirmation screen on return. Verified in-browser 2026-07-14 (invoice create/void/event log locally; Stripe-dependent steps blocked by the key issue below).
+- [x] Write manual test script (generate invoice → pay with test card → confirm event log)
+  - `scripts/week5-test.ps1` — opens Checkout in your browser for the pay step, then verifies paid-exactly-once + event log.
+- [!] Verify the full payment loop live (blocked — see founder note below)
+  - 2026-07-14: `STRIPE_SECRET_KEY` on Render is malformed — it starts `ssk_test…` (stray "s" in front) and is several times longer than a real key (~107 chars), so Stripe rejects it: "Invalid API Key provided: ssk_test…". Re-paste it, then the loop can be verified.
 
 ### 🧑 Founder Tasks
-- [ ] Create Stripe account, enable test mode, note API keys
-- [ ] Provide Stripe test keys to Claude Code via `.env` (not chat)
+- [x] Create Stripe account, enable test mode, note API keys
+- [!] Provide Stripe test keys to Claude Code via `.env` (not chat)
+  - 2026-07-14: the key in **Render** is a bad paste — starts `ssk_test` and is far too long. Fix: Stripe Dashboard → Developers → API keys → reveal the **Secret key** (starts `sk_test_`, ~107 chars) → copy fresh → Render dashboard → Environment → replace `STRIPE_SECRET_KEY`. Also: the keys never landed in the repo's local `.env` (last modified Jul 13) — add them there too so local testing works; watch for the OneDrive stale-copy trap.
 - [ ] Create the webhook endpoint: Stripe Dashboard → Developers → Webhooks → Add endpoint → URL `https://petpro-app.onrender.com/api/webhooks/stripe`, event `checkout.session.completed` — then put the signing secret in Render as `STRIPE_WEBHOOK_SECRET`
   - Until this is done the app still works: it confirms payments by asking Stripe directly on return from checkout (the "sync" fallback). The webhook makes it instant and demo-proof.
 - [ ] Run test script — generate an invoice, pay with a Stripe test card
@@ -271,6 +281,7 @@ New professionals get a mini onboarding right after signup: prompts to add their
 
 - 2026-07-13: `files.zip` (the original scaffold from a prior session) is gone. Full scaffold rebuilt from `PHASE_1_SUMMARY.md` + `SPEC.md`. `PHASE_1_SUMMARY.md` still describes the old plan (custom JWT, S3, Heroku) — the code follows `CLAUDE.md`'s locked stack instead (Supabase Auth, Supabase Storage, Render).
 - 2026-07-13: `DATABASE_URL` received; migrations applied and full auth flow verified locally. Remaining Week 1 blocker: Render deploy (founder: create Render account, connect the GitHub repo, add the three Supabase env vars in Render's dashboard — `render.yaml` handles the rest).
+- 2026-07-14: Week 5 build complete and deployed. Live payment verification blocked by a malformed `STRIPE_SECRET_KEY` in Render (bad paste — see Week 5 founder note). This is the second pasted-key failure (Week 2's Supabase key was the first): after fixing a key in Render, the quickest sanity check is re-running the relevant week's test script.
 - 2026-07-13: Founder logged 4 feature requests (ratings, walk-report auto-text, photos on reports, calendar sync). Captured as Phase 2 Backlog P2-1…P2-4 above; two small seam tasks added to Weeks 6 and 7 so they bolt on later without rework. Open founder decision parked in P2-2: SMS provider (Twilio?) vs. email/in-app first, and the scan-in mechanism.
 
 ---
@@ -285,7 +296,7 @@ New professionals get a mini onboarding right after signup: prompts to add their
 | 2 — CRM | ✅ Done | ✅ Done |
 | 3 — Contracts (in-person) | ✅ Done | ✅ Done |
 | 4 — Contracts Hardening + UI | ✅ Done | ✅ Done |
-| 5 — Payments | Not started | Not started |
+| 5 — Payments | 🔄 Built + deployed; live verify blocked on key fix | ⚠️ Fix `STRIPE_SECRET_KEY` in Render (bad paste) |
 | 6 — Scheduling | Not started | Not started |
 | 7 — Messaging | Not started | Not started |
 | 8 — Owner Portal + Demo | Not started | Not started |
