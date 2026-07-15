@@ -84,6 +84,31 @@
     const n = parseFloat(String(text).replace(/[^0-9.]/g, ''));
     return Number.isFinite(n) && n > 0 ? Math.round(n * 100) : null;
   }
+  function fmtTime(iso) {
+    return new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  }
+  // ISO <-> the value format of <input type="datetime-local"> (local time)
+  function toLocalInput(iso) {
+    const d = new Date(iso);
+    d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+    return d.toISOString().slice(0, 16);
+  }
+  function fromLocalInput(value) {
+    return new Date(value).toISOString();
+  }
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  function startOfWeek(d) {
+    const date = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    return new Date(date.getTime() - ((date.getDay() + 6) % 7) * DAY_MS); // Monday
+  }
+  const SERVICE_TYPES = {
+    private_walk: 'Private walk', group_walk: 'Group walk', training_session: 'Training session',
+    grooming: 'Grooming', sitting: 'Sitting', boarding: 'Boarding', other: 'Other',
+  };
+  const CADENCES = {
+    per_visit: 'per visit', weekly: 'weekly', biweekly: 'every 2 weeks',
+    monthly: 'monthly', per_package: 'per package', one_time: 'one-time',
+  };
   const PAW = `<svg width="26" height="26" viewBox="0 0 44 44" aria-hidden="true"><circle cx="22" cy="22" r="22" fill="#1C4C64"/><g fill="#F7F2EB"><ellipse cx="15" cy="16" rx="3.4" ry="4.4" transform="rotate(-18 15 16)"/><ellipse cx="29" cy="16" rx="3.4" ry="4.4" transform="rotate(18 29 16)"/><ellipse cx="9.5" cy="23.5" rx="2.8" ry="3.6" transform="rotate(-38 9.5 23.5)"/><ellipse cx="34.5" cy="23.5" rx="2.8" ry="3.6" transform="rotate(38 34.5 23.5)"/><path d="M22 21c4.4 0 8.4 3.5 8.4 7.6 0 2.9-2.2 4.6-4.7 4.6-1.5 0-2.6-0.6-3.7-0.6s-2.2 0.6-3.7 0.6c-2.5 0-4.7-1.7-4.7-4.6C13.6 24.5 17.6 21 22 21z"/></g></svg>`;
   const PAW_LOGIN = PAW.replace('width="26" height="26"', 'width="44" height="44"').replace('#1C4C64', '#2B7192');
 
@@ -135,7 +160,7 @@
         <nav class="app-nav">
           ${tab('today', 'Today')}
           ${tab('clients', 'Clients')}
-          <a class="soon" title="Coming in week 6">Schedule<small>week 6</small></a>
+          ${tab('schedule', 'Schedule')}
           <a class="soon" title="Coming in week 7">Messages<small>week 7</small></a>
           <a href="#/login" onclick="window.petproLogout(); return false;">Log out</a>
         </nav>
@@ -357,13 +382,14 @@
   // ------------------------------------------------------ client detail ----
   async function renderClient(clientId, opts = {}) {
     appEl.innerHTML = header('clients') + `<div class="page loading">Loading client…</div>`;
-    let client, contracts, invoices, billItems;
+    let client, contracts, invoices, billItems, services;
     try {
-      [client, contracts, invoices, billItems] = await Promise.all([
+      [client, contracts, invoices, billItems, services] = await Promise.all([
         api('GET', `/api/clients/${clientId}`),
         api('GET', `/api/contracts?client_id=${clientId}`),
         api('GET', `/api/invoices?client_id=${clientId}`),
         api('GET', '/api/billable-items'),
+        api('GET', `/api/services?client_id=${clientId}`),
       ]);
     } catch (err) {
       toast(err.message);
@@ -407,6 +433,27 @@
             <button class="btn btn-ghost" data-nav="#/client/${client.id}/new-contract?replace=${k.id}">Edit terms</button>
             <button class="btn btn-quiet" data-nav="#/contract/${k.id}/sign">Sign now</button>` : `
             <button class="btn btn-ghost" data-view-contract="${k.id}">View</button>`}
+        </div>
+      </div>`);
+
+    const servicePill = {
+      active: '<span class="pill pill-sage">active</span>',
+      draft: '<span class="pill pill-draft">draft</span>',
+      paused: '<span class="pill pill-draft">paused</span>',
+      ended: '<span class="pill pill-alert">ended</span>',
+    };
+    const serviceRows = services.map((s) => `
+      <div class="card contract-row">
+        <div class="what">
+          <div class="title">${esc(s.name)}</div>
+          <div class="meta">${esc(SERVICE_TYPES[s.service_type] ?? s.service_type)} · ${esc(fmtMoney(s.price_cents))} ${esc(CADENCES[s.billing_cadence] ?? s.billing_cadence)}${s.duration_minutes ? ` · ${esc(s.duration_minutes)} min` : ''}</div>
+        </div>
+        ${servicePill[s.status] ?? ''}
+        <div class="row-actions">
+          ${s.status === 'active'
+            ? `<button class="btn btn-ghost" data-end-service="${s.id}">End</button>
+               <button class="btn btn-quiet" data-nav="#/appointment-new?client=${client.id}&service=${s.id}">Schedule</button>`
+            : ''}
         </div>
       </div>`);
 
@@ -473,6 +520,34 @@
           </div></form>
         </div>
 
+        <div class="eyebrow">Services</div>
+        <div class="stack">${serviceRows.join('') || '<div class="card empty">No services yet — set up what this client is buying below (e.g. "Private walk — $30 per visit").</div>'}</div>
+
+        <div class="card fieldset" style="margin-top:12px">
+          <strong style="font-size:14px">Add a service</strong>
+          <form id="svc-form"><div class="form-grid">
+            <div><label for="s-name">Name</label><input id="s-name" required placeholder="e.g. Private walk (30 min)" /></div>
+            <div><label for="s-type">Type</label>
+              <select id="s-type">${Object.entries(SERVICE_TYPES).map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></div>
+            <div><label for="s-price">Price</label><input id="s-price" required class="money" placeholder="$30.00" /></div>
+            <div><label for="s-cadence">Billed</label>
+              <select id="s-cadence">
+                <option value="per_visit">Per visit — invoice auto-created after each walk</option>
+                <option value="weekly">Weekly</option>
+                <option value="biweekly">Every 2 weeks</option>
+                <option value="monthly">Monthly</option>
+                <option value="per_package">Per package</option>
+                <option value="one_time">One-time</option>
+              </select></div>
+            <div><label for="s-duration">Duration <span class="hint">minutes</span></label>
+              <input id="s-duration" type="number" min="5" max="1440" value="30" class="num" /></div>
+          </div>
+          <div class="form-foot" style="margin-top:0">
+            <div class="spacer"></div>
+            <button class="btn btn-quiet" type="submit">Add service</button>
+          </div></form>
+        </div>
+
         <div class="eyebrow">Contracts</div>
         <div class="stack">${contractRows.join('') || '<div class="card empty">No contracts yet — generate the first one with the button above.</div>'}</div>
 
@@ -524,6 +599,42 @@
         }
       });
     };
+    // --------------------------------------------------------- services --
+    document.getElementById('svc-form').onsubmit = async (e) => {
+      e.preventDefault();
+      const btn = e.target.querySelector('button[type=submit]');
+      await withBusy(btn, async () => {
+        try {
+          const price = parseMoney(document.getElementById('s-price').value);
+          if (!price) { toast('Enter a price, e.g. $30.00'); return; }
+          await api('POST', '/api/services', {
+            client_id: clientId,
+            name: document.getElementById('s-name').value.trim(),
+            service_type: document.getElementById('s-type').value,
+            price_cents: price,
+            billing_cadence: document.getElementById('s-cadence').value,
+            duration_minutes: Number(document.getElementById('s-duration').value) || null,
+          });
+          toast('Service added.', 'ok');
+          renderClient(clientId);
+        } catch (err) {
+          toast(err.message);
+        }
+      });
+    };
+    document.querySelectorAll('[data-end-service]').forEach((btn) => {
+      btn.onclick = () =>
+        withBusy(btn, async () => {
+          try {
+            await api('PATCH', `/api/services/${btn.dataset.endService}`, { status: 'ended' });
+            toast('Service ended — its history stays on record.', 'ok');
+            renderClient(clientId);
+          } catch (err) {
+            toast(err.message);
+          }
+        });
+    });
+
     // ---------------------------------------------------------- billing --
     // "Bill for" select: a saved item shows quantity; a custom amount shows
     // description + amount + the save-as-item checkbox.
@@ -900,6 +1011,329 @@
     });
   }
 
+  // ----------------------------------------------------------- schedule ----
+  async function renderSchedule(weekOffset = 0) {
+    appEl.innerHTML = header('schedule') + `<div class="page loading">Loading schedule…</div>`;
+    const weekStart = new Date(startOfWeek(new Date()).getTime() + weekOffset * 7 * DAY_MS);
+    const weekEnd = new Date(weekStart.getTime() + 7 * DAY_MS);
+    let appts;
+    try {
+      appts = await api('GET', `/api/appointments?from=${weekStart.toISOString()}&to=${weekEnd.toISOString()}`);
+    } catch (err) {
+      toast(err.message);
+      appEl.innerHTML = header('schedule') + `<div class="page"><div class="empty">Couldn't load the schedule. <a class="backlink" href="#/schedule">Retry</a></div></div>`;
+      return;
+    }
+
+    const apptPill = {
+      scheduled: '<span class="pill pill-draft">scheduled</span>',
+      completed: '<span class="pill pill-sage">completed</span>',
+      cancelled: '<span class="pill pill-alert">cancelled</span>',
+      no_show: '<span class="pill pill-alert">no-show</span>',
+    };
+    const todayKey = new Date().toDateString();
+
+    const daySections = Array.from({ length: 7 }, (_, i) => {
+      const day = new Date(weekStart.getTime() + i * DAY_MS);
+      const dayAppts = appts.filter((a) => new Date(a.starts_at).toDateString() === day.toDateString());
+      const isToday = day.toDateString() === todayKey;
+      const rows = dayAppts.map((a) => {
+        const inSeries = a.recurrence_rule || a.recurrence_parent_id;
+        const done = a.status === 'completed';
+        return `
+        <div class="card appt-row${a.status === 'cancelled' ? ' appt-cancelled' : ''}">
+          <div class="appt-main">
+            <div class="appt-time num">${esc(fmtTime(a.starts_at))}–${esc(fmtTime(a.ends_at))}</div>
+            <div class="what">
+              <div class="title">${esc(a.clients?.full_name ?? 'Client')} — ${esc(a.services?.name ?? 'Service')}</div>
+              <div class="meta">${inSeries ? '↻ weekly · ' : ''}${esc(a.services ? fmtMoney(a.services.price_cents) : '')}${a.services ? ` ${esc(CADENCES[a.services.billing_cadence] ?? '')}` : ''}${a.notes ? ` · ${esc(a.notes)}` : ''}${done && a.completion_notes ? ` · “${esc(a.completion_notes)}”` : ''}${done ? `${a.good_dog ? ' · good dog 🐶' : ''}${a.got_a_treat ? ' · got a treat 🦴' : ''}` : ''}</div>
+            </div>
+            ${apptPill[a.status] ?? ''}
+            <div class="row-actions">
+              ${a.status === 'scheduled' ? `
+                <button class="btn btn-ghost" data-cancel-appt="${a.id}">Cancel</button>
+                ${inSeries ? `<button class="btn btn-ghost" data-cancel-series="${a.id}">End series</button>` : ''}
+                <button class="btn btn-quiet" data-complete-appt="${a.id}">Mark complete</button>` : ''}
+            </div>
+          </div>
+          ${a.status === 'scheduled' ? `
+          <form class="complete-form" id="cf-${a.id}" hidden>
+            <div class="form-grid">
+              <div><label for="cf-start-${a.id}">Actually started</label>
+                <input id="cf-start-${a.id}" type="datetime-local" value="${toLocalInput(a.starts_at)}" /></div>
+              <div><label for="cf-end-${a.id}">Actually ended</label>
+                <input id="cf-end-${a.id}" type="datetime-local" value="${toLocalInput(a.ends_at)}" /></div>
+              <div class="full"><label for="cf-notes-${a.id}">Walk notes <span class="hint">— goes in the walk report</span></label>
+                <input id="cf-notes-${a.id}" placeholder="e.g. Full loop around the park, lots of squirrel patrol" /></div>
+              <div class="full appt-flags">
+                <label class="flag"><input type="checkbox" id="cf-good-${a.id}" checked /> Were they a good dog? 🐶</label>
+                <label class="flag"><input type="checkbox" id="cf-treat-${a.id}" checked /> Did they get a treat? 🦴</label>
+              </div>
+            </div>
+            <div class="form-foot" style="margin-top:12px">
+              <button class="btn btn-ghost" type="button" data-close-complete="${a.id}">Back</button>
+              <div class="spacer"></div>
+              <button class="btn btn-primary" type="submit">Complete walk${a.services?.billing_cadence === 'per_visit' ? ` & invoice ${esc(fmtMoney(a.services.price_cents))}` : ''}</button>
+            </div>
+          </form>` : ''}
+        </div>`;
+      });
+      return `
+        <div class="day-head${isToday ? ' today' : ''}">
+          ${day.toLocaleDateString('en-US', { weekday: 'long' })}
+          <span class="day-date">${day.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+          ${isToday ? '<span class="pill pill-sage">today</span>' : ''}
+        </div>
+        ${rows.join('') || '<div class="day-empty">No walks</div>'}`;
+    });
+
+    const weekLabel = `${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${new Date(weekEnd.getTime() - DAY_MS).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+    appEl.innerHTML = header('schedule') + `
+      <div class="page">
+        <div class="detail-head">
+          <div class="who">
+            <h1 class="page-title">Schedule</h1>
+            <p class="page-sub">Week of ${esc(weekLabel)}</p>
+          </div>
+          <button class="btn btn-primary" data-nav="#/appointment-new">+ New appointment</button>
+        </div>
+        <div class="week-nav">
+          <button class="btn btn-quiet" data-nav="#/schedule?w=${weekOffset - 1}">‹ Previous</button>
+          <button class="btn btn-ghost" data-nav="#/schedule" ${weekOffset === 0 ? 'disabled' : ''}>This week</button>
+          <button class="btn btn-quiet" data-nav="#/schedule?w=${weekOffset + 1}">Next ›</button>
+        </div>
+        <div class="stack" style="margin-top:16px">${daySections.join('')}</div>
+      </div>`;
+
+    document.querySelectorAll('[data-complete-appt]').forEach((btn) => {
+      btn.onclick = () => {
+        const form = document.getElementById(`cf-${btn.dataset.completeAppt}`);
+        form.hidden = !form.hidden;
+        if (!form.hidden) form.querySelector('input').focus();
+      };
+    });
+    document.querySelectorAll('[data-close-complete]').forEach((btn) => {
+      btn.onclick = () => { document.getElementById(`cf-${btn.dataset.closeComplete}`).hidden = true; };
+    });
+    document.querySelectorAll('.complete-form').forEach((form) => {
+      const id = form.id.slice(3);
+      form.onsubmit = async (e) => {
+        e.preventDefault();
+        const btn = form.querySelector('button[type=submit]');
+        await withBusy(btn, async () => {
+          try {
+            const { invoice } = await api('POST', `/api/appointments/${id}/complete`, {
+              actual_start_at: fromLocalInput(document.getElementById(`cf-start-${id}`).value),
+              actual_end_at: fromLocalInput(document.getElementById(`cf-end-${id}`).value),
+              completion_notes: document.getElementById(`cf-notes-${id}`).value.trim() || null,
+              good_dog: document.getElementById(`cf-good-${id}`).checked,
+              got_a_treat: document.getElementById(`cf-treat-${id}`).checked,
+            });
+            toast(invoice
+              ? `Walk completed — ${fmtMoney(invoice.amount_cents)} invoice created automatically.`
+              : 'Walk completed.', 'ok');
+            renderSchedule(weekOffset);
+          } catch (err) {
+            toast(err.message);
+          }
+        });
+      };
+    });
+    document.querySelectorAll('[data-cancel-appt]').forEach((btn) => {
+      btn.onclick = () => {
+        if (!confirm('Cancel this walk?')) return;
+        withBusy(btn, async () => {
+          try {
+            await api('POST', `/api/appointments/${btn.dataset.cancelAppt}/cancel`, { scope: 'one' });
+            toast('Walk cancelled.', 'ok');
+            renderSchedule(weekOffset);
+          } catch (err) {
+            toast(err.message);
+          }
+        });
+      };
+    });
+    document.querySelectorAll('[data-cancel-series]').forEach((btn) => {
+      btn.onclick = () => {
+        if (!confirm('Cancel this walk AND all later walks in this weekly series?')) return;
+        withBusy(btn, async () => {
+          try {
+            const cancelled = await api('POST', `/api/appointments/${btn.dataset.cancelSeries}/cancel`, { scope: 'following' });
+            toast(`Series ended — ${cancelled.length} walk${cancelled.length === 1 ? '' : 's'} cancelled.`, 'ok');
+            renderSchedule(weekOffset);
+          } catch (err) {
+            toast(err.message);
+          }
+        });
+      };
+    });
+    wireNav();
+  }
+
+  // ---------------------------------------------------- new appointment ----
+  async function renderNewAppointment(params) {
+    appEl.innerHTML = header('schedule') + `<div class="page loading">Loading…</div>`;
+    let clients;
+    try {
+      clients = await api('GET', '/api/clients');
+    } catch (err) {
+      toast(err.message);
+      location.hash = '#/schedule';
+      return;
+    }
+    if (clients.length === 0) {
+      appEl.innerHTML = header('schedule') + `
+        <div class="page"><div class="card empty">Add a client first — appointments are booked for a client's service.
+        <div style="margin-top:12px"><button class="btn btn-primary" data-nav="#/client-new">+ New client</button></div></div></div>`;
+      wireNav();
+      return;
+    }
+
+    const preClient = params.get('client');
+    const preService = params.get('service');
+    // Default: next full hour, today.
+    const defStart = new Date();
+    defStart.setMinutes(0, 0, 0);
+    defStart.setHours(defStart.getHours() + 1);
+
+    appEl.innerHTML = header('schedule') + `
+      <div class="page">
+        <a class="backlink" href="#/schedule">‹ Schedule</a>
+        <h1 class="page-title" style="margin-top:8px">New appointment</h1>
+        <p class="page-sub">Times are checked against your existing schedule — double-booking is blocked.</p>
+
+        <form id="ap-form">
+        <div class="card fieldset" style="margin-top:18px">
+          <div class="form-grid">
+            <div><label for="ap-client">Client</label>
+              <select id="ap-client" required>
+                ${clients.map((c) => `<option value="${c.id}" ${c.id === preClient ? 'selected' : ''}>${esc(c.full_name)}</option>`).join('')}
+              </select></div>
+            <div><label for="ap-service">Service</label>
+              <select id="ap-service" required></select></div>
+          </div>
+          <div class="form-grid" id="ap-newsvc" hidden>
+            <div class="full preview-note" style="padding:8px 0 0 12px">New service for this client — saved when you book.</div>
+            <div><label for="ap-svc-name">Service name</label><input id="ap-svc-name" placeholder="e.g. Private walk (30 min)" /></div>
+            <div><label for="ap-svc-type">Type</label>
+              <select id="ap-svc-type">${Object.entries(SERVICE_TYPES).map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></div>
+            <div><label for="ap-svc-price">Price</label><input id="ap-svc-price" class="money" placeholder="$30.00" /></div>
+            <div><label for="ap-svc-cadence">Billed</label>
+              <select id="ap-svc-cadence">
+                <option value="per_visit">Per visit — invoice auto-created after each walk</option>
+                <option value="weekly">Weekly</option>
+                <option value="biweekly">Every 2 weeks</option>
+                <option value="monthly">Monthly</option>
+                <option value="per_package">Per package</option>
+                <option value="one_time">One-time</option>
+              </select></div>
+          </div>
+          <div class="form-grid">
+            <div><label for="ap-start">Date &amp; time</label>
+              <input id="ap-start" type="datetime-local" required value="${toLocalInput(defStart.toISOString())}" /></div>
+            <div><label for="ap-duration">Duration <span class="hint">minutes</span></label>
+              <input id="ap-duration" type="number" min="5" max="1440" value="30" class="num" /></div>
+            <div><label>Repeats</label>
+              <div class="seg" role="group" aria-label="Repeat" id="ap-repeat">
+                <button type="button" aria-pressed="true" data-value="1">One-time</button>
+                <button type="button" aria-pressed="false" data-value="weekly">Weekly</button>
+              </div></div>
+            <div id="ap-weeks-wrap" hidden><label for="ap-weeks">For how many weeks?</label>
+              <input id="ap-weeks" type="number" min="2" max="26" value="8" class="num" /></div>
+            <div class="full"><label for="ap-notes">Notes <span class="hint">optional</span></label>
+              <input id="ap-notes" placeholder="e.g. Use the side gate" /></div>
+          </div>
+        </div>
+        <div class="form-foot">
+          <button class="btn btn-ghost" type="button" data-nav="#/schedule">Cancel</button>
+          <div class="spacer"></div>
+          <button class="btn btn-primary" type="submit">Book appointment</button>
+        </div>
+        </form>
+      </div>`;
+
+    const clientSel = document.getElementById('ap-client');
+    const serviceSel = document.getElementById('ap-service');
+    const newSvcBlock = document.getElementById('ap-newsvc');
+    let clientServices = [];
+
+    async function loadServices() {
+      serviceSel.innerHTML = '<option value="">Loading…</option>';
+      try {
+        clientServices = await api('GET', `/api/services?client_id=${clientSel.value}&status=active`);
+      } catch (err) {
+        toast(err.message);
+        clientServices = [];
+      }
+      serviceSel.innerHTML =
+        clientServices.map((s) => `<option value="${s.id}" ${s.id === preService ? 'selected' : ''}>${esc(s.name)} — ${fmtMoney(s.price_cents)} ${esc(CADENCES[s.billing_cadence] ?? '')}</option>`).join('') +
+        '<option value="__new">＋ New service…</option>';
+      syncService();
+    }
+    function syncService() {
+      const isNew = serviceSel.value === '__new';
+      newSvcBlock.hidden = !isNew;
+      const svc = clientServices.find((s) => s.id === serviceSel.value);
+      if (svc?.duration_minutes) document.getElementById('ap-duration').value = svc.duration_minutes;
+    }
+    clientSel.onchange = loadServices;
+    serviceSel.onchange = syncService;
+    await loadServices();
+
+    const repeatSeg = document.getElementById('ap-repeat');
+    repeatSeg.querySelectorAll('button').forEach((b) => {
+      b.onclick = () => {
+        repeatSeg.querySelectorAll('button').forEach((o) => o.setAttribute('aria-pressed', 'false'));
+        b.setAttribute('aria-pressed', 'true');
+        document.getElementById('ap-weeks-wrap').hidden = b.dataset.value !== 'weekly';
+      };
+    });
+
+    document.getElementById('ap-form').onsubmit = async (e) => {
+      e.preventDefault();
+      const btn = e.target.querySelector('button[type=submit]');
+      await withBusy(btn, async () => {
+        try {
+          let serviceId = serviceSel.value;
+          if (serviceId === '__new') {
+            const name = document.getElementById('ap-svc-name').value.trim();
+            const price = parseMoney(document.getElementById('ap-svc-price').value);
+            if (!name) { toast('Name the new service, e.g. "Private walk (30 min)".'); return; }
+            if (!price) { toast('Enter a price for the new service, e.g. $30.00'); return; }
+            const svc = await api('POST', '/api/services', {
+              client_id: clientSel.value,
+              name,
+              service_type: document.getElementById('ap-svc-type').value,
+              price_cents: price,
+              billing_cadence: document.getElementById('ap-svc-cadence').value,
+              duration_minutes: Number(document.getElementById('ap-duration').value) || null,
+            });
+            serviceId = svc.id;
+          }
+          if (!serviceId) { toast('Pick a service, or create a new one.'); return; }
+
+          const startsAt = fromLocalInput(document.getElementById('ap-start').value);
+          const durationMin = Number(document.getElementById('ap-duration').value) || 30;
+          const weekly = repeatSeg.querySelector('button[aria-pressed="true"]').dataset.value === 'weekly';
+          const created = await api('POST', '/api/appointments', {
+            service_id: serviceId,
+            starts_at: startsAt,
+            ends_at: new Date(Date.parse(startsAt) + durationMin * 60 * 1000).toISOString(),
+            notes: document.getElementById('ap-notes').value.trim() || null,
+            repeat_weeks: weekly ? Number(document.getElementById('ap-weeks').value) || 8 : 1,
+          });
+          toast(created.length === 1
+            ? 'Appointment booked.'
+            : `Weekly series booked — ${created.length} walks scheduled.`, 'ok');
+          location.hash = '#/schedule';
+        } catch (err) {
+          toast(err.message);
+        }
+      });
+    };
+    wireNav();
+  }
+
   // ------------------------------------------------------------ routing ----
   function wireNav() {
     document.querySelectorAll('[data-nav]').forEach((el) => {
@@ -922,6 +1356,8 @@
     if (!token) { renderLogin(); return; }
 
     if (parts[0] === 'login') { renderLogin(); return; }
+    if (parts[0] === 'schedule') { renderSchedule(Number(params.get('w')) || 0); return; }
+    if (parts[0] === 'appointment-new') { renderNewAppointment(params); return; }
     if (parts[0] === 'client-new') { renderNewClient(); return; }
     if (parts[0] === 'client' && parts[1] && parts[2] === 'new-contract') {
       renderNewContract(parts[1], params.get('replace')); return;

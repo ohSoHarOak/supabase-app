@@ -1,6 +1,6 @@
 /**
  * PetPro Connect — source of truth for all data shapes.
- * These mirror the SQL schema in src/db/migrations/ (001–010).
+ * These mirror the SQL schema in src/db/migrations/ (001–013).
  * If a field isn't here, it isn't in the database — add it deliberately.
  */
 
@@ -200,6 +200,13 @@ export interface Appointment {
   recurrence_parent_id: string | null;
   notes: string | null;
   completed_at: string | null;
+  // Structured completion data (013) — the P2-2 walk-report seam. Captured on
+  // "mark complete" and mirrored into the walk_completed event payload.
+  actual_start_at: string | null;
+  actual_end_at: string | null;
+  completion_notes: string | null;
+  good_dog: boolean | null;
+  got_a_treat: boolean | null;
   created_at: string;
   updated_at: string;
 }

@@ -186,19 +186,29 @@ Each week has two lists:
 
 ## Week 6 — Scheduling
 
+> **Scope decision (2026-07-15):** auto-invoice on completion fires for **per-visit** services only (walk done → $X invoice, zero manual steps). Weekly/monthly/package cadences still create invoices manually via the Week 5 billing UI — when those should generate (end of week? first walk of the period?) is a founder call, parked below in the founder tasks. Conflict detection covers appointments; the `availability_blocks` table (vacation/personal time) exists in the schema but has no UI yet — a Phase 2 candidate.
+
 ### 🤖 Claude Code Tasks
-- [ ] Build `services` CRUD (the walk/training product a client is buying)
-- [ ] Build `appointments` CRUD with weekly recurrence
-- [ ] Build conflict detection (prevent double-booking a time slot)
-- [ ] Wire "mark appointment complete" → fires `walk_completed` event → triggers invoice
-- [ ] Capture structured completion data on "mark complete" — actual start/end time, walk notes, good-dog and got-a-treat flags — stored on the appointment and included in the `walk_completed` event payload (seam for the Phase 2 walk-report auto-message; see backlog item P2-2)
-- [ ] Extend the UI: calendar/list view of appointments, "mark complete" button
-- [ ] Write manual test script (schedule recurring walk → complete → confirm auto-invoice)
+- [x] Build `services` CRUD (the walk/training product a client is buying)
+  - `SchedulingService` + `/api/services`. Per-client, typed (`private_walk`…`boarding`), price + billing cadence + duration. New services default to `active`; no hard delete — "End" retires a service so its walk history keeps context. UI: Services section on client detail + inline "＋ New service…" right in the booking form.
+- [x] Build `appointments` CRUD with weekly recurrence
+  - `/api/appointments` — `repeat_weeks: N` books a weekly series as real rows (first occurrence carries `FREQ=WEEKLY;COUNT=N`, the rest point at it via `recurrence_parent_id`), so the calendar, conflicts, and completion all work on plain rows. Reschedule via PATCH; cancel supports scope `one` or `following` ("End series" in the UI).
+- [x] Build conflict detection (prevent double-booking a time slot)
+  - Every occurrence of a series is overlap-checked against the professional's scheduled appointments before anything is inserted — a clash 409s the whole request with a readable list ("Wed, Jul 22, 3:15 PM overlaps Dana Whitfield's 3:00 PM appointment"), so a recurring booking never half-lands.
+- [x] Wire "mark appointment complete" → fires `walk_completed` event → triggers invoice
+  - Per-visit services auto-invoice at the service price (linked via `invoices.service_id`, filled from migration-007's until-now-unused column). The scheduled→completed guard makes a double-tap complete (and bill) exactly once — verified by test step 7. Invoice lands in the client's Billing section with Week 5's "Collect payment" ready to go.
+- [x] Capture structured completion data on "mark complete" — actual start/end time, walk notes, good-dog and got-a-treat flags — stored on the appointment and included in the `walk_completed` event payload (seam for the Phase 2 walk-report auto-message; see backlog item P2-2)
+  - Migration 013 adds `actual_start_at/actual_end_at/completion_notes/good_dog/got_a_treat` (deliberate type additions per CLAUDE.md — this task is the sanction). The event payload also carries `next_appointment_starts_at` from the recurrence series, so P2-2's "see you next Tuesday" needs zero extra scheduling work.
+- [x] Extend the UI: calendar/list view of appointments, "mark complete" button
+  - Schedule tab: Monday–Sunday week view with prev/this/next navigation, today highlighted, ↻ weekly badges. "Mark complete" expands a walk-report form inline (times prefilled, notes, 🐶/🦴 checkboxes) — the button even shows the invoice amount for per-visit services. Completed walks display their report on the card.
+- [x] Write manual test script (schedule recurring walk → complete → confirm auto-invoice)
+  - `scripts/week6-test.ps1` — all 8 steps passed locally 2026-07-15 (service → 4-week series → conflict 409 → complete with report → auto-invoice → double-complete refused → walk_completed payload → series cancel). Full UI flow also driven in-browser same day. Run against Render with `-BaseUrl`.
 
 ### 🧑 Founder Tasks
 - [ ] Run test script — schedule a recurring weekly walk
 - [ ] Mark one instance complete, confirm an invoice generates automatically
 - [ ] Note anything about the scheduling logic that doesn't match how you'd actually run walks
+- [ ] Decide: for weekly/monthly-billed services, when should the invoice generate? (End of the billing week/month, or with the first completed walk of the period?) Per-visit auto-invoicing works today; this decision unlocks the other cadences.
 - [ ] Confirm status: mark this week done, or note what broke
 
 ---
@@ -307,6 +317,7 @@ When collecting payment in person, the payment should happen inside the app rath
 - 2026-07-14: Week 5 build complete and deployed. Live payment verification blocked by a malformed `STRIPE_SECRET_KEY` in Render (bad paste — see Week 5 founder note). This is the second pasted-key failure (Week 2's Supabase key was the first): after fixing a key in Render, the quickest sanity check is re-running the relevant week's test script.
 - 2026-07-14 (later session): Stripe key fixed in both Render and local `.env`; verified by a live probe, then the full payment loop passed all 8 steps of `week5-test.ps1` against Render (founder paid with the test card). Later that day the webhook was set up and verified end to end (after one misconfiguration — see the Week 5 founder note): a live test payment landed via the webhook itself, `stripe_event_id` recorded. Week 5 is functionally complete; only the founder's final "confirm status" checkbox remains.
 - 2026-07-14: Week 5 confirmed done by founder. Alongside it, 3 more feature requests logged (own payment processor, branded invoices, in-app tap-to-pay) — captured as P2-6…P2-8 — plus a pre-demo QA pass added to Week 8. ⚠️ P2-6 as stated ("own payment processor") conflicts with the `CLAUDE.md` hard constraint **Stripe only**; the recommended path (Stripe Connect) satisfies the request without breaking it — founder decision parked in P2-6.
+- 2026-07-15: Week 6 build complete — all 8 steps of `week6-test.ps1` green locally, full UI flow verified in-browser. Migration 013 applied to live Supabase. Two decisions parked: (1) invoice timing for weekly/monthly/package cadences (founder task above — per-visit auto-invoicing already works); (2) `availability_blocks` (vacation/personal time) has schema but no UI — conflict detection currently checks appointments only. Founder verification against Render still pending.
 - 2026-07-13: Founder logged 4 feature requests (ratings, walk-report auto-text, photos on reports, calendar sync). Captured as Phase 2 Backlog P2-1…P2-4 above; two small seam tasks added to Weeks 6 and 7 so they bolt on later without rework. Open founder decision parked in P2-2: SMS provider (Twilio?) vs. email/in-app first, and the scan-in mechanism.
 
 ---
@@ -322,6 +333,6 @@ When collecting payment in person, the payment should happen inside the app rath
 | 3 — Contracts (in-person) | ✅ Done | ✅ Done |
 | 4 — Contracts Hardening + UI | ✅ Done | ✅ Done |
 | 5 — Payments | ✅ Done (full loop verified live) | ✅ Done |
-| 6 — Scheduling | Not started | Not started |
+| 6 — Scheduling | ✅ Done (test script + UI verified locally) | Not started |
 | 7 — Messaging | Not started | Not started |
 | 8 — Owner Portal + Demo | Not started | Not started |

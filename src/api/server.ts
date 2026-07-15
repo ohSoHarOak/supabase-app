@@ -9,6 +9,7 @@ import {
   invoicesRouter,
   stripeWebhookRouter,
 } from './routes/billing';
+import { appointmentsRouter, servicesRouter } from './routes/scheduling';
 import { errorHandler } from './middleware/errorHandler';
 
 export function createServer(): express.Express {
@@ -36,6 +37,8 @@ export function createServer(): express.Express {
   app.use('/api/pets', petsRouter);
   app.use('/api/contract-templates', contractTemplatesRouter);
   app.use('/api/contracts', contractsRouter);
+  app.use('/api/services', servicesRouter);
+  app.use('/api/appointments', appointmentsRouter);
   app.use('/api/billable-items', billableItemsRouter);
   app.use('/api/invoices', invoicesRouter);
   app.use('/api/events', eventsRouter);

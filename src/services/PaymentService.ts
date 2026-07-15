@@ -21,6 +21,8 @@ export interface CreateInvoiceInput {
   amount_cents?: number | null;
   description?: string | null;
   due_date?: string | null;
+  /** The service this invoice bills for (set by Week 6's auto-invoice). */
+  service_id?: string | null;
 }
 
 interface RecordPaymentInput {
@@ -161,6 +163,7 @@ export class PaymentService {
       .insert({
         professional_account_id: professionalAccountId,
         client_id: client.id,
+        service_id: input.service_id ?? null,
         amount_cents: amountCents,
         description,
         due_date: input.due_date ?? null,
