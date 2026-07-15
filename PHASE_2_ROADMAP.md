@@ -78,6 +78,20 @@ Phase 2 is organized into **workstreams** instead of fixed weeks, because scope 
 - [ ] Seam-integrity check (do this last, it's the marketplace insurance): no hardcoded `account_type` checks crept in, all significant actions still publish events, billing still treats products as "billable items attached to an account"
 - [ ] **QA checkpoint X:** run the full E2E flow as three personas — walker, groomer, boarder — each seeing only their world (service types, labels, templates)
 
+## Workstream S — Subscription Tiers: Just Me / Essential / Business
+
+*Added 2026-07-15 at founder direction: access to PetPro Connect becomes a paid signup with three account tiers. This is the use case the `CLAUDE.md` "generic billing" seam was explicitly built for — a professional's subscription is a billable item attached to their account, running through the same Stripe machinery as their clients' invoices, not a parallel system. Subscription revenue goes to the founder's Stripe account (unaffected by the P2-6 Stripe Connect question, which concerns client-payment payouts).*
+
+- [ ] Founder defines the **tier matrix** (see Decisions Queue — blocks everything below): which features belong to each tier, monthly price, annual option, free-trial policy. Working assumption to react against, based on the names: **Just Me** = solo professional, core workflow (clients, contracts, scheduling, invoicing); **Essential** = solo + the premium conveniences (auto walk reports, branded invoices, calendar sync, vaccination tracking); **Business** = everything + multi-staff
+- [ ] Model tiers in Stripe Billing: three Products with recurring Prices; new `subscriptions` type + tier field on the account (deliberate additions to `src/types/index.ts`, flagged per `CLAUDE.md`)
+- [ ] Signup flow: choose tier → Stripe Checkout in subscription mode → account activates on webhook confirmation (same signature-verification + idempotency pattern as Week 5). Trial-first vs. card-up-front is a founder call in the tier matrix
+- [ ] **Entitlement middleware**: one central "does this account's tier include this feature" check, same discipline as `account_type` — never scattered hardcoded tier checks in service code, so re-packaging tiers later is a config change, not a refactor
+- [ ] Subscription lifecycle handling: payment failed → grace period → **read-only lockout, never data deletion** (a walker's client records are their business — losing them over a failed card would be unforgivable); cancel and downgrade behavior defined per the tier matrix
+- [ ] Billing settings screen (extends the Profile tab): current plan, upgrade/downgrade with Stripe's proration, payment-method update + receipts via the Stripe customer portal (no card data ever on our server, as always)
+- [ ] ⚠️ **"Business" likely implies multi-staff** — employees under one business account is a real data-model expansion (who owns clients, whose schedule shows whose walks, per-seat pricing). If the founder confirms that's what Business means, it gets scoped as its own workstream item rather than smuggled in here
+- [ ] Grandfathering: founder's own account, demo accounts, and any pre-tier signups get flagged exempt so turning tiers on can't lock out existing users
+- [ ] **QA checkpoint S:** E2E with a test card — sign up on each tier → entitlements enforced correctly → simulate payment failure → grace → lockout → recovery → cancel; tier changes apply exactly once (idempotent webhooks). Entitlement enforcement also gets added to **Security review #2's** scope, since a tier check is an access-control boundary
+
 ## Workstream F — Feature Backlog Build-Out
 
 *The detailed specs live in `ROADMAP.md` → "Phase 2 Backlog" (P2-1…P2-11) — they are not duplicated here. This is the priority ordering, revised as the founder learns from real users.*
@@ -113,7 +127,8 @@ Phase 2 is organized into **workstreams** instead of fixed weeks, because scope 
 | 2 | Workstream M (mobile) | Highest-leverage gap for real walkers; everything after inherits it |
 | 3 | Workstream U (polish) + Tier 1 features interleaved | Demo feedback will be fresh; Tier 1 items are small enough to ride along |
 | 4 | Workstream X (professions) + Security review #2 | Opens the market; the second security review catches what expansion changed |
-| 5 | Tiers 2–3 by founder priority | Each needs decisions logged in the queue below |
+| 5 | Workstream S (subscription tiers) | Turn on paid signup once the product is polished and mobile-ready enough to be worth paying for — gating signups behind a paywall before then costs adoption. Founder can pull it earlier if revenue timing demands |
+| 6 | Tiers 2–3 by founder priority | Each needs decisions logged in the queue below |
 
 ## Founder Decisions Queue
 
@@ -124,6 +139,9 @@ Phase 2 is organized into **workstreams** instead of fixed weeks, because scope 
 - [ ] **PWA vs. native timing** (Workstreams M / F Tier 3): PWA-first is the plan; revisit when tap-to-pay or GPS tracking gets prioritized
 - [ ] **RLS as a second isolation net** (Security review #1): recommended once the owner portal is live — approve the migration work
 - [ ] **eSign timing**: when does Nitro Sign (Phase 1.5) actually start — before or after mobile?
+- [ ] **Tier matrix** (blocks Workstream S): which features land in Just Me vs. Essential vs. Business, monthly prices, annual discount yes/no, free trial vs. card-up-front
+- [ ] **What "Business" includes**: if it means multiple staff under one account, that's a data-model expansion to scope separately (seats, client ownership, per-staff schedules)
+- [ ] **When tiers switch on**: proposed as step 5 in sequencing (after polish + mobile) — pull earlier only if revenue timing demands it
 - [ ] **Which professions launch first** in Workstream X (affects which contract templates to source)
 - [ ] *(carried from Phase 1, still open)* Invoice timing for weekly/monthly-billed services
 
@@ -136,8 +154,10 @@ Phase 2 is organized into **workstreams** instead of fixed weeks, because scope 
 | M — Mobile-ready | Not started |
 | U — UI/UX polish | Not started |
 | X — Multi-profession | Not started |
+| S — Subscription tiers | Not started (blocked on tier-matrix decision) |
 | F — Feature backlog | Not started |
 
 ## Changelog
 
+- **2026-07-15 (later)** — **Workstream S added at founder direction: paid signup with three account tiers — Just Me, Essential, Business** — built on the generic-billing seam via Stripe Billing subscriptions, with central entitlement checks, never-delete-data lockout policy, and its own QA checkpoint. Three new items in the Founder Decisions Queue (tier matrix; whether Business means multi-staff; when tiers switch on) and a sequencing row (proposed step 5, after polish + mobile). Entitlement enforcement added to Security review #2's scope.
 - **2026-07-15** — Document created at founder direction: workstreams 0/Q/M/U/X/F defined; Phase 1 backlog P2-1…P2-11 tiered into Workstream F; security posture baselined (no RLS, no helmet/rate-limiting — scheduled into review #1); code baseline verified (typecheck clean, zero audit vulnerabilities, all work committed). Phase 1 Weeks 7–8 still run under `ROADMAP.md` first.
