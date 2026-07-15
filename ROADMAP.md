@@ -202,7 +202,7 @@ Each week has two lists:
 - [x] Extend the UI: calendar/list view of appointments, "mark complete" button
   - Schedule tab: Monday–Sunday week view with prev/this/next navigation, today highlighted, ↻ weekly badges. "Mark complete" expands a walk-report form inline (times prefilled, notes, 🐶/🦴 checkboxes) — the button even shows the invoice amount for per-visit services. Completed walks display their report on the card.
 - [x] Write manual test script (schedule recurring walk → complete → confirm auto-invoice)
-  - `scripts/week6-test.ps1` — all 8 steps passed locally 2026-07-15 (service → 4-week series → conflict 409 → complete with report → auto-invoice → double-complete refused → walk_completed payload → series cancel). Full UI flow also driven in-browser same day. Run against Render with `-BaseUrl`.
+  - `scripts/week6-test.ps1` — all 8 steps passed 2026-07-15, locally **and against the live Render deployment** (service → 4-week series → conflict 409 → complete with report → auto-invoice → double-complete refused → walk_completed payload → series cancel). Full UI flow also driven in-browser same day. Unlike Week 5, this script is fully automated — no payment step, so it makes a good smoke test any time.
 
 ### 🧑 Founder Tasks
 - [ ] Run test script — schedule a recurring weekly walk
@@ -317,7 +317,7 @@ When collecting payment in person, the payment should happen inside the app rath
 - 2026-07-14: Week 5 build complete and deployed. Live payment verification blocked by a malformed `STRIPE_SECRET_KEY` in Render (bad paste — see Week 5 founder note). This is the second pasted-key failure (Week 2's Supabase key was the first): after fixing a key in Render, the quickest sanity check is re-running the relevant week's test script.
 - 2026-07-14 (later session): Stripe key fixed in both Render and local `.env`; verified by a live probe, then the full payment loop passed all 8 steps of `week5-test.ps1` against Render (founder paid with the test card). Later that day the webhook was set up and verified end to end (after one misconfiguration — see the Week 5 founder note): a live test payment landed via the webhook itself, `stripe_event_id` recorded. Week 5 is functionally complete; only the founder's final "confirm status" checkbox remains.
 - 2026-07-14: Week 5 confirmed done by founder. Alongside it, 3 more feature requests logged (own payment processor, branded invoices, in-app tap-to-pay) — captured as P2-6…P2-8 — plus a pre-demo QA pass added to Week 8. ⚠️ P2-6 as stated ("own payment processor") conflicts with the `CLAUDE.md` hard constraint **Stripe only**; the recommended path (Stripe Connect) satisfies the request without breaking it — founder decision parked in P2-6.
-- 2026-07-15: Week 6 build complete — all 8 steps of `week6-test.ps1` green locally, full UI flow verified in-browser. Migration 013 applied to live Supabase. Two decisions parked: (1) invoice timing for weekly/monthly/package cadences (founder task above — per-visit auto-invoicing already works); (2) `availability_blocks` (vacation/personal time) has schema but no UI — conflict detection currently checks appointments only. Founder verification against Render still pending.
+- 2026-07-15: Week 6 build complete and deployed — all 8 steps of `week6-test.ps1` green locally AND against the live Render deployment; full UI flow verified in-browser. Migration 013 applied to live Supabase. Two decisions parked: (1) invoice timing for weekly/monthly/package cadences (founder task above — per-visit auto-invoicing already works); (2) `availability_blocks` (vacation/personal time) has schema but no UI — conflict detection currently checks appointments only. Founder walkthrough is the only thing left for Week 6.
 - 2026-07-13: Founder logged 4 feature requests (ratings, walk-report auto-text, photos on reports, calendar sync). Captured as Phase 2 Backlog P2-1…P2-4 above; two small seam tasks added to Weeks 6 and 7 so they bolt on later without rework. Open founder decision parked in P2-2: SMS provider (Twilio?) vs. email/in-app first, and the scan-in mechanism.
 
 ---
@@ -333,6 +333,6 @@ When collecting payment in person, the payment should happen inside the app rath
 | 3 — Contracts (in-person) | ✅ Done | ✅ Done |
 | 4 — Contracts Hardening + UI | ✅ Done | ✅ Done |
 | 5 — Payments | ✅ Done (full loop verified live) | ✅ Done |
-| 6 — Scheduling | ✅ Done (test script + UI verified locally) | Not started |
+| 6 — Scheduling | ✅ Done (verified live on Render) | Not started |
 | 7 — Messaging | Not started | Not started |
 | 8 — Owner Portal + Demo | Not started | Not started |
