@@ -212,11 +212,16 @@ Each week has two lists:
 - [x] Boarding is **not exclusive time** (founder decision 2026-07-15): boarders don't block walks mid-stay, and multiple boarding clients can overlap freely (per day/week/month). Boarding stays are exempt from conflict detection in both directions — they're never blocked, and they never block anything. Walk-vs-walk double-booking is still refused. Covered by `npm test` step 8.
 
 ### 🧑 Founder Tasks
-- [ ] Run test script — schedule a recurring weekly walk
-- [ ] Mark one instance complete, confirm an invoice generates automatically
-- [ ] Note anything about the scheduling logic that doesn't match how you'd actually run walks
-- [ ] Decide: for weekly/monthly-billed services, when should the invoice generate? (End of the billing week/month, or with the first completed walk of the period?) Per-visit auto-invoicing works today; this decision unlocks the other cadences.
-- [ ] Confirm status: mark this week done, or note what broke
+- [x] Run test script — schedule a recurring weekly walk
+  - Covered 2026-07-15: `week6-test.ps1` and `npm test` both ran green against the live Render deployment (recurring series booked, conflicts blocked, series cancel).
+- [x] Mark one instance complete, confirm an invoice generates automatically
+  - Verified live: per-visit walk → $30 invoice, per-day boarding → price × days, each exactly once.
+- [x] Note anything about the scheduling logic that doesn't match how you'd actually run walks
+  - 2026-07-15: founder review produced 4 changes, all built and deployed same day — type-dependent billing options (incl. per-day), profile-mapped service types, "# of sessions" field, and boarding made non-exclusive (boarders can walk dogs mid-stay and take multiple concurrent boarders).
+- [d] Decide: for weekly/monthly-billed services, when should the invoice generate? (End of the billing week/month, or with the first completed walk of the period?) Per-visit auto-invoicing works today; this decision unlocks the other cadences.
+  - Deferred 2026-07-15 at week close: per-visit and per-day auto-invoicing cover the demo scenarios, and weekly/monthly services can invoice manually via the Week 5 billing UI meanwhile. Doesn't block Week 7 — decide whenever; the completion hook is already in place.
+- [x] Confirm status: mark this week done, or note what broke
+  - Closed 2026-07-15 at founder direction. Week 6 done.
 
 ---
 
@@ -336,6 +341,7 @@ When collecting payment in person, the payment should happen inside the app rath
 
 *Use this space for anything that doesn't fit neatly into a single week's checklist — a decision that needs revisiting, a recurring issue, a scope question.*
 
+- 2026-07-15 (end of day): **Week 6 closed by founder.** All build tasks and founder review done; the only carry-over is the `[d]` invoice-timing decision for weekly/monthly cadences (non-blocking — the completion hook exists, per-visit/per-day already auto-invoice). Next session starts Week 7 — Messaging + Notifications: the founder's first task there is creating a Resend or SendGrid account and putting the API key in `.env`/Render, so that can happen in parallel before the build session.
 - 2026-07-13: `files.zip` (the original scaffold from a prior session) is gone. Full scaffold rebuilt from `PHASE_1_SUMMARY.md` + `SPEC.md`. `PHASE_1_SUMMARY.md` still describes the old plan (custom JWT, S3, Heroku) — the code follows `CLAUDE.md`'s locked stack instead (Supabase Auth, Supabase Storage, Render).
 - 2026-07-13: `DATABASE_URL` received; migrations applied and full auth flow verified locally. Remaining Week 1 blocker: Render deploy (founder: create Render account, connect the GitHub repo, add the three Supabase env vars in Render's dashboard — `render.yaml` handles the rest).
 - 2026-07-14: Week 5 build complete and deployed. Live payment verification blocked by a malformed `STRIPE_SECRET_KEY` in Render (bad paste — see Week 5 founder note). This is the second pasted-key failure (Week 2's Supabase key was the first): after fixing a key in Render, the quickest sanity check is re-running the relevant week's test script.
@@ -359,6 +365,6 @@ When collecting payment in person, the payment should happen inside the app rath
 | 3 — Contracts (in-person) | ✅ Done | ✅ Done |
 | 4 — Contracts Hardening + UI | ✅ Done | ✅ Done |
 | 5 — Payments | ✅ Done (full loop verified live) | ✅ Done |
-| 6 — Scheduling | ✅ Done (verified live on Render) | Not started |
+| 6 — Scheduling | ✅ Done (verified live on Render) | ✅ Done |
 | 7 — Messaging | Not started | Not started |
 | 8 — Owner Portal + Demo | Not started | Not started |
