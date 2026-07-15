@@ -184,13 +184,19 @@ export class SchedulingService {
       ends_at: new Date(startMs + i * WEEK_MS + durationMs).toISOString(),
     }));
 
-    const conflicts = await this.findConflicts(professionalAccountId, occurrences);
-    if (conflicts.length > 0) {
-      throw new ServiceError(
-        'appointment_conflict',
-        `This would double-book: ${conflicts.join('; ')}. Pick a different time.`,
-        409
-      );
+    // Boarding is not exclusive time (founder decision 2026-07-15): a boarder
+    // doesn't stop the professional from walking other dogs, and multiple
+    // dogs can board at once — so boarding stays neither get conflict-checked
+    // nor block other bookings (see findConflicts).
+    if (service.service_type !== 'boarding') {
+      const conflicts = await this.findConflicts(professionalAccountId, occurrences);
+      if (conflicts.length > 0) {
+        throw new ServiceError(
+          'appointment_conflict',
+          `This would double-book: ${conflicts.join('; ')}. Pick a different time.`,
+          409
+        );
+      }
     }
 
     // First occurrence is the series parent and carries the recurrence rule.
@@ -251,7 +257,8 @@ export class SchedulingService {
     return created;
   }
 
-  /** Overlap check against this professional's scheduled appointments. */
+  /** Overlap check against this professional's scheduled appointments.
+   *  Boarding stays are excluded — they don't occupy the calendar. */
   private async findConflicts(
     professionalAccountId: string,
     occurrences: { starts_at: string; ends_at: string }[]
@@ -261,9 +268,10 @@ export class SchedulingService {
 
     const { data, error } = await supabaseAdmin
       .from('appointments')
-      .select('starts_at, ends_at, clients(full_name)')
+      .select('starts_at, ends_at, clients(full_name), services!inner(service_type)')
       .eq('professional_account_id', professionalAccountId)
       .eq('status', 'scheduled')
+      .neq('services.service_type', 'boarding')
       .lt('starts_at', windowEnd)
       .gt('ends_at', windowStart);
     if (error) throw new ServiceError('conflict_check_failed', error.message, 500);
@@ -349,13 +357,16 @@ export class SchedulingService {
       if (Date.parse(ends_at) <= Date.parse(starts_at)) {
         throw new ServiceError('invalid_time', 'ends_at must be after starts_at.', 422);
       }
-      const conflicts = (await this.findConflictsExcluding(professionalAccountId, appointmentId, starts_at, ends_at));
-      if (conflicts.length > 0) {
-        throw new ServiceError(
-          'appointment_conflict',
-          `This would double-book: ${conflicts.join('; ')}. Pick a different time.`,
-          409
-        );
+      // Boarding stays aren't exclusive time — no conflict check on reschedule.
+      if (current.services?.service_type !== 'boarding') {
+        const conflicts = await this.findConflictsExcluding(professionalAccountId, appointmentId, starts_at, ends_at);
+        if (conflicts.length > 0) {
+          throw new ServiceError(
+            'appointment_conflict',
+            `This would double-book: ${conflicts.join('; ')}. Pick a different time.`,
+            409
+          );
+        }
       }
       input = { ...input, starts_at, ends_at };
     }
@@ -378,9 +389,10 @@ export class SchedulingService {
   ): Promise<string[]> {
     const { data, error } = await supabaseAdmin
       .from('appointments')
-      .select('starts_at, ends_at, clients(full_name)')
+      .select('starts_at, ends_at, clients(full_name), services!inner(service_type)')
       .eq('professional_account_id', professionalAccountId)
       .eq('status', 'scheduled')
+      .neq('services.service_type', 'boarding')
       .neq('id', appointmentId)
       .lt('starts_at', ends_at)
       .gt('ends_at', starts_at);

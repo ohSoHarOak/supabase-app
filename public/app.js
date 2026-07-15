@@ -1249,7 +1249,7 @@
       <div class="page">
         <a class="backlink" href="#/schedule">‹ Schedule</a>
         <h1 class="page-title" style="margin-top:8px">New appointment</h1>
-        <p class="page-sub">Times are checked against your existing schedule — double-booking is blocked.</p>
+        <p class="page-sub">Times are checked against your existing schedule — double-booking is blocked. Boarding is the exception: boarders don't block walks or other boarders.</p>
 
         <form id="ap-form">
         <div class="card fieldset" style="margin-top:18px">

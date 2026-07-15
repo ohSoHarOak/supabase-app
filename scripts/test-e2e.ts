@@ -294,6 +294,31 @@ async function main(): Promise<void> {
         ends_at: new Date(stayStart.getTime() + 44 * 3600 * 1000).toISOString(),
       }, '8. Boarding stay')
     ).data;
+
+    // Boarding is not exclusive time: a second boarder can overlap the stay,
+    // and a walk can be booked mid-stay. Walk-vs-walk conflicts still 409.
+    await ok('POST', '/api/appointments', {
+      service_id: boarding.id,
+      starts_at: new Date(stayStart.getTime() + 3600 * 1000).toISOString(),
+      ends_at: new Date(stayStart.getTime() + 30 * 3600 * 1000).toISOString(),
+    }, '8. Second overlapping boarder');
+    const walkDuringStay = (
+      await ok('POST', '/api/appointments', {
+        service_id: service.id, // the per-visit walk service from step 5
+        starts_at: new Date(stayStart.getTime() + 14 * 3600 * 1000).toISOString(),
+      }, '8. Walk mid-stay')
+    ).data;
+    const walkClash = await api('POST', '/api/appointments', {
+      service_id: service.id,
+      starts_at: new Date(stayStart.getTime() + 14 * 3600 * 1000 + 10 * 60 * 1000).toISOString(),
+    });
+    assert(
+      walkClash.status === 409,
+      '8. Walk-vs-walk still guarded',
+      `Overlapping walks should still 409 even with boarding exempt; got ${walkClash.status}`
+    );
+    await ok('POST', `/api/appointments/${walkDuringStay[0].id}/cancel`, { scope: 'one' }, '8. Cleanup walk');
+
     const done = (await ok('POST', `/api/appointments/${stay[0].id}/complete`, {}, '8. Boarding complete')).data;
     assert(done.invoice, '8. Boarding complete', 'Completing a per_day stay returned no invoice');
     assert(
@@ -315,7 +340,7 @@ async function main(): Promise<void> {
       }, '8. Package service')
     ).data;
     assert(pkg.session_count === 10, '8. Package service', `session_count not stored, got ${pkg.session_count}`);
-    pass('8. Profile service mapping saved; per-day boarding billed 2 days = $100; session_count stored');
+    pass('8. Profile mapping saved; boarding non-exclusive (2nd boarder + mid-stay walk OK, walk-vs-walk still 409); per-day stay billed 2 days = $100; session_count stored');
   }
 
   console.log(`\n\x1b[32m${passed} steps passed — E2E TEST PASSED against ${baseUrl}\x1b[0m`);
