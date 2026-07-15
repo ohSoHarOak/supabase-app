@@ -173,8 +173,8 @@ Each week has two lists:
 - [x] Create Stripe account, enable test mode, note API keys
 - [x] Provide Stripe test keys to Claude Code via `.env` (not chat)
   - 2026-07-14 (later session): resolved and verified. Local `.env` now has both Stripe keys (correct `sk_test_`/`pk_test_` prefixes, 107 chars), and the Render key works — a live API probe created a Stripe product without error.
-- [ ] Create the webhook endpoint: Stripe Dashboard → Developers → Webhooks → Add endpoint → URL `https://petpro-app.onrender.com/api/webhooks/stripe`, event `checkout.session.completed` — then put the signing secret in Render as `STRIPE_WEBHOOK_SECRET`
-  - Until this is done the app still works: it confirms payments by asking Stripe directly on return from checkout (the "sync" fallback). The webhook makes it instant and demo-proof.
+- [x] Create the webhook endpoint: Stripe Dashboard → Developers → Webhooks → Add endpoint → URL `https://petpro-app.onrender.com/api/webhooks/stripe`, event `checkout.session.completed` — then put the signing secret in Render as `STRIPE_WEBHOOK_SECRET`
+  - 2026-07-14: done and verified. First attempt was subscribed to the wrong events (the dashboard's Accounts-v2 preset — `v2.core.account.*` — so payments never fired it and the sync fallback quietly covered). Founder recreated it with the `checkout.session.*` events + fresh secret in Render; a live test payment was then recorded by the webhook itself (confirmed by `stripe_event_id` on the transaction).
 - [x] Run test script — generate an invoice, pay with a Stripe test card
   - 2026-07-14: founder completed the Checkout payment during the live `week5-test.ps1` run — all 8 steps green.
 - [x] Confirm the payment is recorded and shows in the event log
@@ -284,7 +284,7 @@ New professionals get a mini onboarding right after signup: prompts to add their
 - 2026-07-13: `files.zip` (the original scaffold from a prior session) is gone. Full scaffold rebuilt from `PHASE_1_SUMMARY.md` + `SPEC.md`. `PHASE_1_SUMMARY.md` still describes the old plan (custom JWT, S3, Heroku) — the code follows `CLAUDE.md`'s locked stack instead (Supabase Auth, Supabase Storage, Render).
 - 2026-07-13: `DATABASE_URL` received; migrations applied and full auth flow verified locally. Remaining Week 1 blocker: Render deploy (founder: create Render account, connect the GitHub repo, add the three Supabase env vars in Render's dashboard — `render.yaml` handles the rest).
 - 2026-07-14: Week 5 build complete and deployed. Live payment verification blocked by a malformed `STRIPE_SECRET_KEY` in Render (bad paste — see Week 5 founder note). This is the second pasted-key failure (Week 2's Supabase key was the first): after fixing a key in Render, the quickest sanity check is re-running the relevant week's test script.
-- 2026-07-14 (later session): Stripe key fixed in both Render and local `.env`; verified by a live probe, then the full payment loop passed all 8 steps of `week5-test.ps1` against Render (founder paid with the test card). Payment was confirmed via the sync fallback — the Stripe webhook endpoint (+ `STRIPE_WEBHOOK_SECRET` in Render) is still the one open Week 5 item; recommended before the demo so payment confirmation is instant.
+- 2026-07-14 (later session): Stripe key fixed in both Render and local `.env`; verified by a live probe, then the full payment loop passed all 8 steps of `week5-test.ps1` against Render (founder paid with the test card). Later that day the webhook was set up and verified end to end (after one misconfiguration — see the Week 5 founder note): a live test payment landed via the webhook itself, `stripe_event_id` recorded. Week 5 is functionally complete; only the founder's final "confirm status" checkbox remains.
 - 2026-07-13: Founder logged 4 feature requests (ratings, walk-report auto-text, photos on reports, calendar sync). Captured as Phase 2 Backlog P2-1…P2-4 above; two small seam tasks added to Weeks 6 and 7 so they bolt on later without rework. Open founder decision parked in P2-2: SMS provider (Twilio?) vs. email/in-app first, and the scan-in mechanism.
 
 ---
@@ -299,7 +299,7 @@ New professionals get a mini onboarding right after signup: prompts to add their
 | 2 — CRM | ✅ Done | ✅ Done |
 | 3 — Contracts (in-person) | ✅ Done | ✅ Done |
 | 4 — Contracts Hardening + UI | ✅ Done | ✅ Done |
-| 5 — Payments | ✅ Done (full loop verified live) | 🔄 Remaining: webhook setup + final checkoff |
+| 5 — Payments | ✅ Done (full loop verified live) | 🔄 Webhook done ✅ — only the final "confirm status" checkbox left |
 | 6 — Scheduling | Not started | Not started |
 | 7 — Messaging | Not started | Not started |
 | 8 — Owner Portal + Demo | Not started | Not started |
