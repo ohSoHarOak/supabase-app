@@ -179,7 +179,8 @@ Each week has two lists:
   - 2026-07-14: founder completed the Checkout payment during the live `week5-test.ps1` run — all 8 steps green.
 - [x] Confirm the payment is recorded and shows in the event log
   - Verified by test steps 7–8: exactly one succeeded transaction, exactly one `payment_received` event.
-- [ ] Confirm status: mark this week done, or note what broke
+- [x] Confirm status: mark this week done, or note what broke
+  - Confirmed 2026-07-14. Week 5 done. Founder also logged 3 new feature requests (own payment processor, branded invoices, in-app tap-to-pay) — captured as P2-6…P2-8 below — plus a pre-demo QA pass, added to Week 8.
 
 ---
 
@@ -229,6 +230,7 @@ Each week has two lists:
 - [ ] Harden password requirements for security compliance (founder request 2026-07-13): raise minimum length to 12, require mixed character classes, reject common/breached passwords, matching validation in both the signup API and Supabase Auth settings — must land before the demo creates real accounts
 - [ ] Build minimal owner portal: magic-link login, view schedule, view/sign contract, view/pay invoice, message the professional
 - [ ] Write full integration test script covering the entire loop: signup → client → pet → contract → sign → schedule → complete walk → invoice → pay → notify
+- [ ] Full QA pass before the demo (founder request 2026-07-14): run every weekly test script (weeks 1–7) against production, click through every UI flow start to finish (light + dark, laptop-sized window), exercise error states (bad input, declined test card `4000 0000 0000 0002`, double-submits), and log anything broken as `[!]` items to fix before demo day
 - [ ] Fix bugs surfaced during founder + tester testing
 - [ ] Deploy final version to Render production tier
 - [ ] Prepare a short "known issues / what's next for Phase 2" note
@@ -244,7 +246,7 @@ Each week has two lists:
 
 ## Phase 2 Backlog — Captured, Not Scheduled
 
-*Founder feature requests logged 2026-07-13. These are out of scope for the 8-week Phase 1 build (the Week 8 demo doesn't depend on them), but Weeks 6–7 lay seams for them so nothing has to be rebuilt. Do not start these until Phase 1 is done and the founder pulls them in.*
+*Founder feature requests logged 2026-07-13 (P2-1…P2-5) and 2026-07-14 (P2-6…P2-8). These are out of scope for the 8-week Phase 1 build (the Week 8 demo doesn't depend on them), but earlier weeks lay seams for them so nothing has to be rebuilt. Do not start these until Phase 1 is done and the founder pulls them in.*
 
 ### P2-1: Walker ratings (1–5 dogs)
 Clients rate walkers on a 1–5 **dog** scale (not stars), 5 = best, 1 = needs improvement. Half-dog ratings (e.g. 4.5) are supported — store as a numeric with one decimal place, validated to 0.5 increments.
@@ -275,6 +277,25 @@ New professionals get a mini onboarding right after signup: prompts to add their
 - "Services offered" should reuse the Week 6 `services` catalog rather than a free-text list, so onboarding feeds scheduling directly.
 - If Week 8 demo prep has slack, a slim 2-screen version (name/photo/years + services) is a strong "wow" for the signup demo — decide then.
 
+### P2-6: Owner-selectable payment processor
+Professionals can set up their own payment processing instead of everything running through the founder's Stripe account (founder request 2026-07-14).
+- ⚠️ **This touches a hard constraint.** `CLAUDE.md` locks payments to **Stripe only**. The request splits into two very different asks:
+  1. **Each professional gets paid into their own account, still via Stripe** — that's **Stripe Connect**, already planned as the Phase 3 marketplace seam. The `PaymentService` was built so Connect slots in without changing callers. No constraint change needed. **Recommended path.**
+  2. **Support non-Stripe processors** (Square, PayPal, etc.) — a much bigger lift: a payment-provider adapter interface (like `IeSignProvider`), per-processor webhook/idempotency handling, and a deliberate amendment to the locked constraint in `CLAUDE.md`. Founder decision required before any build.
+- Do not start either until Phase 1 is done; when picked up, do Connect first and only revisit multi-processor if real users demand it.
+
+### P2-7: Branded invoices — logo + business name
+Owner can add their logo and business name so invoices look like *their* business (founder request 2026-07-14).
+- Business name already exists on `professional_profiles`; needs a logo upload (Supabase Storage, same pattern as signature images) and rendering on the invoice view + payment confirmation + (Week 7) payment emails.
+- Caveat: the Stripe **Checkout page** itself shows the *Stripe account's* branding — in Phase 1's platform-charge model that's the founder's account, the same for every professional. Per-professional branding on Checkout only becomes possible with Stripe Connect (P2-6). Our own invoice/receipt surfaces can be fully branded now.
+- Small enough to be a Week 8 slack candidate alongside P2-5 if demo prep goes fast — a branded invoice is a strong demo moment.
+
+### P2-8: In-person payment in the app — tap to pay
+When collecting payment in person, the payment should happen inside the app rather than a link the client deals with later; ideally tap-to-pay on the walker's phone (founder request 2026-07-14).
+- Stripe does support this — **Stripe Terminal / Tap to Pay on iPhone & Android** — but only through native mobile SDKs. Phase 1 is a web app, so true tap-to-pay is a mobile-app-sized feature (same bucket as P2-2's GPS tracking).
+- Web-feasible interim options for the in-person moment: (a) open the existing Stripe Checkout **embedded inside the app** and hand the phone to the client, or (b) show a **QR code** the client scans to pay on their own phone immediately. Either is a modest extension of the Week 5 checkout flow.
+- Founder decisions when picked up: interim option (a)/(b) now vs. waiting for a native app, and whether a card-present reader (Stripe's hardware) is worth it before phones-only tap-to-pay.
+
 ---
 
 ## Running Notes / Blockers Log
@@ -285,6 +306,7 @@ New professionals get a mini onboarding right after signup: prompts to add their
 - 2026-07-13: `DATABASE_URL` received; migrations applied and full auth flow verified locally. Remaining Week 1 blocker: Render deploy (founder: create Render account, connect the GitHub repo, add the three Supabase env vars in Render's dashboard — `render.yaml` handles the rest).
 - 2026-07-14: Week 5 build complete and deployed. Live payment verification blocked by a malformed `STRIPE_SECRET_KEY` in Render (bad paste — see Week 5 founder note). This is the second pasted-key failure (Week 2's Supabase key was the first): after fixing a key in Render, the quickest sanity check is re-running the relevant week's test script.
 - 2026-07-14 (later session): Stripe key fixed in both Render and local `.env`; verified by a live probe, then the full payment loop passed all 8 steps of `week5-test.ps1` against Render (founder paid with the test card). Later that day the webhook was set up and verified end to end (after one misconfiguration — see the Week 5 founder note): a live test payment landed via the webhook itself, `stripe_event_id` recorded. Week 5 is functionally complete; only the founder's final "confirm status" checkbox remains.
+- 2026-07-14: Week 5 confirmed done by founder. Alongside it, 3 more feature requests logged (own payment processor, branded invoices, in-app tap-to-pay) — captured as P2-6…P2-8 — plus a pre-demo QA pass added to Week 8. ⚠️ P2-6 as stated ("own payment processor") conflicts with the `CLAUDE.md` hard constraint **Stripe only**; the recommended path (Stripe Connect) satisfies the request without breaking it — founder decision parked in P2-6.
 - 2026-07-13: Founder logged 4 feature requests (ratings, walk-report auto-text, photos on reports, calendar sync). Captured as Phase 2 Backlog P2-1…P2-4 above; two small seam tasks added to Weeks 6 and 7 so they bolt on later without rework. Open founder decision parked in P2-2: SMS provider (Twilio?) vs. email/in-app first, and the scan-in mechanism.
 
 ---
@@ -299,7 +321,7 @@ New professionals get a mini onboarding right after signup: prompts to add their
 | 2 — CRM | ✅ Done | ✅ Done |
 | 3 — Contracts (in-person) | ✅ Done | ✅ Done |
 | 4 — Contracts Hardening + UI | ✅ Done | ✅ Done |
-| 5 — Payments | ✅ Done (full loop verified live) | 🔄 Webhook done ✅ — only the final "confirm status" checkbox left |
+| 5 — Payments | ✅ Done (full loop verified live) | ✅ Done |
 | 6 — Scheduling | Not started | Not started |
 | 7 — Messaging | Not started | Not started |
 | 8 — Owner Portal + Demo | Not started | Not started |
