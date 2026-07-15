@@ -204,6 +204,13 @@ Each week has two lists:
 - [x] Write manual test script (schedule recurring walk → complete → confirm auto-invoice)
   - `scripts/week6-test.ps1` — all 8 steps passed 2026-07-15, locally **and against the live Render deployment** (service → 4-week series → conflict 409 → complete with report → auto-invoice → double-complete refused → walk_completed payload → series cancel). Full UI flow also driven in-browser same day. Unlike Week 5, this script is fully automated — no payment step, so it makes a good smoke test any time.
 
+### 🤖 Founder-requested updates (logged & built 2026-07-15, after the Week 6 build)
+- [x] "Billed" options depend on the service Type — e.g. Boarding offers **per day** / one-time / per package (new `per_day` cadence, migration 014). Per-day services auto-invoice on completion at **price × days of the stay** (a 44-hour boarding = 2 days), same zero-manual-steps flow as per-visit.
+- [x] Service Types filter by the professional's profile — new **Profile** tab (top nav) with "Services you offer" checkboxes; a dog walker who checks only walks never sees Grooming/Boarding when adding a service. Unset = all types shown, so existing accounts are unaffected. (`professional_profiles.offered_service_types`, `PATCH /api/auth/profile` — the profile mapping this needed. P2-5's onboarding wizard should set this during signup.)
+- [x] "# of sessions" field next to Price on both add-service forms — stored on the service (`services.session_count`), shown in the service list (e.g. "Training package · $500.00 per package · 10 sessions"). Phase 2 can count completed sessions against it for package tracking.
+- All three verified 2026-07-15: `npm test` step 8 covers them end-to-end (green locally + Render), and the UI flows were driven in-browser.
+- ⚠️ Heads-up for founder testing: a multi-day boarding stay currently **blocks all other bookings** during it (conflict detection treats every appointment as exclusive time). If boarders should still allow walks for other clients, say so — the conflict rule would then need a per-type exception.
+
 ### 🧑 Founder Tasks
 - [ ] Run test script — schedule a recurring weekly walk
 - [ ] Mark one instance complete, confirm an invoice generates automatically
@@ -309,6 +316,22 @@ When collecting payment in person, the payment should happen inside the app rath
 
 ---
 
+## Test Scripts — Quick Reference
+
+*Every test runs from the command line at the repo root. Add `-BaseUrl "https://petpro-app.onrender.com"` (PowerShell scripts) or `-- --base-url https://petpro-app.onrender.com` (npm test) to run against production instead of localhost.*
+
+| Command | What it proves | Human steps? |
+|---|---|---|
+| `npm test` | **The everything check** — weeks 1–6 in one command: auth, CRM + search, contract sign + immutability, billing + void, scheduling (recurrence, conflicts, complete → auto-invoice, per-day boarding, profile service mapping), event log. Run this before/after any deploy. | None — fully automated |
+| `.\scripts\week1-test.ps1` | Signup → login → authenticated session | None |
+| `.\scripts\week2-test.ps1` | Clients + pets CRUD, search across both | None |
+| `.\scripts\week3-test.ps1` | Contract generate → sign → immutability lock | None |
+| `.\scripts\week4-test.ps1` | UI is served + API smoke test | None |
+| `.\scripts\week5-test.ps1` | Full Stripe payment loop, paid exactly once | **Yes** — pays with test card `4242…` in the browser |
+| `.\scripts\week6-test.ps1` | Scheduling loop: service → recurring series → conflict 409 → complete → auto-invoice → series cancel | None |
+
+---
+
 ## Running Notes / Blockers Log
 
 *Use this space for anything that doesn't fit neatly into a single week's checklist — a decision that needs revisiting, a recurring issue, a scope question.*
@@ -318,6 +341,7 @@ When collecting payment in person, the payment should happen inside the app rath
 - 2026-07-14: Week 5 build complete and deployed. Live payment verification blocked by a malformed `STRIPE_SECRET_KEY` in Render (bad paste — see Week 5 founder note). This is the second pasted-key failure (Week 2's Supabase key was the first): after fixing a key in Render, the quickest sanity check is re-running the relevant week's test script.
 - 2026-07-14 (later session): Stripe key fixed in both Render and local `.env`; verified by a live probe, then the full payment loop passed all 8 steps of `week5-test.ps1` against Render (founder paid with the test card). Later that day the webhook was set up and verified end to end (after one misconfiguration — see the Week 5 founder note): a live test payment landed via the webhook itself, `stripe_event_id` recorded. Week 5 is functionally complete; only the founder's final "confirm status" checkbox remains.
 - 2026-07-14: Week 5 confirmed done by founder. Alongside it, 3 more feature requests logged (own payment processor, branded invoices, in-app tap-to-pay) — captured as P2-6…P2-8 — plus a pre-demo QA pass added to Week 8. ⚠️ P2-6 as stated ("own payment processor") conflicts with the `CLAUDE.md` hard constraint **Stripe only**; the recommended path (Stripe Connect) satisfies the request without breaking it — founder decision parked in P2-6.
+- 2026-07-15 (later): Founder logged 3 scheduling updates (type-dependent billing options incl. per-day, profile-mapped service types, # of sessions field) — built same day, see the Week 6 addendum. Migration 014 applied to live Supabase. A "Test Scripts — Quick Reference" section was also added above so every test command is findable in one place. Open question flagged: should a multi-day boarding stay block other bookings, or should conflict detection exempt boarding?
 - 2026-07-15: Added `npm test` — a one-command, cross-platform E2E test (`scripts/test-e2e.ts`, plain Node/tsx, no browser or Stripe step) covering weeks 1–6: auth, CRM + search, contract sign + immutability, billing + void, scheduling recurrence/conflicts/complete → auto-invoice, event log. 7 steps, all green locally and against Render. The weekly `.ps1` scripts remain the founder-facing walkthroughs; `npm test` is the quick regression check before any deploy.
 - 2026-07-15: Week 6 build complete and deployed — all 8 steps of `week6-test.ps1` green locally AND against the live Render deployment; full UI flow verified in-browser. Migration 013 applied to live Supabase. Two decisions parked: (1) invoice timing for weekly/monthly/package cadences (founder task above — per-visit auto-invoicing already works); (2) `availability_blocks` (vacation/personal time) has schema but no UI — conflict detection currently checks appointments only. Founder walkthrough is the only thing left for Week 6.
 - 2026-07-13: Founder logged 4 feature requests (ratings, walk-report auto-text, photos on reports, calendar sync). Captured as Phase 2 Backlog P2-1…P2-4 above; two small seam tasks added to Weeks 6 and 7 so they bolt on later without rework. Open founder decision parked in P2-2: SMS provider (Twilio?) vs. email/in-app first, and the scan-in mechanism.

@@ -1,5 +1,5 @@
 import { supabaseAdmin, supabaseAnon } from '../config/supabase';
-import { Account, AuthSession, ProfessionalProfile } from '../types';
+import { Account, AuthSession, ProfessionalProfile, ServiceType } from '../types';
 import { eventService } from './EventService';
 
 export interface ProfessionalSignupInput {
@@ -8,6 +8,14 @@ export interface ProfessionalSignupInput {
   fullName: string;
   businessName?: string;
   phone?: string;
+}
+
+export interface ProfessionalProfileUpdate {
+  full_name?: string;
+  business_name?: string | null;
+  bio?: string | null;
+  years_experience?: number | null;
+  offered_service_types?: ServiceType[];
 }
 
 import { ServiceError } from './errors';
@@ -123,6 +131,23 @@ export class AccountService {
       .maybeSingle();
     if (error) throw new ServiceError('lookup_failed', error.message, 500);
     return (data as ProfessionalProfile) ?? null;
+  }
+
+  /** Update the professional's own profile — name, business, and which
+   *  service types they offer (drives the UI's service-type choices). */
+  async updateProfessionalProfile(
+    accountId: string,
+    input: ProfessionalProfileUpdate
+  ): Promise<ProfessionalProfile> {
+    const { data, error } = await supabaseAdmin
+      .from('professional_profiles')
+      .update(input)
+      .eq('account_id', accountId)
+      .select()
+      .maybeSingle();
+    if (error) throw new ServiceError('profile_update_failed', error.message, 500);
+    if (!data) throw new ServiceError('profile_not_found', 'Profile not found.', 404);
+    return data as ProfessionalProfile;
   }
 }
 

@@ -30,6 +30,9 @@ export interface ProfessionalProfile {
   years_experience: number | null;
   service_areas: string[];
   profile_photo_url: string | null;
+  // Which service types this professional offers (014). Empty = no
+  // preference yet — the UI shows every type until they choose.
+  offered_service_types: ServiceType[];
   created_at: string;
   updated_at: string;
 }
@@ -126,6 +129,7 @@ export type BillingCadence =
   | 'biweekly'
   | 'monthly'
   | 'per_visit'
+  | 'per_day' // boarding/sitting are day-priced (014)
   | 'per_package'
   | 'one_time';
 
@@ -141,6 +145,7 @@ export interface Service {
   duration_minutes: number | null;
   price_cents: number;
   billing_cadence: BillingCadence;
+  session_count: number | null; // sessions included in a package (014)
   start_date: string | null;
   end_date: string | null;
   status: ServiceStatus;

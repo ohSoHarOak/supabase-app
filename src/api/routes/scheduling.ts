@@ -26,7 +26,8 @@ const serviceSchema = z.object({
     .int('Price must be whole cents.')
     .positive('Price must be positive.')
     .max(100_000_000, 'Price is unreasonably large.'),
-  billing_cadence: z.enum(['weekly', 'biweekly', 'monthly', 'per_visit', 'per_package', 'one_time']),
+  billing_cadence: z.enum(['weekly', 'biweekly', 'monthly', 'per_visit', 'per_day', 'per_package', 'one_time']),
+  session_count: z.number().int().min(1).max(500).nullish(),
   start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'start_date must be YYYY-MM-DD.').nullish(),
   end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'end_date must be YYYY-MM-DD.').nullish(),
   status: z.enum(['draft', 'active', 'paused', 'ended']).optional(),

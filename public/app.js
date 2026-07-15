@@ -106,9 +106,56 @@
     grooming: 'Grooming', sitting: 'Sitting', boarding: 'Boarding', other: 'Other',
   };
   const CADENCES = {
-    per_visit: 'per visit', weekly: 'weekly', biweekly: 'every 2 weeks',
+    per_visit: 'per visit', per_day: 'per day', weekly: 'weekly', biweekly: 'every 2 weeks',
     monthly: 'monthly', per_package: 'per package', one_time: 'one-time',
   };
+  // Long labels for the "Billed" select.
+  const CADENCE_OPTIONS = {
+    per_visit: 'Per visit — invoice auto-created after each visit',
+    per_day: 'Per day — invoice auto-created per day of the stay',
+    weekly: 'Weekly',
+    biweekly: 'Every 2 weeks',
+    monthly: 'Monthly',
+    per_package: 'Per package',
+    one_time: 'One-time',
+  };
+  // Which billing choices make sense for each service type — a boarding
+  // stay is day-priced, a walk isn't.
+  const CADENCES_BY_TYPE = {
+    private_walk: ['per_visit', 'weekly', 'biweekly', 'monthly', 'per_package', 'one_time'],
+    group_walk: ['per_visit', 'weekly', 'biweekly', 'monthly', 'per_package', 'one_time'],
+    training_session: ['per_visit', 'per_package', 'weekly', 'monthly', 'one_time'],
+    grooming: ['per_visit', 'per_package', 'one_time'],
+    sitting: ['per_day', 'per_visit', 'weekly', 'biweekly', 'per_package', 'one_time'],
+    boarding: ['per_day', 'one_time', 'per_package'],
+    other: Object.keys(CADENCE_OPTIONS),
+  };
+  // Service types this professional offers (from their profile). Empty =
+  // no preference set yet = show everything.
+  function offeredTypes() {
+    const set = profile?.offered_service_types;
+    return set && set.length ? set.filter((t) => SERVICE_TYPES[t]) : Object.keys(SERVICE_TYPES);
+  }
+  function typeOptionsHtml(selected) {
+    return offeredTypes()
+      .map((v) => `<option value="${v}" ${v === selected ? 'selected' : ''}>${SERVICE_TYPES[v]}</option>`)
+      .join('');
+  }
+  function cadenceOptionsHtml(serviceType, selected) {
+    const allowed = CADENCES_BY_TYPE[serviceType] ?? Object.keys(CADENCE_OPTIONS);
+    const pick = allowed.includes(selected) ? selected : allowed[0];
+    return allowed
+      .map((v) => `<option value="${v}" ${v === pick ? 'selected' : ''}>${CADENCE_OPTIONS[v]}</option>`)
+      .join('');
+  }
+  // Repopulate a "Billed" select whenever its Type select changes.
+  function wireTypeToCadence(typeId, cadenceId) {
+    const typeSel = document.getElementById(typeId);
+    const cadenceSel = document.getElementById(cadenceId);
+    typeSel.onchange = () => {
+      cadenceSel.innerHTML = cadenceOptionsHtml(typeSel.value, cadenceSel.value);
+    };
+  }
   const PAW = `<svg width="26" height="26" viewBox="0 0 44 44" aria-hidden="true"><circle cx="22" cy="22" r="22" fill="#1C4C64"/><g fill="#F7F2EB"><ellipse cx="15" cy="16" rx="3.4" ry="4.4" transform="rotate(-18 15 16)"/><ellipse cx="29" cy="16" rx="3.4" ry="4.4" transform="rotate(18 29 16)"/><ellipse cx="9.5" cy="23.5" rx="2.8" ry="3.6" transform="rotate(-38 9.5 23.5)"/><ellipse cx="34.5" cy="23.5" rx="2.8" ry="3.6" transform="rotate(38 34.5 23.5)"/><path d="M22 21c4.4 0 8.4 3.5 8.4 7.6 0 2.9-2.2 4.6-4.7 4.6-1.5 0-2.6-0.6-3.7-0.6s-2.2 0.6-3.7 0.6c-2.5 0-4.7-1.7-4.7-4.6C13.6 24.5 17.6 21 22 21z"/></g></svg>`;
   const PAW_LOGIN = PAW.replace('width="26" height="26"', 'width="44" height="44"').replace('#1C4C64', '#2B7192');
 
@@ -162,6 +209,7 @@
           ${tab('clients', 'Clients')}
           ${tab('schedule', 'Schedule')}
           <a class="soon" title="Coming in week 7">Messages<small>week 7</small></a>
+          ${tab('profile', 'Profile')}
           <a href="#/login" onclick="window.petproLogout(); return false;">Log out</a>
         </nav>
       </div></header>`;
@@ -446,7 +494,7 @@
       <div class="card contract-row">
         <div class="what">
           <div class="title">${esc(s.name)}</div>
-          <div class="meta">${esc(SERVICE_TYPES[s.service_type] ?? s.service_type)} · ${esc(fmtMoney(s.price_cents))} ${esc(CADENCES[s.billing_cadence] ?? s.billing_cadence)}${s.duration_minutes ? ` · ${esc(s.duration_minutes)} min` : ''}</div>
+          <div class="meta">${esc(SERVICE_TYPES[s.service_type] ?? s.service_type)} · ${esc(fmtMoney(s.price_cents))} ${esc(CADENCES[s.billing_cadence] ?? s.billing_cadence)}${s.session_count ? ` · ${esc(s.session_count)} sessions` : ''}${s.duration_minutes ? ` · ${esc(s.duration_minutes)} min` : ''}</div>
         </div>
         ${servicePill[s.status] ?? ''}
         <div class="row-actions">
@@ -528,17 +576,12 @@
           <form id="svc-form"><div class="form-grid">
             <div><label for="s-name">Name</label><input id="s-name" required placeholder="e.g. Private walk (30 min)" /></div>
             <div><label for="s-type">Type</label>
-              <select id="s-type">${Object.entries(SERVICE_TYPES).map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></div>
+              <select id="s-type">${typeOptionsHtml()}</select></div>
             <div><label for="s-price">Price</label><input id="s-price" required class="money" placeholder="$30.00" /></div>
+            <div><label for="s-sessions"># of sessions <span class="hint">— for packages, optional</span></label>
+              <input id="s-sessions" type="number" min="1" max="500" class="num" placeholder="e.g. 10" /></div>
             <div><label for="s-cadence">Billed</label>
-              <select id="s-cadence">
-                <option value="per_visit">Per visit — invoice auto-created after each walk</option>
-                <option value="weekly">Weekly</option>
-                <option value="biweekly">Every 2 weeks</option>
-                <option value="monthly">Monthly</option>
-                <option value="per_package">Per package</option>
-                <option value="one_time">One-time</option>
-              </select></div>
+              <select id="s-cadence">${cadenceOptionsHtml(offeredTypes()[0])}</select></div>
             <div><label for="s-duration">Duration <span class="hint">minutes</span></label>
               <input id="s-duration" type="number" min="5" max="1440" value="30" class="num" /></div>
           </div>
@@ -600,6 +643,7 @@
       });
     };
     // --------------------------------------------------------- services --
+    wireTypeToCadence('s-type', 's-cadence');
     document.getElementById('svc-form').onsubmit = async (e) => {
       e.preventDefault();
       const btn = e.target.querySelector('button[type=submit]');
@@ -613,6 +657,7 @@
             service_type: document.getElementById('s-type').value,
             price_cents: price,
             billing_cadence: document.getElementById('s-cadence').value,
+            session_count: Number(document.getElementById('s-sessions').value) || null,
             duration_minutes: Number(document.getElementById('s-duration').value) || null,
           });
           toast('Service added.', 'ok');
@@ -1073,7 +1118,11 @@
             <div class="form-foot" style="margin-top:12px">
               <button class="btn btn-ghost" type="button" data-close-complete="${a.id}">Back</button>
               <div class="spacer"></div>
-              <button class="btn btn-primary" type="submit">Complete walk${a.services?.billing_cadence === 'per_visit' ? ` & invoice ${esc(fmtMoney(a.services.price_cents))}` : ''}</button>
+              <button class="btn btn-primary" type="submit">Complete${a.services?.billing_cadence === 'per_visit'
+                ? ` & invoice ${esc(fmtMoney(a.services.price_cents))}`
+                : a.services?.billing_cadence === 'per_day'
+                  ? ` & invoice ${esc(fmtMoney(a.services.price_cents))}/day`
+                  : ''}</button>
             </div>
           </form>` : ''}
         </div>`;
@@ -1216,17 +1265,12 @@
             <div class="full preview-note" style="padding:8px 0 0 12px">New service for this client — saved when you book.</div>
             <div><label for="ap-svc-name">Service name</label><input id="ap-svc-name" placeholder="e.g. Private walk (30 min)" /></div>
             <div><label for="ap-svc-type">Type</label>
-              <select id="ap-svc-type">${Object.entries(SERVICE_TYPES).map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></div>
+              <select id="ap-svc-type">${typeOptionsHtml()}</select></div>
             <div><label for="ap-svc-price">Price</label><input id="ap-svc-price" class="money" placeholder="$30.00" /></div>
+            <div><label for="ap-svc-sessions"># of sessions <span class="hint">— for packages, optional</span></label>
+              <input id="ap-svc-sessions" type="number" min="1" max="500" class="num" placeholder="e.g. 10" /></div>
             <div><label for="ap-svc-cadence">Billed</label>
-              <select id="ap-svc-cadence">
-                <option value="per_visit">Per visit — invoice auto-created after each walk</option>
-                <option value="weekly">Weekly</option>
-                <option value="biweekly">Every 2 weeks</option>
-                <option value="monthly">Monthly</option>
-                <option value="per_package">Per package</option>
-                <option value="one_time">One-time</option>
-              </select></div>
+              <select id="ap-svc-cadence">${cadenceOptionsHtml(offeredTypes()[0])}</select></div>
           </div>
           <div class="form-grid">
             <div><label for="ap-start">Date &amp; time</label>
@@ -1278,6 +1322,7 @@
     }
     clientSel.onchange = loadServices;
     serviceSel.onchange = syncService;
+    wireTypeToCadence('ap-svc-type', 'ap-svc-cadence');
     await loadServices();
 
     const repeatSeg = document.getElementById('ap-repeat');
@@ -1306,6 +1351,7 @@
               service_type: document.getElementById('ap-svc-type').value,
               price_cents: price,
               billing_cadence: document.getElementById('ap-svc-cadence').value,
+              session_count: Number(document.getElementById('ap-svc-sessions').value) || null,
               duration_minutes: Number(document.getElementById('ap-duration').value) || null,
             });
             serviceId = svc.id;
@@ -1326,6 +1372,71 @@
             ? 'Appointment booked.'
             : `Weekly series booked — ${created.length} walks scheduled.`, 'ok');
           location.hash = '#/schedule';
+        } catch (err) {
+          toast(err.message);
+        }
+      });
+    };
+    wireNav();
+  }
+
+  // ------------------------------------------------------------ profile ----
+  async function renderProfile() {
+    appEl.innerHTML = header('profile') + `<div class="page loading">Loading profile…</div>`;
+    try {
+      await loadProfile(); // always fresh — this page edits it
+    } catch (err) {
+      toast(err.message);
+      location.hash = '#/today';
+      return;
+    }
+    const offered = new Set(profile?.offered_service_types ?? []);
+
+    appEl.innerHTML = header('profile') + `
+      <div class="page">
+        <h1 class="page-title">Your profile</h1>
+        <p class="page-sub">${esc(account?.email ?? '')}</p>
+
+        <form id="pf-form">
+        <div class="card fieldset" style="margin-top:18px">
+          <div class="form-grid">
+            <div><label for="pf-name">Your full name</label>
+              <input id="pf-name" required value="${esc(profile?.full_name ?? '')}" /></div>
+            <div><label for="pf-biz">Business name</label>
+              <input id="pf-biz" value="${esc(profile?.business_name ?? '')}" placeholder="e.g. Sunny Trails Walking Co." /></div>
+          </div>
+          <div>
+            <label>Services you offer</label>
+            <div class="appt-flags" style="margin-top:6px">
+              ${Object.entries(SERVICE_TYPES).map(([v, l]) => `
+                <label class="flag"><input type="checkbox" data-offer="${v}" ${offered.has(v) ? 'checked' : ''} /> ${l}</label>`).join('')}
+            </div>
+            <p class="preview-note" style="margin-top:10px">Only the types you check appear when adding a service, so a dog walker never wades through Grooming or Boarding. Leave everything unchecked to keep all types available.</p>
+          </div>
+        </div>
+        <div class="form-foot">
+          <div class="spacer"></div>
+          <button class="btn btn-primary" type="submit">Save profile</button>
+        </div>
+        </form>
+      </div>`;
+
+    document.getElementById('pf-form').onsubmit = async (e) => {
+      e.preventDefault();
+      const btn = e.target.querySelector('button[type=submit]');
+      await withBusy(btn, async () => {
+        try {
+          const offeredNow = [...document.querySelectorAll('[data-offer]')]
+            .filter((cb) => cb.checked)
+            .map((cb) => cb.dataset.offer);
+          await api('PATCH', '/api/auth/profile', {
+            full_name: document.getElementById('pf-name').value.trim(),
+            business_name: document.getElementById('pf-biz').value.trim() || null,
+            offered_service_types: offeredNow,
+          });
+          await loadProfile();
+          toast('Profile saved.', 'ok');
+          renderProfile();
         } catch (err) {
           toast(err.message);
         }
@@ -1357,6 +1468,7 @@
 
     if (parts[0] === 'login') { renderLogin(); return; }
     if (parts[0] === 'schedule') { renderSchedule(Number(params.get('w')) || 0); return; }
+    if (parts[0] === 'profile') { renderProfile(); return; }
     if (parts[0] === 'appointment-new') { renderNewAppointment(params); return; }
     if (parts[0] === 'client-new') { renderNewClient(); return; }
     if (parts[0] === 'client' && parts[1] && parts[2] === 'new-contract') {

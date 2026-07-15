@@ -21,6 +21,7 @@ export interface ServiceInput {
   duration_minutes?: number | null;
   price_cents: number;
   billing_cadence: BillingCadence;
+  session_count?: number | null;
   start_date?: string | null;
   end_date?: string | null;
   status?: ServiceStatus;
@@ -487,15 +488,25 @@ export class SchedulingService {
       .limit(1);
     const nextStartsAt = nextRows?.[0]?.starts_at ?? null;
 
-    // Per-visit billing: the walk is done, the invoice exists — no manual
-    // step. Other cadences (weekly/monthly/package) stay manual until the
-    // founder decides their timing (flagged in ROADMAP).
+    // Visit- and day-priced billing: the work is done, the invoice exists —
+    // no manual step. per_day bills price × days of the stay (a 2-night
+    // boarding spanning 44 hours is 2 days). Other cadences (weekly/monthly/
+    // package) stay manual until the founder decides their timing (ROADMAP).
     let invoice: Invoice | null = null;
-    if (service.billing_cadence === 'per_visit') {
+    if (service.billing_cadence === 'per_visit' || service.billing_cadence === 'per_day') {
+      let amountCents = service.price_cents;
+      let description = `${service.name} — ${fmtSlot(appointment.starts_at)}`;
+      if (service.billing_cadence === 'per_day') {
+        const start = Date.parse(appointment.actual_start_at ?? appointment.starts_at);
+        const end = Date.parse(appointment.actual_end_at ?? appointment.ends_at);
+        const days = Math.max(1, Math.ceil((end - start) / (24 * 60 * 60 * 1000)));
+        amountCents = service.price_cents * days;
+        description = `${service.name} — ${days} day${days === 1 ? '' : 's'}, from ${fmtSlot(appointment.starts_at)}`;
+      }
       invoice = await paymentService.createInvoice(professionalAccountId, {
         client_id: appointment.client_id,
-        amount_cents: service.price_cents,
-        description: `${service.name} — ${fmtSlot(appointment.starts_at)}`,
+        amount_cents: amountCents,
+        description,
         service_id: service.id,
       });
     }

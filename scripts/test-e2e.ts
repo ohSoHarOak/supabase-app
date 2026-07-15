@@ -256,6 +256,68 @@ async function main(): Promise<void> {
     pass('7. Event log: client_created, contract_signed, appointment_scheduled, walk_completed (full payload), invoice_generated');
   }
 
+  // --- 8. Profile mapping + per-day boarding + session count -----------------
+  {
+    const updated = (
+      await ok('PATCH', '/api/auth/profile', {
+        business_name: 'E2E Boarding Co.',
+        offered_service_types: ['private_walk', 'boarding'],
+      }, '8. Profile update')
+    ).data;
+    assert(
+      Array.isArray(updated.offered_service_types) && updated.offered_service_types.length === 2,
+      '8. Profile update',
+      `offered_service_types not stored: ${JSON.stringify(updated.offered_service_types)}`
+    );
+    const me = await ok('GET', '/api/auth/me', undefined, '8. Profile readback');
+    assert(
+      me.data.profile.offered_service_types.includes('boarding'),
+      '8. Profile readback',
+      'auth/me does not return the saved offered_service_types'
+    );
+
+    // Day-priced boarding: a 44-hour stay bills as 2 days.
+    const boarding = (
+      await ok('POST', '/api/services', {
+        client_id: client.id,
+        name: 'Overnight boarding',
+        service_type: 'boarding',
+        price_cents: 5000,
+        billing_cadence: 'per_day',
+      }, '8. Boarding service')
+    ).data;
+    const stayStart = new Date(tomorrow10.getTime() + 10 * 3600 * 1000); // tomorrow 20:00 — clear of the walk slots
+    const stay = (
+      await ok('POST', '/api/appointments', {
+        service_id: boarding.id,
+        starts_at: stayStart.toISOString(),
+        ends_at: new Date(stayStart.getTime() + 44 * 3600 * 1000).toISOString(),
+      }, '8. Boarding stay')
+    ).data;
+    const done = (await ok('POST', `/api/appointments/${stay[0].id}/complete`, {}, '8. Boarding complete')).data;
+    assert(done.invoice, '8. Boarding complete', 'Completing a per_day stay returned no invoice');
+    assert(
+      done.invoice.amount_cents === 10000,
+      '8. Boarding complete',
+      `44-hour stay at $50/day should invoice $100.00 (2 days), got ${done.invoice.amount_cents} cents`
+    );
+    assert(/2 days/.test(done.invoice.description), '8. Boarding complete', `Description missing day count: "${done.invoice.description}"`);
+
+    // "# of sessions" is stored on package services.
+    const pkg = (
+      await ok('POST', '/api/services', {
+        client_id: client.id,
+        name: 'Training package',
+        service_type: 'training_session',
+        price_cents: 50000,
+        billing_cadence: 'per_package',
+        session_count: 10,
+      }, '8. Package service')
+    ).data;
+    assert(pkg.session_count === 10, '8. Package service', `session_count not stored, got ${pkg.session_count}`);
+    pass('8. Profile service mapping saved; per-day boarding billed 2 days = $100; session_count stored');
+  }
+
   console.log(`\n\x1b[32m${passed} steps passed — E2E TEST PASSED against ${baseUrl}\x1b[0m`);
 }
 
