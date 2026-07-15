@@ -234,6 +234,7 @@ Each week has two lists:
 - [ ] Build email notifications for: contract ready, contract signed, payment received, appointment reminder
   - Founder requirement (2026-07-13): the **contract signed** email goes to the client **with the signed contract included**. Decision to make at build time: attach as PDF (needs an HTML→PDF step) vs. a secure view link to the signed copy — PDF preferred, fall back to link if PDF generation gets heavy.
 - [ ] Keep notification sending channel-agnostic (template + recipient + channel), with email as the only channel for now — so SMS walk reports (backlog P2-2) plug in later without rework
+- [ ] Add "Print / download" on the signed-contract view *(added 2026-07-15, user-walkthrough finding W-1)* — today a signed contract can only be viewed inside the app; there's no way to hand the client a copy. Pairs with the contract-signed email task above: both need the same "signed contract as a document the client keeps" rendering, so decide PDF vs. print-styled HTML once and reuse it for both.
 - [ ] Extend the UI: simple message thread view
 - [ ] Write manual test script (send message → confirm real-time delivery → trigger event → confirm email)
 
@@ -250,6 +251,9 @@ Each week has two lists:
 
 ### 🤖 Claude Code Tasks
 - [ ] Harden password requirements for security compliance (founder request 2026-07-13): raise minimum length to 12, require mixed character classes, reject common/breached passwords, matching validation in both the signup API and Supabase Auth settings — must land before the demo creates real accounts
+- [ ] Forgot-password + change-password *(added 2026-07-15, user-walkthrough finding W-2)* — the login screen has no reset link and the Profile tab can't change a password, so a locked-out professional is a dead end today. Supabase Auth's built-in recovery flow covers the reset email; build alongside the password-hardening task above so both ship as one auth pass.
+- [ ] Edit client & pet details from the UI *(added 2026-07-15, user-walkthrough finding W-3)* — the API supports PATCH on both, but the UI has no edit form anywhere: a typo'd phone number, wrong weight, or changed address can't be fixed without a developer. UI-only work over existing endpoints. (Signed contracts stay immutable regardless — edits only affect the live record, as Week 3 verified.)
+- [ ] Today screen: today's walks + money cues *(added 2026-07-15, user-walkthrough finding W-4)* — the home screen currently doesn't answer "where do I need to be today" (you must open Schedule), and "Needs your attention" only surfaces unsigned contracts: an unpaid $30 invoice raises no cue at all. Add a today's-appointments agenda and an unpaid-invoices cue (schema already has `invoices.due_date`, currently unused). Make client phone/email clickable (`tel:`/`mailto:`) while in there. All UI over existing APIs.
 - [ ] Build minimal owner portal: magic-link login, view schedule, view/sign contract, view/pay invoice, message the professional
 - [ ] Write full integration test script covering the entire loop: signup → client → pet → contract → sign → schedule → complete walk → invoice → pay → notify
   - Head start (2026-07-15): `npm test` (`scripts/test-e2e.ts`) already covers signup → client → pet → contract → sign → schedule → complete → auto-invoice in one command, local or `--base-url` Render — verified green against both. Week 8 extends it with the owner-portal, pay, and notify legs.
@@ -269,7 +273,7 @@ Each week has two lists:
 
 ## Phase 2 Backlog — Captured, Not Scheduled
 
-*Founder feature requests logged 2026-07-13 (P2-1…P2-5) and 2026-07-14 (P2-6…P2-8). These are out of scope for the 8-week Phase 1 build (the Week 8 demo doesn't depend on them), but earlier weeks lay seams for them so nothing has to be rebuilt. Do not start these until Phase 1 is done and the founder pulls them in.*
+*Founder feature requests logged 2026-07-13 (P2-1…P2-5) and 2026-07-14 (P2-6…P2-8); P2-9…P2-11 logged 2026-07-15 from a typical-user walkthrough of the live UI (see Running Notes). These are out of scope for the 8-week Phase 1 build (the Week 8 demo doesn't depend on them), but earlier weeks lay seams for them so nothing has to be rebuilt. Do not start these until Phase 1 is done and the founder pulls them in.*
 
 ### P2-1: Walker ratings (1–5 dogs)
 Clients rate walkers on a 1–5 **dog** scale (not stars), 5 = best, 1 = needs improvement. Half-dog ratings (e.g. 4.5) are supported — store as a numeric with one decimal place, validated to 0.5 increments.
@@ -319,6 +323,23 @@ When collecting payment in person, the payment should happen inside the app rath
 - Web-feasible interim options for the in-person moment: (a) open the existing Stripe Checkout **embedded inside the app** and hand the phone to the client, or (b) show a **QR code** the client scans to pay on their own phone immediately. Either is a modest extension of the Week 5 checkout flow.
 - Founder decisions when picked up: interim option (a)/(b) now vs. waiting for a native app, and whether a card-present reader (Stripe's hardware) is worth it before phones-only tap-to-pay.
 
+### P2-9: Record payments taken outside Stripe (cash, check, Venmo/Zelle)
+Real walkers get handed cash and Venmo constantly, but today the only way an invoice becomes `paid` is through Stripe — there is no "mark as paid" for money collected outside the app, so those invoices sit "awaiting payment" forever (or get voided, losing the revenue record).
+- Build: a "Record payment — cash / check / other" action on the invoice that creates a transaction with a `payment_method` marker and fires the same `payment_received` event, reusing `PaymentService`'s paid-exactly-once guard so a Stripe payment and a manual one can never double-record.
+- ⚠️ Founder decision at pickup: manual mark-paid is trust-based (a mistap says a client paid who didn't) — decide whether it needs an undo window or a confirmation step.
+- Strong Week 8 slack candidate: cash is common enough that a demo walker may ask about it unprompted.
+
+### P2-10: No-show & late-cancel fee flow
+The data model already knows about this — `AppointmentStatus` includes `no_show` and clients carry `no_show_fee_cents` + `cancellation_window_hours`, and the contract even promises the fee — but the UI offers only Cancel / Mark complete, so the policy is unenforceable in practice.
+- Build: a "No-show" outcome on the appointment card that sets the status and (per-visit style) auto-invoices the client's no-show fee; on Cancel, compare against the cancellation window and offer the late-cancel fee when inside it.
+- Founder decisions at pickup: is the fee auto-charged or offered-then-confirmed? Does a late cancel still consume a package session (once P2-11-era package tracking exists)?
+
+### P2-11: Full pet profile + vaccination records UI
+The schema and API are far richer than the UI shows. Pets support photo, date of birth, color, microchip, medical conditions, and feeding notes; a `vaccination_records` table has full add/list/delete API support (built Week 2) — but the UI exposes only name/breed/weight/vet/behavior, and vaccinations appear nowhere.
+- Build: expand the pet card/form to the full field set (photo upload = Supabase Storage, same pattern as signatures), plus a vaccinations list with expiry dates.
+- Expiring/expired vaccinations are a natural "Needs your attention" cue (ties into W-4's cue work) — rabies expiry is something real walkers genuinely track for liability.
+- Client `general_notes` is in the same boat (schema yes, UI no) — fold it in here.
+
 ---
 
 ## Test Scripts — Quick Reference
@@ -341,6 +362,7 @@ When collecting payment in person, the payment should happen inside the app rath
 
 *Use this space for anything that doesn't fit neatly into a single week's checklist — a decision that needs revisiting, a recurring issue, a scope question.*
 
+- 2026-07-15 (post-close): **Typical-user walkthrough of the live UI** (Claude, acting as a brand-new dog walker, drove the full flow in-browser: signup → new client → pet → service → contract generate/sign → recurring booking → mark complete → auto-invoice — everything worked, no bugs found). Findings are UX/coverage gaps, labeled **W-1…W-4** where scheduled: **W-1** no way to print/hand the client a signed contract → added to Week 7 (pairs with the contract-signed email). **W-2** no forgot-password/change-password anywhere → added to Week 8 (pairs with password hardening). **W-3** clients and pets can't be *edited* through the UI at all (API PATCH exists; UI never calls it except the status flip) → added to Week 8. **W-4** Today screen shows no walks and "Needs your attention" ignores unpaid invoices → added to Week 8. Bigger items went to the backlog as **P2-9** (record cash/Venmo payments — no non-Stripe mark-as-paid exists), **P2-10** (no-show/late-cancel fees — `no_show` status and per-client fee fields exist but are unreachable from the UI), and **P2-11** (full pet profile + vaccination records — Week 2's vaccination API has zero UI). A recurring theme worth knowing: the schema/API is consistently ahead of the UI, so most of these are thin UI slices, not backend work.
 - 2026-07-15 (end of day): **Week 6 closed by founder.** All build tasks and founder review done; the only carry-over is the `[d]` invoice-timing decision for weekly/monthly cadences (non-blocking — the completion hook exists, per-visit/per-day already auto-invoice). Next session starts Week 7 — Messaging + Notifications: the founder's first task there is creating a Resend or SendGrid account and putting the API key in `.env`/Render, so that can happen in parallel before the build session.
 - 2026-07-13: `files.zip` (the original scaffold from a prior session) is gone. Full scaffold rebuilt from `PHASE_1_SUMMARY.md` + `SPEC.md`. `PHASE_1_SUMMARY.md` still describes the old plan (custom JWT, S3, Heroku) — the code follows `CLAUDE.md`'s locked stack instead (Supabase Auth, Supabase Storage, Render).
 - 2026-07-13: `DATABASE_URL` received; migrations applied and full auth flow verified locally. Remaining Week 1 blocker: Render deploy (founder: create Render account, connect the GitHub repo, add the three Supabase env vars in Render's dashboard — `render.yaml` handles the rest).
