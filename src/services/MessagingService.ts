@@ -150,6 +150,20 @@ export class MessagingService {
     return data as MessageThread;
   }
 
+  /** Owner-side ownership check: the thread's client must be linked to this owner (Week 8 portal). */
+  async getThreadForOwner(ownerAccountId: string, threadId: string): Promise<MessageThread> {
+    const { data, error } = await supabaseAdmin
+      .from('message_threads')
+      .select('*, clients!inner(owner_account_id)')
+      .eq('id', threadId)
+      .eq('clients.owner_account_id', ownerAccountId)
+      .maybeSingle();
+    if (error) throw new ServiceError('thread_lookup_failed', error.message, 500);
+    if (!data) throw new ServiceError('thread_not_found', 'Thread not found.', 404);
+    const { clients: _clients, ...thread } = data as MessageThread & { clients: unknown };
+    return thread as MessageThread;
+  }
+
   // ------------------------------------------------------------- messages ----
 
   /**
@@ -162,6 +176,14 @@ export class MessagingService {
     options: { after?: string; limit?: number } = {}
   ): Promise<Message[]> {
     await this.getThread(professionalAccountId, threadId); // ownership check
+    return this.listMessagesInThread(threadId, options);
+  }
+
+  /** Message listing without an ownership check — caller must have verified the thread. */
+  async listMessagesInThread(
+    threadId: string,
+    options: { after?: string; limit?: number } = {}
+  ): Promise<Message[]> {
     let builder = supabaseAdmin
       .from('messages')
       .select('*')
@@ -185,7 +207,15 @@ export class MessagingService {
     input: SendMessageInput
   ): Promise<{ message: Message; duplicate: boolean }> {
     const thread = await this.getThread(senderAccountId, threadId); // ownership check
+    return this.sendIntoThread(thread, senderAccountId, input);
+  }
 
+  /** Message insert without an ownership check — caller must have verified the thread. */
+  async sendIntoThread(
+    thread: MessageThread,
+    senderAccountId: string,
+    input: SendMessageInput
+  ): Promise<{ message: Message; duplicate: boolean }> {
     const { data, error } = await supabaseAdmin
       .from('messages')
       .insert({
@@ -226,12 +256,17 @@ export class MessagingService {
   /** Mark everything the other side sent as read. */
   async markThreadRead(professionalAccountId: string, threadId: string): Promise<void> {
     await this.getThread(professionalAccountId, threadId); // ownership check
+    return this.markReadInThread(threadId, professionalAccountId);
+  }
+
+  /** Read-marking without an ownership check — caller must have verified the thread. */
+  async markReadInThread(threadId: string, readerAccountId: string): Promise<void> {
     const { error } = await supabaseAdmin
       .from('messages')
       .update({ read_at: new Date().toISOString() })
       .eq('thread_id', threadId)
       .is('read_at', null)
-      .neq('sender_account_id', professionalAccountId);
+      .neq('sender_account_id', readerAccountId);
     if (error) throw new ServiceError('message_read_failed', error.message, 500);
   }
 

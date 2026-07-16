@@ -251,7 +251,8 @@ export class PaymentService {
   async createCheckoutSession(
     professionalAccountId: string,
     invoiceId: string,
-    origin: string
+    origin: string,
+    options: { portal?: boolean } = {}
   ): Promise<{ invoice: Invoice; checkout_url: string }> {
     const invoice = await this.getInvoice(professionalAccountId, invoiceId);
     if (invoice.status === 'paid') {
@@ -276,8 +277,10 @@ export class PaymentService {
       ],
       metadata: { invoice_id: invoice.id },
       payment_intent_data: { metadata: { invoice_id: invoice.id } },
-        success_url: `${origin}/#/invoice/${invoice.id}/return`,
-        cancel_url: `${origin}/#/invoice/${invoice.id}/return?canceled=1`,
+        // Stripe sends the payer back to whichever app started the checkout —
+        // the professional UI or the Week 8 owner portal.
+        success_url: `${origin}${options.portal ? '/portal' : '/'}#/invoice/${invoice.id}/return`,
+        cancel_url: `${origin}${options.portal ? '/portal' : '/'}#/invoice/${invoice.id}/return?canceled=1`,
       })
     );
     if (!session.url) throw new ServiceError('checkout_failed', 'Stripe returned no checkout URL.', 500);

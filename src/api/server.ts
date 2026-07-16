@@ -12,6 +12,7 @@ import {
 import { appointmentsRouter, servicesRouter } from './routes/scheduling';
 import { messagesRouter, threadsRouter } from './routes/messaging';
 import { notificationsRouter } from './routes/notifications';
+import { portalRouter } from './routes/portal';
 import { errorHandler } from './middleware/errorHandler';
 import { env } from '../config/env';
 
@@ -30,6 +31,11 @@ export function createServer(): express.Express {
   // Week 4 web UI — static files, no build step. Served from the repo's
   // public/ directory (process.cwd() is the repo root locally and on Render).
   app.use(express.static(path.join(process.cwd(), 'public')));
+
+  // Week 8 owner portal — its own small page, same static directory.
+  app.get('/portal', (_req, res) => {
+    res.sendFile(path.join(process.cwd(), 'public', 'portal.html'));
+  });
 
   app.get('/health', (_req, res) => {
     res.json({ ok: true, data: { service: 'petpro-connect', status: 'healthy' } });
@@ -57,6 +63,7 @@ export function createServer(): express.Express {
   app.use('/api/threads', threadsRouter);
   app.use('/api/messages', messagesRouter);
   app.use('/api/notifications', notificationsRouter);
+  app.use('/api/portal', portalRouter);
 
   app.use((_req, res) => {
     res.status(404).json({ ok: false, error: { code: 'not_found', message: 'Route not found.' } });
