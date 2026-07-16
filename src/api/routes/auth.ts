@@ -7,7 +7,10 @@ export const authRouter = Router();
 
 const signupSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(8, 'Password must be at least 8 characters.'),
+  // Length is checked here for a fast error; the full policy (character
+  // classes, common/breached passwords) runs in AccountService via
+  // validatePasswordStrength on every password-setting path.
+  password: z.string().min(12, 'Password must be at least 12 characters.'),
   fullName: z.string().min(1),
   businessName: z.string().optional(),
   phone: z.string().optional(),
@@ -49,6 +52,61 @@ authRouter.post('/login', async (req, res, next) => {
     }
     const session = await accountService.authenticateProfessional(parsed.data.email, parsed.data.password);
     res.json({ ok: true, data: session });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** POST /api/auth/forgot-password — sends a Supabase recovery email.
+ *  Always answers ok so the endpoint can't be used to probe which emails exist. */
+authRouter.post('/forgot-password', async (req, res, next) => {
+  try {
+    const parsed = z.object({ email: z.string().email() }).safeParse(req.body);
+    if (!parsed.success) {
+      res.status(422).json({ ok: false, error: { code: 'validation', message: 'A valid email is required.' } });
+      return;
+    }
+    // The emailed link returns the user to the app root with the recovery
+    // token in the URL fragment (Supabase appends `#access_token=…&type=recovery`
+    // itself — a path-only redirectTo keeps that fragment parseable). Works for
+    // localhost and Render alike; trust proxy makes req.protocol correct.
+    const redirectTo = `${req.protocol}://${req.get('host')}/`;
+    await accountService.requestPasswordReset(parsed.data.email, redirectTo);
+    res.json({ ok: true, data: { sent: true } });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** POST /api/auth/reset-password — completes recovery using the emailed token. */
+authRouter.post('/reset-password', async (req, res, next) => {
+  try {
+    const parsed = z
+      .object({ access_token: z.string().min(1), new_password: z.string().min(1) })
+      .safeParse(req.body);
+    if (!parsed.success) {
+      res.status(422).json({ ok: false, error: { code: 'validation', message: 'Token and new password are required.' } });
+      return;
+    }
+    await accountService.resetPassword(parsed.data.access_token, parsed.data.new_password);
+    res.json({ ok: true, data: { reset: true } });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** POST /api/auth/change-password — logged-in change, current password required. */
+authRouter.post('/change-password', requireAuth, async (req, res, next) => {
+  try {
+    const parsed = z
+      .object({ current_password: z.string().min(1), new_password: z.string().min(1) })
+      .safeParse(req.body);
+    if (!parsed.success) {
+      res.status(422).json({ ok: false, error: { code: 'validation', message: 'Current and new password are required.' } });
+      return;
+    }
+    await accountService.changePassword(req.account!, parsed.data.current_password, parsed.data.new_password);
+    res.json({ ok: true, data: { changed: true } });
   } catch (err) {
     next(err);
   }

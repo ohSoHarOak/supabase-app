@@ -1,6 +1,7 @@
 import { supabaseAdmin, supabaseAnon } from '../config/supabase';
 import { Account, AuthSession, ProfessionalProfile, ServiceType } from '../types';
 import { eventService } from './EventService';
+import { validatePasswordStrength } from './passwordPolicy';
 
 export interface ProfessionalSignupInput {
   email: string;
@@ -33,6 +34,11 @@ export class AccountService {
   /** Signup = Supabase Auth user + accounts row + professional profile, then login. */
   async createProfessionalAccount(input: ProfessionalSignupInput): Promise<AuthSession> {
     const email = input.email.trim().toLowerCase();
+
+    const weakness = await validatePasswordStrength(input.password);
+    if (weakness) {
+      throw new ServiceError('weak_password', weakness, 422);
+    }
 
     const { data: existing } = await supabaseAdmin
       .from('accounts')
@@ -111,6 +117,69 @@ export class AccountService {
       expires_at: data.session.expires_at ?? null,
       account,
     };
+  }
+
+  /**
+   * Kick off Supabase Auth's built-in recovery flow. The email link lands the
+   * user back on our app (`redirectTo`) with a recovery token in the URL hash,
+   * where the UI shows a "set new password" form. Always resolves — whether
+   * the email exists is never revealed to the caller.
+   */
+  async requestPasswordReset(email: string, redirectTo: string): Promise<void> {
+    const { error } = await supabaseAnon.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
+      redirectTo,
+    });
+    // Rate-limit and no-such-user errors are deliberately swallowed; a config
+    // error (bad redirect URL) still surfaces in server logs for us.
+    if (error) {
+      console.error(`[auth] password reset email failed: ${error.message}`);
+    }
+  }
+
+  /** Complete the recovery flow: the token from the emailed link proves identity. */
+  async resetPassword(accessToken: string, newPassword: string): Promise<void> {
+    const weakness = await validatePasswordStrength(newPassword);
+    if (weakness) {
+      throw new ServiceError('weak_password', weakness, 422);
+    }
+    const { data, error } = await supabaseAdmin.auth.getUser(accessToken);
+    if (error || !data.user) {
+      throw new ServiceError(
+        'invalid_reset_token',
+        'This reset link is invalid or has expired — request a new one.',
+        401
+      );
+    }
+    const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(data.user.id, {
+      password: newPassword,
+    });
+    if (updateError) {
+      throw new ServiceError('reset_failed', updateError.message, 500);
+    }
+  }
+
+  /** Logged-in password change — requires the current password as proof. */
+  async changePassword(account: Account, currentPassword: string, newPassword: string): Promise<void> {
+    const { error: signInError } = await supabaseAnon.auth.signInWithPassword({
+      email: account.email,
+      password: currentPassword,
+    });
+    if (signInError) {
+      throw new ServiceError('wrong_password', 'Your current password is incorrect.', 401);
+    }
+    const weakness = await validatePasswordStrength(newPassword);
+    if (weakness) {
+      throw new ServiceError('weak_password', weakness, 422);
+    }
+    if (!account.auth_user_id) {
+      throw new ServiceError('no_auth_user', 'This account has no password login.', 400);
+    }
+    const { error } = await supabaseAdmin.auth.admin.updateUserById(account.auth_user_id, {
+      password: newPassword,
+    });
+    if (error) {
+      throw new ServiceError('change_failed', error.message, 500);
+    }
   }
 
   async getAccountByAuthUserId(authUserId: string): Promise<Account | null> {

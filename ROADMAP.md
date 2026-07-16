@@ -181,7 +181,8 @@ Each week has two lists:
   - Verified by test steps 7–8: exactly one succeeded transaction, exactly one `payment_received` event.
 - [x] Confirm status: mark this week done, or note what broke
   - Confirmed 2026-07-14. Week 5 done. Founder also logged 3 new feature requests (own payment processor, branded invoices, in-app tap-to-pay) — captured as P2-6…P2-8 below — plus a pre-demo QA pass, added to Week 8.
-
+cd C:\Users\itchy\OneDrive\Desktop\PetPro
+powershell -ExecutionPolicy Bypass -File .\scripts\week7-test.ps1 -BaseUrl "https://petpro-app.onrender.com"
 ---
 
 ## Week 6 — Scheduling
@@ -246,16 +247,14 @@ Each week has two lists:
   - `scripts/week7-test.ps1` (7 steps, incl. the email-key probe with founder instructions) — green locally 2026-07-15. `npm test` extended to 10 steps: messaging idempotency + notification queue/reminder lifecycle.
 
 ### 🧑 Founder Tasks
-- [ ] Create Resend or SendGrid account, note API key
+- [x ] Create Resend or SendGrid account, note API key
   - Build assumed **Resend** (simpler API; SendGrid still drops in behind the adapter if you prefer it). Put the key in local `.env` AND Render as `RESEND_API_KEY`. Note: until you verify a sending domain in Resend, emails only deliver to the Resend account owner's own inbox — enough for all Week 7 testing.
-- [ ] Provide email API key to Claude Code via `.env` (not chat)
-  - 2026-07-15: **key verified working, live on Render** — a probe sent a real test email to info@itchytail.com (breaking the key-paste curse: the paste was fine; the first "failure" was the test script's own probe design, since fixed). ⚠️ Until the domain is verified at resend.com/domains, Resend delivers ONLY to info@itchytail.com — client-facing emails (contract copies, receipts, reminders) will be refused until then. Add "verify itchytail.com in Resend + set EMAIL_FROM to that domain" to the founder list before Week 8's demo.
-- [ ] Run test script — send a message, confirm it arrives in real time
-  - Use `-TestEmail "info@itchytail.com"` on the script so step 7 targets the one inbox Resend will deliver to pre-domain-verification.
+- [x] Provide email API key to Claude Code via `.env` (not chat)
+- [x] Run test script — send a message, confirm it arrives in real time
   - `.\scripts\week7-test.ps1` (add `-BaseUrl` for Render). Step 7 probes the email key live — per our earlier key-paste incidents, don't trust "key is in" until that step says SENT. For real-time: open the same conversation in two browser windows and send from one.
-- [ ] Trigger a contract signing, confirm the email notification arrives
+- [x] Trigger a contract signing, confirm the email notification arrives
   - Client needs an email address on file; the signed email arrives with their copy of the agreement attached.
-- [ ] Confirm status: mark this week done, or note what broke
+- [x] Confirm status: mark this week done, or note what broke
 
 ---
 

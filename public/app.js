@@ -232,18 +232,20 @@
           <div><label for="f-name">Your full name</label><input id="f-name" required autocomplete="name" /></div>
           <div><label for="f-biz">Business name <span class="hint">optional</span></label><input id="f-biz" autocomplete="organization" /></div>` : ''}
           <div><label for="f-email">Email</label><input id="f-email" type="email" required autocomplete="username" /></div>
-          <div><label for="f-pass">Password ${isSignup ? '<span class="hint">at least 8 characters</span>' : ''}</label>
-            <input id="f-pass" type="password" required minlength="${isSignup ? 8 : 1}" autocomplete="${isSignup ? 'new-password' : 'current-password'}" /></div>
+          <div><label for="f-pass">Password ${isSignup ? `<span class="hint">${PASSWORD_HINT}</span>` : ''}</label>
+            <input id="f-pass" type="password" required minlength="${isSignup ? 12 : 1}" autocomplete="${isSignup ? 'new-password' : 'current-password'}" /></div>
           <button class="btn btn-primary" type="submit">${isSignup ? 'Create account' : 'Log in'}</button>
         </form>
         <div class="login-foot">
           ${isSignup
             ? `Already have an account? <a id="mode-switch">Log in</a>`
-            : `New here? <a id="mode-switch">Create your business account</a>`}
+            : `New here? <a id="mode-switch">Create your business account</a><br /><a id="forgot-link">Forgot your password?</a>`}
         </div>
       </div></div>`;
 
     document.getElementById('mode-switch').onclick = () => renderLogin(isSignup ? 'login' : 'signup');
+    const forgotLink = document.getElementById('forgot-link');
+    if (forgotLink) forgotLink.onclick = () => renderForgotPassword();
     document.getElementById('login-form').onsubmit = async (e) => {
       e.preventDefault();
       const btn = e.target.querySelector('button[type=submit]');
@@ -269,14 +271,94 @@
     };
   }
 
+  // ------------------------------------------------- password recovery ----
+  const PASSWORD_HINT = '12+ characters, mixing upper &amp; lowercase with numbers or symbols';
+
+  function renderForgotPassword() {
+    document.body.classList.add('login-bg');
+    appEl.innerHTML = `
+      <div class="login-wrap"><div class="login-card">
+        <div class="login-brand">
+          ${PAW_LOGIN}
+          <div class="wordmark">PetPro Connect</div>
+          <div class="tag">Reset your password</div>
+        </div>
+        <form id="forgot-form">
+          <div><label for="f-email">Email</label><input id="f-email" type="email" required autocomplete="username" /></div>
+          <button class="btn btn-primary" type="submit">Send reset link</button>
+        </form>
+        <div class="login-foot"><a id="back-login">Back to log in</a></div>
+      </div></div>`;
+    document.getElementById('back-login').onclick = () => renderLogin();
+    document.getElementById('forgot-form').onsubmit = async (e) => {
+      e.preventDefault();
+      const btn = e.target.querySelector('button[type=submit]');
+      await withBusy(btn, async () => {
+        try {
+          await api('POST', '/api/auth/forgot-password', {
+            email: document.getElementById('f-email').value.trim(),
+          });
+          e.target.outerHTML = `<p style="text-align:center">If that email has an account, a reset link is on its way. Check your inbox (and spam) — the link brings you back here to set a new password.</p>`;
+        } catch (err) {
+          toast(err.message);
+        }
+      });
+    };
+  }
+
+  // Shown when the emailed recovery link lands back on the app.
+  function renderResetPassword(accessToken) {
+    document.body.classList.add('login-bg');
+    appEl.innerHTML = `
+      <div class="login-wrap"><div class="login-card">
+        <div class="login-brand">
+          ${PAW_LOGIN}
+          <div class="wordmark">PetPro Connect</div>
+          <div class="tag">Choose a new password</div>
+        </div>
+        <form id="reset-form">
+          <div><label for="f-pass">New password <span class="hint">${PASSWORD_HINT}</span></label>
+            <input id="f-pass" type="password" required minlength="12" autocomplete="new-password" /></div>
+          <div><label for="f-pass2">Repeat new password</label>
+            <input id="f-pass2" type="password" required minlength="12" autocomplete="new-password" /></div>
+          <button class="btn btn-primary" type="submit">Set new password</button>
+        </form>
+        <div class="login-foot"><a id="back-login">Back to log in</a></div>
+      </div></div>`;
+    const backToLogin = () => { history.replaceState(null, '', location.pathname); renderLogin(); };
+    document.getElementById('back-login').onclick = backToLogin;
+    document.getElementById('reset-form').onsubmit = async (e) => {
+      e.preventDefault();
+      const pass = document.getElementById('f-pass').value;
+      if (pass !== document.getElementById('f-pass2').value) {
+        toast("Those passwords don't match.");
+        return;
+      }
+      const btn = e.target.querySelector('button[type=submit]');
+      await withBusy(btn, async () => {
+        try {
+          await api('POST', '/api/auth/reset-password', { access_token: accessToken, new_password: pass });
+          toast('Password updated — log in with your new password.', 'ok');
+          backToLogin();
+        } catch (err) {
+          toast(err.message);
+        }
+      });
+    };
+  }
+
   // ------------------------------------------------------------- today ----
   async function renderToday(query = '') {
     appEl.innerHTML = header('today') + `<div class="page loading">Loading your day…</div>`;
-    let clients, contracts;
+    let clients, contracts, todaysAppts, openInvoices;
     try {
-      [clients, contracts] = await Promise.all([
+      const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0);
+      const dayEnd = new Date(dayStart.getTime() + DAY_MS);
+      [clients, contracts, todaysAppts, openInvoices] = await Promise.all([
         api('GET', `/api/clients${query ? `?q=${encodeURIComponent(query)}` : ''}`),
         api('GET', '/api/contracts'),
+        api('GET', `/api/appointments?from=${dayStart.toISOString()}&to=${dayEnd.toISOString()}`),
+        api('GET', '/api/invoices?status=open'),
       ]);
     } catch (err) {
       toast(err.message);
@@ -302,6 +384,34 @@
           <button class="btn btn-primary" data-nav="#/contract/${k.id}/sign">Finish signing</button>
         </div>`;
     });
+    // Unpaid invoices are money on the table — same urgency as an unsigned contract.
+    const invoiceCues = openInvoices.map((inv) => {
+      const c = byId[inv.client_id];
+      const overdue = inv.due_date && new Date(inv.due_date) < new Date();
+      return `
+        <div class="card cue-card">
+          <div class="cue-text">
+            <div class="cue-title">${esc(c?.full_name ?? 'A client')} has an unpaid ${esc(fmtMoney(inv.amount_cents))} invoice${overdue ? ' — overdue' : ''}</div>
+            <div class="cue-sub">${esc(inv.description || 'Services')} · created ${esc(fmtDate(inv.created_at))}${inv.due_date ? ` · due ${esc(fmtDate(inv.due_date))}` : ''}</div>
+          </div>
+          <button class="btn btn-quiet" data-nav="#/client/${inv.client_id}">View billing</button>
+        </div>`;
+    });
+
+    // Today's agenda: where do I need to be today? (canceled walks stay out of the way)
+    const agenda = todaysAppts.filter((a) => a.status !== 'canceled');
+    const agendaRows = agenda.map((a) => `
+      <div class="card contract-row" data-nav="#/schedule" tabindex="0" role="link">
+        <div class="what">
+          <div class="title">${esc(fmtTime(a.starts_at))} — ${esc(a.clients?.full_name ?? 'Client')}</div>
+          <div class="meta">${esc(a.services?.name ?? 'Appointment')}${a.services?.duration_minutes ? ` · ${esc(a.services.duration_minutes)} min` : ''}${a.notes ? ` · ${esc(a.notes)}` : ''}</div>
+        </div>
+        ${a.status === 'completed'
+          ? '<span class="pill pill-sage">done</span>'
+          : `<span class="pill pill-draft">${esc(fmtTime(a.starts_at))}</span>`}
+        <span class="chev">›</span>
+      </div>`);
+
     const pendingRows = pending.map((c) => {
       const hasUnsigned = unsigned.some((k) => k.client_id === c.id);
       return `
@@ -332,9 +442,14 @@
         <h1 class="page-title">${firstName ? `Good ${new Date().getHours() < 12 ? 'morning' : 'afternoon'}, ${esc(firstName)}` : 'Today'}</h1>
         <p class="page-sub">${esc(profile?.business_name || '')}${profile?.business_name ? ' · ' : ''}${today}</p>
 
+        <div class="eyebrow">Today's schedule</div>
+        <div class="stack">
+          ${agendaRows.join('') || `<div class="card empty">No walks on the books today. <a class="backlink" href="#/schedule">Open the schedule ›</a></div>`}
+        </div>
+
         <div class="eyebrow">Needs your attention</div>
         <div class="stack">
-          ${cueCards.join('') + pendingRows.join('') || '<div class="card empty">Nothing needs your attention. 🎉</div>'}
+          ${cueCards.join('') + invoiceCues.join('') + pendingRows.join('') || '<div class="card empty">Nothing needs your attention. 🎉</div>'}
         </div>
 
         <div class="eyebrow">Active clients</div>
@@ -446,13 +561,15 @@
     }
 
     const petCards = client.pets.map((p) => `
-      <div class="card pet-card">
+      <div class="card pet-card" id="pet-card-${p.id}">
         <div class="pet-top">
           <div class="pet-photo">${PAW.replace('#1C4C64', 'transparent').replace('#F7F2EB', '#6D9280').replace('<circle cx="22" cy="22" r="22" fill="transparent"/>', '')}</div>
           <div>
             <div class="pet-name">${esc(p.name)}</div>
             <div class="pet-breed">${esc([p.breed, p.weight_lb ? `${p.weight_lb} lb` : null].filter(Boolean).join(' · ') || 'dog')}</div>
           </div>
+          <div class="spacer"></div>
+          <button class="btn btn-ghost" data-edit-pet="${p.id}" aria-label="Edit ${esc(p.name)}">✎</button>
         </div>
         <div class="pet-tags">
           ${p.behavior_notes ? `<span class="pill pill-draft">${esc(p.behavior_notes.slice(0, 40))}${p.behavior_notes.length > 40 ? '…' : ''}</span>` : ''}
@@ -534,14 +651,41 @@
         <div class="detail-head">
           <div class="who">
             <h1 class="page-title">${esc(client.full_name)}</h1>
-            <div class="contact-line">${esc([client.address, client.phone, client.email].filter(Boolean).join(' · ') || 'No contact details yet')}</div>
+            <div class="contact-line">${[
+              client.address ? esc(client.address) : null,
+              client.phone ? `<a href="tel:${esc(client.phone.replace(/[^+\d]/g, ''))}">${esc(client.phone)}</a>` : null,
+              client.email ? `<a href="mailto:${esc(client.email)}">${esc(client.email)}</a>` : null,
+            ].filter(Boolean).join(' · ') || 'No contact details yet'}</div>
             ${client.emergency_contact_name ? `<div class="contact-line">Emergency: ${esc(client.emergency_contact_name)}${client.emergency_contact_phone ? `, ${esc(client.emergency_contact_phone)}` : ''}</div>` : ''}
           </div>
           <div style="display:flex; gap:10px; flex-wrap:wrap">
+            ${opts.edit ? '' : `<button class="btn btn-ghost" data-nav="#/client/${client.id}?edit=1">✎ Edit</button>`}
             <button class="btn btn-quiet" id="msg-client-btn">✉ Message</button>
             <button class="btn btn-primary" data-nav="#/client/${client.id}/new-contract">Generate contract</button>
           </div>
         </div>
+
+        ${opts.edit ? `
+        <div class="card fieldset" style="margin-top:14px" id="edit-client-card">
+          <strong style="font-size:14px">Edit client</strong>
+          <form id="ec-form"><div class="form-grid">
+            <div><label for="ec-name">Full name</label><input id="ec-name" required value="${esc(client.full_name)}" /></div>
+            <div><label for="ec-phone">Phone</label><input id="ec-phone" value="${esc(client.phone ?? '')}" placeholder="+1 (555) 000-0000" /></div>
+            <div><label for="ec-email">Email</label><input id="ec-email" type="email" value="${esc(client.email ?? '')}" placeholder="name@example.com" /></div>
+            <div class="full"><label for="ec-address">Address</label><input id="ec-address" value="${esc(client.address ?? '')}" placeholder="Street, city, state" /></div>
+            <div><label for="ec-ecname">Emergency contact</label><input id="ec-ecname" value="${esc(client.emergency_contact_name ?? '')}" placeholder="Name" /></div>
+            <div><label for="ec-ecphone">Emergency phone</label><input id="ec-ecphone" value="${esc(client.emergency_contact_phone ?? '')}" placeholder="+1 (555) 000-0000" /></div>
+            <div><label for="ec-window">Cancellation notice <span class="hint">hours</span></label><input id="ec-window" type="number" min="0" value="${esc(client.cancellation_window_hours ?? 24)}" class="num" /></div>
+            <div><label for="ec-noshow">No-show fee</label><input id="ec-noshow" class="money" value="${client.no_show_fee_cents ? esc(fmtMoney(client.no_show_fee_cents)) : ''}" placeholder="$0.00" /></div>
+            <div class="full"><label for="ec-entry">Entry instructions <span class="hint">— private, never appears in contracts</span></label><input id="ec-entry" value="${esc(client.entry_instructions ?? '')}" placeholder="Lockbox code, gate, alarm…" /></div>
+          </div>
+          <p class="preview-note" style="margin:0">Edits change the live record only — already-signed contracts keep the details they were signed with.</p>
+          <div class="form-foot" style="margin-top:0">
+            <button class="btn btn-ghost" type="button" data-nav="#/client/${client.id}">Cancel</button>
+            <div class="spacer"></div>
+            <button class="btn btn-primary" type="submit">Save changes</button>
+          </div></form>
+        </div>` : ''}
 
         <div class="eyebrow">Policies</div>
         <div class="policy-grid">
@@ -623,6 +767,79 @@
           </div></form>
         </div>
       </div>`;
+
+    // ------------------------------------------------------ client edit --
+    const ecForm = document.getElementById('ec-form');
+    if (ecForm) {
+      ecForm.onsubmit = async (e) => {
+        e.preventDefault();
+        const btn = e.target.querySelector('button[type=submit]');
+        await withBusy(btn, async () => {
+          try {
+            const val = (id) => document.getElementById(id).value.trim() || null;
+            await api('PATCH', `/api/clients/${clientId}`, {
+              full_name: document.getElementById('ec-name').value.trim(),
+              email: val('ec-email'),
+              phone: val('ec-phone'),
+              address: val('ec-address'),
+              emergency_contact_name: val('ec-ecname'),
+              emergency_contact_phone: val('ec-ecphone'),
+              cancellation_window_hours: Number(document.getElementById('ec-window').value) || 0,
+              no_show_fee_cents: parseMoney(document.getElementById('ec-noshow').value) ?? 0,
+              entry_instructions: val('ec-entry'),
+            });
+            toast('Client updated.', 'ok');
+            location.hash = `#/client/${clientId}`;
+          } catch (err) {
+            toast(err.message);
+          }
+        });
+      };
+    }
+
+    // --------------------------------------------------------- pet edit --
+    const petsById = Object.fromEntries(client.pets.map((p) => [p.id, p]));
+    document.querySelectorAll('[data-edit-pet]').forEach((editBtn) => {
+      editBtn.onclick = () => {
+        const p = petsById[editBtn.dataset.editPet];
+        const card = document.getElementById(`pet-card-${p.id}`);
+        card.innerHTML = `
+          <form class="pet-edit-form"><div class="form-grid">
+            <div><label for="pe-name-${p.id}">Name</label><input id="pe-name-${p.id}" required value="${esc(p.name)}" /></div>
+            <div><label for="pe-breed-${p.id}">Breed</label><input id="pe-breed-${p.id}" value="${esc(p.breed ?? '')}" placeholder="e.g. Beagle" /></div>
+            <div><label for="pe-weight-${p.id}">Weight <span class="hint">lb</span></label><input id="pe-weight-${p.id}" type="number" min="1" max="500" step="0.1" class="num" value="${esc(p.weight_lb ?? '')}" /></div>
+            <div><label for="pe-vet-${p.id}">Emergency vet</label><input id="pe-vet-${p.id}" value="${esc(p.emergency_vet ?? '')}" placeholder="Clinic, phone" /></div>
+            <div class="full"><label for="pe-behavior-${p.id}">Behavior notes</label><input id="pe-behavior-${p.id}" value="${esc(p.behavior_notes ?? '')}" placeholder="e.g. pulls on leash, reactive to bikes" /></div>
+          </div>
+          <div class="form-foot" style="margin-top:0">
+            <button class="btn btn-ghost" type="button" data-cancel-pet-edit>Cancel</button>
+            <div class="spacer"></div>
+            <button class="btn btn-quiet" type="submit">Save</button>
+          </div></form>`;
+        card.querySelector('[data-cancel-pet-edit]').onclick = () => renderClient(clientId);
+        card.querySelector('form').onsubmit = async (e) => {
+          e.preventDefault();
+          const btn = e.target.querySelector('button[type=submit]');
+          await withBusy(btn, async () => {
+            try {
+              const val = (id) => document.getElementById(id).value.trim() || null;
+              const weight = document.getElementById(`pe-weight-${p.id}`).value;
+              await api('PATCH', `/api/pets/${p.id}`, {
+                name: document.getElementById(`pe-name-${p.id}`).value.trim(),
+                breed: val(`pe-breed-${p.id}`),
+                weight_lb: weight ? Number(weight) : null,
+                emergency_vet: val(`pe-vet-${p.id}`),
+                behavior_notes: val(`pe-behavior-${p.id}`),
+              });
+              toast('Pet updated.', 'ok');
+              renderClient(clientId);
+            } catch (err) {
+              toast(err.message);
+            }
+          });
+        };
+      };
+    });
 
     document.getElementById('msg-client-btn').onclick = (e) =>
       withBusy(e.target, async () => {
@@ -1477,6 +1694,22 @@
           <button class="btn btn-primary" type="submit">Save profile</button>
         </div>
         </form>
+
+        <div class="eyebrow" style="margin-top:28px">Change password</div>
+        <form id="pw-form">
+        <div class="card fieldset">
+          <div class="form-grid">
+            <div><label for="pw-current">Current password</label>
+              <input id="pw-current" type="password" required autocomplete="current-password" /></div>
+            <div><label for="pw-new">New password <span class="hint">${PASSWORD_HINT}</span></label>
+              <input id="pw-new" type="password" required minlength="12" autocomplete="new-password" /></div>
+          </div>
+        </div>
+        <div class="form-foot">
+          <div class="spacer"></div>
+          <button class="btn" type="submit">Update password</button>
+        </div>
+        </form>
       </div>`;
 
     document.getElementById('pf-form').onsubmit = async (e) => {
@@ -1495,6 +1728,22 @@
           await loadProfile();
           toast('Profile saved.', 'ok');
           renderProfile();
+        } catch (err) {
+          toast(err.message);
+        }
+      });
+    };
+    document.getElementById('pw-form').onsubmit = async (e) => {
+      e.preventDefault();
+      const btn = e.target.querySelector('button[type=submit]');
+      await withBusy(btn, async () => {
+        try {
+          await api('POST', '/api/auth/change-password', {
+            current_password: document.getElementById('pw-current').value,
+            new_password: document.getElementById('pw-new').value,
+          });
+          e.target.reset();
+          toast('Password updated.', 'ok');
         } catch (err) {
           toast(err.message);
         }
@@ -1771,6 +2020,24 @@
   function render() {
     teardownMessaging(); // leaving a conversation stops its socket + poll
     document.body.classList.remove('login-bg');
+
+    // A Supabase recovery link lands here as `#access_token=…&type=recovery`
+    // (or `#error=…` when the link expired) — intercept before hash routing.
+    const raw = (location.hash || '').slice(1);
+    if (raw.includes('type=recovery') || raw.startsWith('error=')) {
+      const rp = new URLSearchParams(raw);
+      if (rp.get('type') === 'recovery' && rp.get('access_token')) {
+        renderResetPassword(rp.get('access_token'));
+        return;
+      }
+      if (rp.get('error')) {
+        history.replaceState(null, '', location.pathname);
+        toast(rp.get('error_description') || 'That reset link is invalid or has expired — request a new one.');
+        renderLogin();
+        return;
+      }
+    }
+
     const hash = location.hash || '#/today';
     const [path, queryString] = hash.slice(2).split('?');
     const params = new URLSearchParams(queryString ?? '');
@@ -1789,7 +2056,7 @@
       renderNewContract(parts[1], params.get('replace')); return;
     }
     if (parts[0] === 'client' && parts[1]) {
-      renderClient(parts[1], { addpet: params.get('addpet') === '1' }); return;
+      renderClient(parts[1], { addpet: params.get('addpet') === '1', edit: params.get('edit') === '1' }); return;
     }
     if (parts[0] === 'contract' && parts[1] && parts[2] === 'sign') { renderSign(parts[1]); return; }
     if (parts[0] === 'invoice' && parts[1] && parts[2] === 'return') {
