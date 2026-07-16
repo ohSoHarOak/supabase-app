@@ -6,7 +6,9 @@
  *
  * Drives the whole loop the app supports so far in one command:
  * auth → clients/pets → contract generate/sign/immutability → billing →
- * scheduling (recurrence, conflicts, complete → auto-invoice) → event log.
+ * scheduling (recurrence, conflicts, complete → auto-invoice) → event log →
+ * messaging (threads, idempotent sends, offline draft sync) → notifications
+ * (queued emails + reminder lifecycle).
  *
  * Everything here is fully automated — no browser, no Stripe Checkout step.
  * (Paying an invoice with the test card stays in week5-test.ps1, since only
@@ -341,6 +343,78 @@ async function main(): Promise<void> {
     ).data;
     assert(pkg.session_count === 10, '8. Package service', `session_count not stored, got ${pkg.session_count}`);
     pass('8. Profile mapping saved; boarding non-exclusive (2nd boarder + mid-stay walk OK, walk-vs-walk still 409); per-day stay billed 2 days = $100; session_count stored');
+  }
+
+  // --- 9. Messaging: thread + idempotent sends + offline draft sync ----------
+  {
+    const thread = (await ok('POST', '/api/threads', { client_id: client.id }, '9. Thread')).data;
+    const sameThread = (await ok('POST', '/api/threads', { client_id: client.id }, '9. Thread reuse')).data;
+    assert(sameThread.id === thread.id, '9. Thread reuse', 'Second open created a second thread — should be one per client');
+
+    const sent = (
+      await ok('POST', `/api/threads/${thread.id}/messages`, { body: 'Hello from E2E', client_draft_id: `e2e-d1-${stamp}` }, '9. Send')
+    ).data;
+    const resend = (
+      await ok('POST', `/api/threads/${thread.id}/messages`, { body: 'Hello from E2E', client_draft_id: `e2e-d1-${stamp}` }, '9. Resend')
+    ).data;
+    assert(resend.id === sent.id, '9. Resend', 'Resending the same draft created a duplicate message');
+
+    const synced = (
+      await ok('POST', '/api/messages/sync', {
+        drafts: [
+          { client_id: client.id, client_draft_id: `e2e-d1-${stamp}`, body: 'Hello from E2E' },
+          { client_id: client.id, client_draft_id: `e2e-d2-${stamp}`, body: 'Queued while offline' },
+        ],
+      }, '9. Draft sync')
+    ).data as { client_draft_id: string; status: string }[];
+    assert(synced[0].status === 'duplicate', '9. Draft sync', `Already-sent draft should report duplicate, got ${synced[0].status}`);
+    assert(synced[1].status === 'created', '9. Draft sync', `New draft should report created, got ${synced[1].status}`);
+
+    const messages = (await ok('GET', `/api/threads/${thread.id}/messages`, undefined, '9. List')).data;
+    assert(messages.length === 2, '9. List', `Expected exactly 2 messages, got ${messages.length}`);
+
+    const threads = (await ok('GET', '/api/threads', undefined, '9. Threads list')).data as {
+      id: string; unread_count: number; last_message: { body: string } | null;
+    }[];
+    const mine = threads.find((t) => t.id === thread.id);
+    assert(mine, '9. Threads list', 'Thread missing from the list');
+    assert(mine.last_message?.body === 'Queued while offline', '9. Threads list', 'last_message preview is stale');
+    assert(mine.unread_count === 0, '9. Threads list', 'Own messages counted as unread');
+    pass('9. Messaging: one thread per client, resend + draft sync idempotent, previews correct');
+  }
+
+  // --- 10. Notifications: queued emails + reminder lifecycle ------------------
+  {
+    const rows = (await ok('GET', '/api/notifications', undefined, '10. Queue')).data as {
+      category: string; status: string; payload: { template?: string; appointment_id?: string };
+    }[];
+    for (const template of ['contract_ready', 'contract_signed']) {
+      assert(
+        rows.some((r) => r.payload.template === template),
+        '10. Queue',
+        `No ${template} notification queued by the contract flow`
+      );
+    }
+    // Walks 2–4 of the series got 24h reminders, then step 6 cancelled those
+    // walks — their reminders must be cancelled too, never sent.
+    const cancelledIds = new Set(series.slice(1).map((s) => s.id));
+    const reminders = rows.filter((r) => r.category === 'appointment_reminder' && cancelledIds.has(r.payload.appointment_id ?? ''));
+    assert(reminders.length === 3, '10. Reminders', `Expected 3 reminders for the cancelled series walks, got ${reminders.length}`);
+    assert(
+      reminders.every((r) => r.status === 'cancelled'),
+      '10. Reminders',
+      `Cancelling walks must cancel their reminders; statuses: ${reminders.map((r) => r.status).join(', ')}`
+    );
+
+    const processed = (await ok('POST', '/api/notifications/process', {}, '10. Process')).data as {
+      configured: boolean; sent: number; failed: number;
+    };
+    if (processed.configured) {
+      assert(processed.failed === 0, '10. Process', `${processed.failed} notification(s) failed to send — check GET /api/notifications for errors`);
+      pass(`10. Notifications: contract emails queued, cancelled walks' reminders cancelled, ${processed.sent} email(s) sent`);
+    } else {
+      pass('10. Notifications: contract emails queued, cancelled walks\' reminders cancelled (email key not set — rows stay pending, will send once RESEND_API_KEY exists)');
+    }
   }
 
   console.log(`\n\x1b[32m${passed} steps passed — E2E TEST PASSED against ${baseUrl}\x1b[0m`);

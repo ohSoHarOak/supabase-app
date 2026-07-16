@@ -11,6 +11,9 @@
 <body>
   <div id="app" aria-live="polite"></div>
   <div id="toast" class="toast" role="alert" hidden></div>
+  <!-- Supabase client for Realtime message delivery (Week 7). The app works
+       without it — messaging falls back to polling if the CDN is blocked. -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js" defer></script>
   <script src="/app.js" defer></script>
 </body>
 </html>

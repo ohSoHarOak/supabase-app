@@ -208,7 +208,7 @@
           ${tab('today', 'Today')}
           ${tab('clients', 'Clients')}
           ${tab('schedule', 'Schedule')}
-          <a class="soon" title="Coming in week 7">Messages<small>week 7</small></a>
+          ${tab('messages', 'Messages')}
           ${tab('profile', 'Profile')}
           <a href="#/login" onclick="window.petproLogout(); return false;">Log out</a>
         </nav>
@@ -537,7 +537,10 @@
             <div class="contact-line">${esc([client.address, client.phone, client.email].filter(Boolean).join(' · ') || 'No contact details yet')}</div>
             ${client.emergency_contact_name ? `<div class="contact-line">Emergency: ${esc(client.emergency_contact_name)}${client.emergency_contact_phone ? `, ${esc(client.emergency_contact_phone)}` : ''}</div>` : ''}
           </div>
-          <button class="btn btn-primary" data-nav="#/client/${client.id}/new-contract">Generate contract</button>
+          <div style="display:flex; gap:10px; flex-wrap:wrap">
+            <button class="btn btn-quiet" id="msg-client-btn">✉ Message</button>
+            <button class="btn btn-primary" data-nav="#/client/${client.id}/new-contract">Generate contract</button>
+          </div>
         </div>
 
         <div class="eyebrow">Policies</div>
@@ -620,6 +623,16 @@
           </div></form>
         </div>
       </div>`;
+
+    document.getElementById('msg-client-btn').onclick = (e) =>
+      withBusy(e.target, async () => {
+        try {
+          const thread = await api('POST', '/api/threads', { client_id: clientId });
+          location.hash = `#/messages/${thread.id}`;
+        } catch (err) {
+          toast(err.message);
+        }
+      });
 
     document.getElementById('pet-form').onsubmit = async (e) => {
       e.preventDefault();
@@ -935,6 +948,9 @@
           <a class="backlink" href="#/client/${client.id}">‹ ${esc(client.full_name)}</a>
           <span style="flex:1"></span>
           ${signable ? `<button class="btn btn-ghost" data-nav="#/client/${client.id}/new-contract?replace=${contract.id}">✎ Edit terms</button>` : ''}
+          ${signed ? `
+            <button class="btn btn-ghost" id="doc-download">⬇ Download</button>
+            <button class="btn btn-quiet" id="doc-print">🖨 Print / save as PDF</button>` : ''}
         </div>
         <h1 class="page-title" style="margin-top:8px">${signed ? 'Signed contract' : 'Sign contract'}</h1>
         ${signable ? `<p class="page-sub">Still a draft — every term can be edited until the moment it's signed. Hand the device to your client to review and sign.</p>` : ''}
@@ -969,6 +985,48 @@
     // Render the contract HTML in a sandboxed iframe so its styles can't
     // leak into the app (and app scripts can't touch the document).
     document.getElementById('doc-frame').srcdoc = contract.generated_html;
+
+    // W-1: the copy the client keeps. The document endpoint needs the auth
+    // header, so fetch it first, then print or download the result.
+    if (signed) {
+      const fetchDocument = async () => {
+        const res = await fetch(`/api/contracts/${contractId}/document`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) throw new Error('Could not load the contract document.');
+        return res.text();
+      };
+      document.getElementById('doc-print').onclick = (e) =>
+        withBusy(e.target, async () => {
+          try {
+            // Print through a hidden iframe — no popup, so no popup blocker.
+            // The browser's Print dialog does paper or "Save as PDF".
+            const html = await fetchDocument();
+            const frame = document.createElement('iframe');
+            frame.style.cssText = 'position:fixed;right:100%;bottom:100%;width:8.5in;height:11in;border:0';
+            frame.setAttribute('aria-hidden', 'true');
+            frame.srcdoc = html;
+            frame.onload = () => {
+              frame.contentWindow.focus();
+              frame.contentWindow.print();
+              // Keep it alive while the dialog is up; clean up afterwards.
+              setTimeout(() => frame.remove(), 60_000);
+            };
+            document.body.appendChild(frame);
+          } catch (err) { toast(err.message); }
+        });
+      document.getElementById('doc-download').onclick = (e) =>
+        withBusy(e.target, async () => {
+          try {
+            const blobUrl = URL.createObjectURL(new Blob([await fetchDocument()], { type: 'text/html' }));
+            const a = document.createElement('a');
+            a.href = blobUrl;
+            a.download = `signed-agreement-${client.full_name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.html`;
+            a.click();
+            setTimeout(() => URL.revokeObjectURL(blobUrl), 10_000);
+          } catch (err) { toast(err.message); }
+        });
+    }
 
     if (!signable) { wireNav(); return; }
 
@@ -1445,6 +1503,259 @@
     wireNav();
   }
 
+  // ---------------------------------------------------------- messaging ----
+  // Realtime: one Supabase client (anon key from /api/config), authorized
+  // with the user's JWT so RLS only ever delivers their own threads. If the
+  // CDN script or the socket fails, the 8s poll below covers delivery.
+  let sbClient = null; // null = not tried, false = unavailable
+  async function getSupabase() {
+    if (sbClient !== null) return sbClient;
+    try {
+      if (!window.supabase) { sbClient = false; return sbClient; }
+      const cfg = await api('GET', '/api/config');
+      sbClient = window.supabase.createClient(cfg.supabase_url, cfg.supabase_anon_key, {
+        auth: { persistSession: false, autoRefreshToken: false },
+      });
+    } catch {
+      sbClient = false;
+    }
+    return sbClient;
+  }
+  let activeChannel = null;
+  let pollTimer = null;
+  function teardownMessaging() {
+    if (activeChannel && sbClient) sbClient.removeChannel(activeChannel);
+    activeChannel = null;
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+
+  // Offline drafts: messages that failed to send wait in localStorage and
+  // sync (idempotently, via client_draft_id) when the connection returns.
+  function draftQueue() { return safeParse(localStorage.getItem('petpro_drafts')) || []; }
+  function saveDraftQueue(q) { localStorage.setItem('petpro_drafts', JSON.stringify(q)); }
+  async function syncDraftQueue() {
+    const q = draftQueue();
+    if (!q.length || !token) return false;
+    let results;
+    try {
+      results = await api('POST', '/api/messages/sync', {
+        drafts: q.map((d) => ({ client_id: d.client_id, client_draft_id: d.client_draft_id, body: d.body })),
+      });
+    } catch {
+      return false; // still offline — keep the queue
+    }
+    // Every draft got a verdict: sent, already-sent, or rejected. Nothing to retry.
+    saveDraftQueue([]);
+    const errors = results.filter((r) => r.status === 'error');
+    if (errors.length) toast(`${errors.length} queued message${errors.length === 1 ? '' : 's'} couldn't be sent.`);
+    return results.some((r) => r.status === 'created');
+  }
+  window.addEventListener('online', () => { syncDraftQueue(); });
+
+  function fmtThreadTime(iso) {
+    const d = new Date(iso);
+    return d.toDateString() === new Date().toDateString()
+      ? fmtTime(iso)
+      : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  }
+
+  // ------------------------------------------------------- thread list ----
+  async function renderMessages() {
+    appEl.innerHTML = header('messages') + `<div class="page loading">Loading messages…</div>`;
+    let threads, clients;
+    try {
+      await syncDraftQueue();
+      [threads, clients] = await Promise.all([api('GET', '/api/threads'), api('GET', '/api/clients')]);
+    } catch (err) {
+      toast(err.message);
+      appEl.innerHTML = header('messages') + `<div class="page"><div class="empty">Couldn't load messages. <a class="backlink" href="#/messages">Retry</a></div></div>`;
+      return;
+    }
+
+    const threadRows = threads.map((t) => {
+      const preview = t.last_message
+        ? `${t.last_message.sender_account_id === account?.id ? 'You: ' : ''}${t.last_message.body ?? ''}`
+        : 'No messages yet';
+      return `
+        <div class="card client-row" data-nav="#/messages/${t.id}" tabindex="0" role="link">
+          <div class="avatar">${esc(initials(t.client.full_name))}</div>
+          <div class="who">
+            <div class="name">${esc(t.client.full_name)}</div>
+            <div class="pets msg-preview">${esc(preview.slice(0, 80))}${preview.length > 80 ? '…' : ''}</div>
+          </div>
+          ${t.unread_count ? `<span class="unread-dot">${t.unread_count}</span>` : ''}
+          <span class="msg-when num">${t.last_message_at ? esc(fmtThreadTime(t.last_message_at)) : ''}</span>
+          <span class="chev">›</span>
+        </div>`;
+    });
+
+    appEl.innerHTML = header('messages') + `
+      <div class="page">
+        <h1 class="page-title">Messages</h1>
+        <p class="page-sub">One conversation per client. Clients get their own view in the owner portal (Week 8).</p>
+
+        <div class="search-row" style="margin-top:16px">
+          <select id="msg-client" aria-label="Start a conversation with a client">
+            <option value="">Message a client…</option>
+            ${clients.map((c) => `<option value="${c.id}">${esc(c.full_name)}</option>`).join('')}
+          </select>
+          <button class="btn btn-quiet" id="msg-start">Open conversation</button>
+        </div>
+
+        <div class="stack" style="margin-top:14px">
+          ${threadRows.join('') || '<div class="card empty">No conversations yet — pick a client above to start one.</div>'}
+        </div>
+      </div>`;
+
+    document.getElementById('msg-start').onclick = async (e) => {
+      const clientId = document.getElementById('msg-client').value;
+      if (!clientId) { toast('Pick a client first.'); return; }
+      await withBusy(e.target, async () => {
+        try {
+          const thread = await api('POST', '/api/threads', { client_id: clientId });
+          location.hash = `#/messages/${thread.id}`;
+        } catch (err) {
+          toast(err.message);
+        }
+      });
+    };
+    wireNav();
+  }
+
+  // ------------------------------------------------------- conversation ----
+  async function renderThread(threadId) {
+    appEl.innerHTML = header('messages') + `<div class="page loading">Loading conversation…</div>`;
+    let threads, messages;
+    try {
+      await syncDraftQueue();
+      [threads, messages] = await Promise.all([
+        api('GET', '/api/threads'),
+        api('GET', `/api/threads/${threadId}/messages`),
+      ]);
+    } catch (err) {
+      toast(err.message);
+      location.hash = '#/messages';
+      return;
+    }
+    const thread = threads.find((t) => t.id === threadId);
+    if (!thread) { location.hash = '#/messages'; return; }
+    api('POST', `/api/threads/${threadId}/read`).catch(() => {});
+
+    let lastTs = messages.length ? messages[messages.length - 1].created_at : null;
+
+    function bubbleHtml(m, state = '') {
+      const mine = m.sender_account_id === account?.id && !m.is_system;
+      const kind = m.is_system ? 'system' : mine ? 'mine' : 'theirs';
+      return `
+        <div class="msg ${kind}${state ? ` ${state}` : ''}" id="msg-${m.id}">
+          <div class="msg-bubble">${esc(m.body ?? '')}</div>
+          <div class="msg-meta num">${state === 'queued' ? 'queued — sends when back online' : esc(fmtThreadTime(m.created_at))}</div>
+        </div>`;
+    }
+
+    appEl.innerHTML = header('messages') + `
+      <div class="page thread-page">
+        <a class="backlink" href="#/messages">‹ All messages</a>
+        <div class="detail-head" style="margin-bottom:6px">
+          <div class="who" style="display:flex; align-items:center; gap:12px">
+            <div class="avatar">${esc(initials(thread.client.full_name))}</div>
+            <h1 class="page-title">${esc(thread.client.full_name)}</h1>
+          </div>
+          <button class="btn btn-quiet" data-nav="#/client/${thread.client.id}">View client</button>
+        </div>
+        <div class="card msg-window" id="msg-window">
+          ${messages.map((m) => bubbleHtml(m)).join('') || '<div class="empty" style="border:none">No messages yet — say hi 👋</div>'}
+        </div>
+        <form class="msg-composer" id="msg-form">
+          <textarea id="msg-input" rows="1" placeholder="Write a message…" aria-label="Message"></textarea>
+          <button class="btn btn-primary" type="submit">Send</button>
+        </form>
+        <div class="msg-live num" id="msg-live"></div>
+      </div>`;
+
+    const windowEl = document.getElementById('msg-window');
+    const inputEl = document.getElementById('msg-input');
+    const scrollDown = () => { windowEl.scrollTop = windowEl.scrollHeight; };
+    scrollDown();
+
+    function appendMessage(m, state = '') {
+      if (document.getElementById(`msg-${m.id}`)) return;
+      windowEl.querySelector('.empty')?.remove();
+      windowEl.insertAdjacentHTML('beforeend', bubbleHtml(m, state));
+      if (m.created_at && (!lastTs || m.created_at > lastTs)) lastTs = m.created_at;
+      scrollDown();
+    }
+
+    // Incoming delivery: realtime when available, 8s polling as safety net.
+    async function pollNew() {
+      try {
+        const fresh = await api('GET', `/api/threads/${threadId}/messages${lastTs ? `?after=${encodeURIComponent(lastTs)}` : ''}`);
+        for (const m of fresh) appendMessage(m);
+        if (fresh.some((m) => m.sender_account_id !== account?.id)) {
+          api('POST', `/api/threads/${threadId}/read`).catch(() => {});
+        }
+      } catch { /* transient — next poll retries */ }
+    }
+    pollTimer = setInterval(pollNew, 8000);
+
+    (async () => {
+      const sb = await getSupabase();
+      if (!sb || location.hash !== `#/messages/${threadId}`) return;
+      sb.realtime.setAuth(token);
+      activeChannel = sb
+        .channel(`thread-${threadId}`)
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'messages', filter: `thread_id=eq.${threadId}` },
+          (payload) => {
+            appendMessage(payload.new);
+            if (payload.new.sender_account_id !== account?.id) {
+              api('POST', `/api/threads/${threadId}/read`).catch(() => {});
+            }
+          }
+        )
+        .subscribe((status) => {
+          const live = document.getElementById('msg-live');
+          if (live) live.textContent = status === 'SUBSCRIBED' ? '● live' : '';
+        });
+    })();
+
+    // Sending — optimistic bubble; a network failure queues the draft.
+    document.getElementById('msg-form').onsubmit = async (e) => {
+      e.preventDefault();
+      const body = inputEl.value.trim();
+      if (!body) return;
+      const draftId = crypto.randomUUID();
+      inputEl.value = '';
+      const temp = { id: `tmp-${draftId}`, sender_account_id: account?.id, body, created_at: new Date().toISOString() };
+      appendMessage(temp, 'sending');
+      try {
+        const sent = await api('POST', `/api/threads/${threadId}/messages`, { body, client_draft_id: draftId });
+        const el = document.getElementById(`msg-${temp.id}`);
+        if (el) el.remove();
+        appendMessage(sent);
+      } catch (err) {
+        if (/reach the server/i.test(err.message)) {
+          saveDraftQueue([...draftQueue(), { client_id: thread.client.id, client_draft_id: draftId, body }]);
+          const el = document.getElementById(`msg-${temp.id}`);
+          if (el) { el.classList.remove('sending'); el.classList.add('queued'); el.querySelector('.msg-meta').textContent = 'queued — sends when back online'; }
+        } else {
+          document.getElementById(`msg-${temp.id}`)?.remove();
+          toast(err.message);
+        }
+      }
+    };
+    inputEl.onkeydown = (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        document.getElementById('msg-form').requestSubmit();
+      }
+    };
+    inputEl.focus();
+    wireNav();
+  }
+
   // ------------------------------------------------------------ routing ----
   function wireNav() {
     document.querySelectorAll('[data-nav]').forEach((el) => {
@@ -1458,6 +1769,7 @@
   }
 
   function render() {
+    teardownMessaging(); // leaving a conversation stops its socket + poll
     document.body.classList.remove('login-bg');
     const hash = location.hash || '#/today';
     const [path, queryString] = hash.slice(2).split('?');
@@ -1468,6 +1780,8 @@
 
     if (parts[0] === 'login') { renderLogin(); return; }
     if (parts[0] === 'schedule') { renderSchedule(Number(params.get('w')) || 0); return; }
+    if (parts[0] === 'messages' && parts[1]) { renderThread(parts[1]); return; }
+    if (parts[0] === 'messages') { renderMessages(); return; }
     if (parts[0] === 'profile') { renderProfile(); return; }
     if (parts[0] === 'appointment-new') { renderNewAppointment(params); return; }
     if (parts[0] === 'client-new') { renderNewClient(); return; }
