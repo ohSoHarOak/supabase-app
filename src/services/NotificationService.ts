@@ -101,7 +101,11 @@ function emailLayout(businessName: string, bodyHtml: string): string {
  * pending and send once the founder adds RESEND_API_KEY.
  */
 export class NotificationService {
-  private processing = false;
+  /** Serializes processing passes: the worker tick, post-enqueue nudges, and
+   *  the /process route all run one at a time, and every caller's pass really
+   *  runs (instead of silently skipping while another is mid-flight — which
+   *  made the /test route report "pending" before its send had happened). */
+  private chain: Promise<unknown> = Promise.resolve();
 
   // -------------------------------------------------------------- enqueue ----
 
@@ -201,18 +205,22 @@ export class NotificationService {
   // ------------------------------------------------------------ processing ----
 
   /**
-   * Send everything due. Single-flight (in-process mutex) so the interval
-   * worker and post-enqueue nudges never double-send — the app runs as one
-   * Render instance, so in-process is a real guarantee here.
+   * Send everything due. Passes are serialized (never concurrent), so the
+   * interval worker and post-enqueue nudges can't double-send — the app runs
+   * as one Render instance, so in-process serialization is a real guarantee.
    */
   async processDue(options: { accountId?: string } = {}): Promise<ProcessSummary> {
+    const run = this.chain.then(() => this.processPass(options));
+    this.chain = run.catch(() => {}); // a failed pass must not poison the chain
+    return run;
+  }
+
+  private async processPass(options: { accountId?: string }): Promise<ProcessSummary> {
     const provider = getEmailProvider();
     const summary: ProcessSummary = { configured: provider.configured, sent: 0, failed: 0, cancelled: 0 };
     if (!provider.configured) return summary; // rows stay pending until a key exists
-    if (this.processing) return summary;
-    this.processing = true;
 
-    try {
+    {
       let builder = supabaseAdmin
         .from('notification_queue')
         .select('*')
@@ -241,8 +249,6 @@ export class NotificationService {
         }
       }
       return summary;
-    } finally {
-      this.processing = false;
     }
   }
 

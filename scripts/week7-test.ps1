@@ -12,12 +12,18 @@
 #
 # With no RESEND_API_KEY set, everything still passes: emails queue as
 # "pending" and send automatically once the key is added. When the key IS
-# set, step 7 sends a real test email to the account's inbox. (Heads-up:
-# until a sending domain is verified in Resend, Resend only delivers to the
-# email address that owns the Resend account.)
+# set, step 7 sends a real test email. IMPORTANT: until a sending domain is
+# verified in Resend, Resend only delivers to the email address that owns
+# the Resend account — so pass that address explicitly:
+#
+#   .\scripts\week7-test.ps1 -BaseUrl "https://..." -TestEmail "you@yourbusiness.com"
+#
+# Without -TestEmail, step 7 targets this run's throwaway signup address,
+# which Resend will refuse (403) until a domain is verified.
 
 param(
-  [string]$BaseUrl = "http://localhost:3000"
+  [string]$BaseUrl = "http://localhost:3000",
+  [string]$TestEmail = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -120,11 +126,18 @@ try {
 
 # --- Step 7: email test probe (proves the Resend key, when present) ------------------
 try {
-  $probe = Post "/api/notifications/test" @{} $token
+  $probeBody = @{}
+  $recipient = "week7test+$stamp@example.com"
+  if ($TestEmail) { $probeBody = @{ to = $TestEmail }; $recipient = $TestEmail }
+  $probe = Post "/api/notifications/test" $probeBody $token
   if ($probe.data.summary.configured) {
     if ($probe.data.notification.status -eq "sent") {
-      Write-Host "[PASS] 7. Email key works - test email SENT to week7test+$stamp@example.com" -ForegroundColor Green
-      Write-Host "        (Resend without a verified domain only delivers to the Resend account owner's inbox - check there.)" -ForegroundColor Yellow
+      Write-Host "[PASS] 7. Email key works - test email SENT to $recipient. Check that inbox!" -ForegroundColor Green
+    } elseif ($probe.data.notification.error -match "own email address") {
+      Write-Host "[PASS] 7. Email key WORKS - Resend accepted the key but only delivers to the Resend account owner's inbox until a domain is verified." -ForegroundColor Green
+      Write-Host "        Re-run with your own address to see a real email land:" -ForegroundColor Yellow
+      Write-Host "        .\scripts\week7-test.ps1 -BaseUrl `"$BaseUrl`" -TestEmail `"the-email-your-resend-account-uses`"" -ForegroundColor Yellow
+      Write-Host "        To email real clients, verify your domain at resend.com/domains (founder task)." -ForegroundColor Yellow
     } else {
       Fail "Email probe" "Email key is set but the send failed: $($probe.data.notification.error)"
     }
