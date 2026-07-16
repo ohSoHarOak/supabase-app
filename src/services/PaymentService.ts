@@ -5,6 +5,7 @@ import { BillingPeriod, Invoice, InvoiceStatus, PaymentTransaction, StripeProduc
 import { clientService } from './ClientService';
 import { ServiceError } from './errors';
 import { eventService } from './EventService';
+import { notificationService } from './NotificationService';
 
 export interface BillableItemInput {
   name: string;
@@ -438,6 +439,22 @@ export class PaymentService {
           stripe_payment_intent_id: input.paymentIntentId,
           via: input.stripeEventId ? 'webhook' : 'sync',
         },
+      });
+
+      // Week 7 emails, both riding the same paid-exactly-once transition the
+      // event does: a receipt to the client, a "you got paid" to the
+      // professional. enqueue never throws.
+      await notificationService.enqueue({
+        accountId: invoice.professional_account_id,
+        category: 'payment',
+        template: 'payment_receipt',
+        data: { invoice_id: invoiceId },
+      });
+      await notificationService.enqueue({
+        accountId: invoice.professional_account_id,
+        category: 'payment',
+        template: 'payment_received',
+        data: { invoice_id: invoiceId },
       });
     }
   }

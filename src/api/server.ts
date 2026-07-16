@@ -10,7 +10,10 @@ import {
   stripeWebhookRouter,
 } from './routes/billing';
 import { appointmentsRouter, servicesRouter } from './routes/scheduling';
+import { messagesRouter, threadsRouter } from './routes/messaging';
+import { notificationsRouter } from './routes/notifications';
 import { errorHandler } from './middleware/errorHandler';
+import { env } from '../config/env';
 
 export function createServer(): express.Express {
   const app = express();
@@ -32,6 +35,15 @@ export function createServer(): express.Express {
     res.json({ ok: true, data: { service: 'petpro-connect', status: 'healthy' } });
   });
 
+  // Public config for the browser: the anon key is designed to be public
+  // (RLS is what protects data) — the UI needs it to subscribe to Realtime.
+  app.get('/api/config', (_req, res) => {
+    res.json({
+      ok: true,
+      data: { supabase_url: env.supabaseUrl, supabase_anon_key: env.supabaseAnonKey },
+    });
+  });
+
   app.use('/api/auth', authRouter);
   app.use('/api/clients', clientsRouter);
   app.use('/api/pets', petsRouter);
@@ -42,6 +54,9 @@ export function createServer(): express.Express {
   app.use('/api/billable-items', billableItemsRouter);
   app.use('/api/invoices', invoicesRouter);
   app.use('/api/events', eventsRouter);
+  app.use('/api/threads', threadsRouter);
+  app.use('/api/messages', messagesRouter);
+  app.use('/api/notifications', notificationsRouter);
 
   app.use((_req, res) => {
     res.status(404).json({ ok: false, error: { code: 'not_found', message: 'Route not found.' } });

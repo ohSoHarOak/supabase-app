@@ -11,6 +11,7 @@ import {
 import { clientService } from './ClientService';
 import { ServiceError } from './errors';
 import { eventService } from './EventService';
+import { notificationService } from './NotificationService';
 import { paymentService } from './PaymentService';
 
 export interface ServiceInput {
@@ -254,6 +255,11 @@ export class SchedulingService {
       },
     });
 
+    // Week 7: queue a 24h-before email reminder for each occurrence far
+    // enough out. Reminders re-check the appointment at send time, so a
+    // later cancel/complete/reschedule can't send a stale email.
+    await notificationService.scheduleAppointmentReminders(professionalAccountId, created);
+
     return created;
   }
 
@@ -378,7 +384,13 @@ export class SchedulingService {
       .select()
       .single();
     if (error) throw new ServiceError('appointment_update_failed', error.message, 500);
-    return data as Appointment;
+    const appointment = data as Appointment;
+
+    // Keep the pending reminder aligned with the new time.
+    if (input.starts_at) {
+      await notificationService.rescheduleAppointmentReminder(appointment.id, appointment.starts_at);
+    }
+    return appointment;
   }
 
   private async findConflictsExcluding(
@@ -439,7 +451,10 @@ export class SchedulingService {
 
     const { data, error } = await builder.select();
     if (error) throw new ServiceError('appointment_cancel_failed', error.message, 500);
-    return (data ?? []) as Appointment[];
+    const cancelled = (data ?? []) as Appointment[];
+
+    await notificationService.cancelAppointmentReminders(cancelled.map((a) => a.id));
+    return cancelled;
   }
 
   // ----------------------------------------------------------- complete ----
@@ -543,6 +558,9 @@ export class SchedulingService {
         invoice_id: invoice?.id ?? null,
       },
     });
+
+    // A completed walk needs no reminder (covers early completes).
+    await notificationService.cancelAppointmentReminders([appointment.id]);
 
     return { appointment, invoice };
   }

@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { accountService } from '../../services/AccountService';
 import { contractService } from '../../services/ContractService';
+import { renderContractDocument } from '../../services/contractDocument';
 import { requireAuth, requireAccountType } from '../middleware/auth';
 
 // ----------------------------------------------------------- validation ----
@@ -158,6 +160,25 @@ contractsRouter.get('/:id/html', async (req, res, next) => {
   try {
     const contract = await contractService.getContract(req.account!.id, req.params.id);
     res.type('html').send(contract.generated_html);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** GET /api/contracts/:id/document?download=1 — the standalone, print-styled
+ *  copy the client keeps (W-1). Same rendering the contract-signed email
+ *  attaches; the browser's Print → Save as PDF turns it into a PDF. */
+contractsRouter.get('/:id/document', async (req, res, next) => {
+  try {
+    const contract = await contractService.getContract(req.account!.id, req.params.id);
+    const profile = await accountService.getProfessionalProfile(req.account!.id);
+    const document = renderContractDocument(contract, {
+      businessName: profile?.business_name ?? profile?.full_name ?? null,
+    });
+    if (req.query.download === '1') {
+      res.setHeader('Content-Disposition', `attachment; filename="agreement-${contract.id.slice(0, 8)}.html"`);
+    }
+    res.type('html').send(document);
   } catch (err) {
     next(err);
   }

@@ -32,5 +32,11 @@ export const env = {
    *  without them — payment endpoints return 503 until keys are set. */
   stripeSecretKey: optional('STRIPE_SECRET_KEY'),
   stripeWebhookSecret: optional('STRIPE_WEBHOOK_SECRET'),
+  /** Email (Week 7). Optional so the app boots without it — notifications
+   *  queue as pending and send once the key is added. */
+  resendApiKey: optional('RESEND_API_KEY'),
+  /** Sender address. Resend's onboarding sender works without domain setup
+   *  but only delivers to the Resend account owner's inbox. */
+  emailFrom: optional('EMAIL_FROM') ?? 'PetPro Connect <onboarding@resend.dev>',
   port: Number(process.env.PORT) || 3000,
 };

@@ -7,6 +7,7 @@ import { accountService } from './AccountService';
 import { clientService } from './ClientService';
 import { ServiceError } from './errors';
 import { eventService } from './EventService';
+import { notificationService } from './NotificationService';
 
 export interface TemplateInput {
   name: string;
@@ -261,6 +262,15 @@ export class ContractService {
       metadata: { template_id: template.id, client_id: client.id },
     });
 
+    // "Contract ready" email to the client (Week 7). enqueue never throws,
+    // so a notification problem can never fail contract generation.
+    await notificationService.enqueue({
+      accountId: professionalAccountId,
+      category: 'contract',
+      template: 'contract_ready',
+      data: { contract_id: contract.id },
+    });
+
     return { contract, unresolved_placeholders: [...unresolved] };
   }
 
@@ -399,6 +409,15 @@ export class ContractService {
       subjectType: 'contract',
       subjectId: contract.id,
       metadata: { signer_name: input.signer_name, signing_method: 'in_person' },
+    });
+
+    // Founder requirement: the signed-contract email goes to the client WITH
+    // their copy of the agreement attached (rendered at send time).
+    await notificationService.enqueue({
+      accountId: professionalAccountId,
+      category: 'contract',
+      template: 'contract_signed',
+      data: { contract_id: contract.id },
     });
 
     return signed;
