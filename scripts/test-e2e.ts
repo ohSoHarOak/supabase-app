@@ -8,11 +8,17 @@
  * auth → clients/pets → contract generate/sign/immutability → billing →
  * scheduling (recurrence, conflicts, complete → auto-invoice) → event log →
  * messaging (threads, idempotent sends, offline draft sync) → notifications
- * (queued emails + reminder lifecycle).
+ * (queued emails + reminder lifecycle) → owner portal (magic-link session,
+ * overview, remote signing, Stripe checkout creation, messaging, access
+ * control both directions).
  *
  * Everything here is fully automated — no browser, no Stripe Checkout step.
  * (Paying an invoice with the test card stays in week5-test.ps1, since only
- * a human can complete Stripe's hosted payment page.)
+ * a human can complete Stripe's hosted payment page.) The owner-portal step
+ * mints its magic-link token server-side (generateLink → verifyOtp — the
+ * exact flow the emailed link performs), which needs the repo's .env; when
+ * testing against Render the same Supabase project backs both, so it works
+ * there too.
  *
  * Exit code 0 = all steps passed; 1 = something failed (CI-friendly).
  */
@@ -51,12 +57,13 @@ interface ApiResult {
   errorMessage: string;
 }
 
-async function api(method: string, path: string, body?: unknown): Promise<ApiResult> {
+async function api(method: string, path: string, body?: unknown, auth?: string): Promise<ApiResult> {
+  const bearer = auth ?? token;
   const res = await fetch(`${baseUrl}${path}`, {
     method,
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(bearer ? { Authorization: `Bearer ${bearer}` } : {}),
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
@@ -73,8 +80,8 @@ async function api(method: string, path: string, body?: unknown): Promise<ApiRes
 }
 
 /** For calls that must succeed — anything but 2xx fails the run. */
-async function ok(method: string, path: string, body: unknown, step: string): Promise<ApiResult> {
-  const result = await api(method, path, body);
+async function ok(method: string, path: string, body: unknown, step: string, auth?: string): Promise<ApiResult> {
+  const result = await api(method, path, body, auth);
   assert(
     result.status >= 200 && result.status < 300,
     step,
@@ -118,7 +125,7 @@ async function main(): Promise<void> {
   const client = (
     await ok('POST', '/api/clients', {
       full_name: 'E2E Client',
-      email: 'e2e.client@example.com',
+      email: `e2e.client+${stamp}@example.com`, // unique per run — step 11 links the owner portal to it
       cancellation_window_hours: 24,
       status: 'active',
     }, '2. Client')
@@ -416,6 +423,115 @@ async function main(): Promise<void> {
     } else {
       pass('10. Notifications: contract emails queued, cancelled walks\' reminders cancelled (email key not set — rows stay pending, will send once RESEND_API_KEY exists)');
     }
+  }
+
+  // --- 11. Owner portal: magic-link session → view, sign, pay, message -------
+  {
+    const ownerEmail = `e2e.client+${stamp}@example.com`;
+
+    // Mint the magic-link token exactly the way the emailed link does
+    // (generateLink → verifyOtp) — a script has no inbox to click through.
+    let ownerToken = '';
+    {
+      const { supabaseAdmin, supabaseAnon } = await import('../src/config/supabase');
+      // generateLink only works for existing auth users (the real emailed
+      // flow creates one via signInWithOtp) — create it up front.
+      await supabaseAdmin.auth.admin.createUser({ email: ownerEmail, email_confirm: true });
+      const { data, error } = await supabaseAdmin.auth.admin.generateLink({ type: 'magiclink', email: ownerEmail });
+      assert(!error && data, '11. Magic link', `generateLink failed: ${error?.message}`);
+      const { data: verified, error: verifyError } = await supabaseAnon.auth.verifyOtp({
+        token_hash: data.properties.hashed_token,
+        type: 'magiclink',
+      });
+      assert(!verifyError && verified.session, '11. Magic link', `verifyOtp failed: ${verifyError?.message}`);
+      ownerToken = verified.session.access_token;
+    }
+
+    // Session exchange creates the owner account and links the client record.
+    const session = (await ok('POST', '/api/portal/session', { access_token: ownerToken }, '11. Session')).data;
+    assert(session.account.account_type === 'owner', '11. Session', `Expected owner account, got ${session.account.account_type}`);
+    assert(
+      session.clients.some((c: { id: string }) => c.id === client.id),
+      '11. Session',
+      'The owner\'s email did not link to their client record'
+    );
+
+    // Seed what the portal home shows: an upcoming walk + a fresh draft contract.
+    const nextWalk = new Date(tomorrow10.getTime() - 3600 * 1000); // tomorrow 09:00 — clear of the other slots
+    await ok('POST', '/api/appointments', { service_id: service.id, starts_at: nextWalk.toISOString() }, '11. Upcoming walk');
+    const template = (await ok('POST', '/api/contract-templates/seed', {}, '11. Template')).data;
+    const draft = (await ok('POST', '/api/contracts', { template_id: template.id, client_id: client.id }, '11. Draft')).data.contract;
+
+    const overview = (await ok('GET', '/api/portal/overview', undefined, '11. Overview', ownerToken)).data;
+    assert(overview.clients.length === 1, '11. Overview', `Expected 1 linked client, got ${overview.clients.length}`);
+    assert(
+      overview.clients[0].professional?.business_name === 'E2E Boarding Co.',
+      '11. Overview',
+      'Overview missing the professional\'s business name'
+    );
+    assert(
+      overview.appointments.some((a: { client_id: string }) => a.client_id === client.id),
+      '11. Overview',
+      'Upcoming visit missing from the portal overview'
+    );
+    assert(
+      overview.contracts.some((k: { id: string; status: string }) => k.id === draft.id && k.status === 'draft'),
+      '11. Overview',
+      'The draft agreement is missing from the portal overview'
+    );
+
+    // The owner signs remotely — same signature capture, their login is the identity.
+    const signed = (
+      await ok('POST', `/api/portal/contracts/${draft.id}/sign`, { signer_name: 'E2E Owner', signature_image: SIGNATURE }, '11. Portal sign', ownerToken)
+    ).data;
+    assert(signed.status === 'signed', '11. Portal sign', `Expected signed, got ${signed.status}`);
+    const notifyRows = (await ok('GET', '/api/notifications', undefined, '11. Notify')).data as {
+      payload: { template?: string; contract_id?: string };
+    }[];
+    assert(
+      notifyRows.some((r) => r.payload.template === 'contract_signed' && r.payload.contract_id === draft.id),
+      '11. Notify',
+      'Portal signing did not queue the contract_signed email'
+    );
+
+    // Pay leg: the portal creates a real Stripe Checkout session; an unpaid
+    // one stays open after a sync. (Completing payment needs a human — that
+    // stays in week5-test.ps1.)
+    const invoice = (
+      await ok('POST', '/api/invoices', { client_id: client.id, amount_cents: 2000, description: 'E2E portal pay leg' }, '11. Invoice')
+    ).data;
+    const checkout = (await ok('POST', `/api/portal/invoices/${invoice.id}/checkout`, {}, '11. Checkout', ownerToken)).data;
+    assert(
+      typeof checkout.checkout_url === 'string' && checkout.checkout_url.includes('checkout.stripe.com'),
+      '11. Checkout',
+      `Portal checkout did not return a Stripe URL: ${checkout.checkout_url}`
+    );
+    const syncedInvoice = (await ok('POST', `/api/portal/invoices/${invoice.id}/sync`, {}, '11. Sync', ownerToken)).data;
+    assert(syncedInvoice.status === 'open', '11. Sync', `Unpaid invoice should stay open after sync, got ${syncedInvoice.status}`);
+
+    // Message leg: owner → professional, idempotent like everything else.
+    const thread = (await ok('POST', '/api/portal/threads', { client_id: client.id }, '11. Thread', ownerToken)).data;
+    const sent = (
+      await ok('POST', `/api/portal/threads/${thread.id}/messages`, { body: 'Portal hello', client_draft_id: `e2e-o1-${stamp}` }, '11. Owner send', ownerToken)
+    ).data;
+    const resent = (
+      await ok('POST', `/api/portal/threads/${thread.id}/messages`, { body: 'Portal hello', client_draft_id: `e2e-o1-${stamp}` }, '11. Owner resend', ownerToken)
+    ).data;
+    assert(
+      resent.duplicate === true && resent.message.id === sent.message.id,
+      '11. Owner resend',
+      'Resending the same portal draft created a duplicate message'
+    );
+    const proView = (await ok('GET', `/api/threads/${thread.id}/messages`, undefined, '11. Professional sees it')).data as { body: string }[];
+    assert(proView.some((m) => m.body === 'Portal hello'), '11. Professional sees it', 'Owner message not visible to the professional');
+
+    // Access control seals the seam: neither token works on the other side.
+    const ownerOnPro = await api('GET', '/api/clients', undefined, ownerToken);
+    assert(ownerOnPro.status === 403, '11. Access control', `Owner token on professional routes returned ${ownerOnPro.status}, expected 403`);
+    const proOnPortal = await api('GET', '/api/portal/overview', undefined);
+    assert(proOnPortal.status === 403, '11. Access control', `Professional token on portal routes returned ${proOnPortal.status}, expected 403`);
+
+    pass('11. Owner portal: magic-link session linked the client; overview complete; remote sign queued the email; Stripe checkout created (stays open unpaid); owner↔professional messaging idempotent; cross-role access 403 both ways');
   }
 
   console.log(`\n\x1b[32m${passed} steps passed — E2E TEST PASSED against ${baseUrl}\x1b[0m`);
