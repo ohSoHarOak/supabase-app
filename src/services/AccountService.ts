@@ -56,14 +56,32 @@ export class AccountService {
       password: input.password,
       email_confirm: true,
     });
-    if (authError || !created.user) {
-      throw new ServiceError('auth_failed', authError?.message ?? 'Could not create auth user.', 400);
+    let authUserId = created?.user?.id ?? null;
+    if (!authUserId) {
+      // A requested-but-never-clicked portal magic link leaves an auth user
+      // with no accounts row. Since we know no accounts row exists (checked
+      // above), adopt that orphan instead of failing with Supabase's raw
+      // "already been registered" error.
+      const isExisting =
+        authError?.code === 'email_exists' || /already.+registered/i.test(authError?.message ?? '');
+      const orphan = isExisting ? await this.findAuthUserByEmail(email) : null;
+      if (!orphan) {
+        throw new ServiceError('auth_failed', authError?.message ?? 'Could not create auth user.', 400);
+      }
+      const { error: adoptError } = await supabaseAdmin.auth.admin.updateUserById(orphan.id, {
+        password: input.password,
+        email_confirm: true,
+      });
+      if (adoptError) {
+        throw new ServiceError('auth_failed', adoptError.message, 400);
+      }
+      authUserId = orphan.id;
     }
 
     const { data: account, error: accountError } = await supabaseAdmin
       .from('accounts')
       .insert({
-        auth_user_id: created.user.id,
+        auth_user_id: authUserId,
         account_type: 'professional',
         email,
         phone: input.phone ?? null,
@@ -71,8 +89,11 @@ export class AccountService {
       .select()
       .single();
     if (accountError) {
-      // Roll back the orphaned auth user so the email isn't stuck half-registered.
-      await supabaseAdmin.auth.admin.deleteUser(created.user.id);
+      // Roll back a freshly created auth user so the email isn't stuck
+      // half-registered (an adopted orphan predates this signup — keep it).
+      if (created?.user) {
+        await supabaseAdmin.auth.admin.deleteUser(created.user.id);
+      }
       throw new ServiceError('account_failed', accountError.message, 500);
     }
 
@@ -180,6 +201,19 @@ export class AccountService {
     if (error) {
       throw new ServiceError('change_failed', error.message, 500);
     }
+  }
+
+  /** Supabase Admin has no direct email lookup — page through users (fine at this scale). */
+  private async findAuthUserByEmail(email: string): Promise<{ id: string } | null> {
+    const target = email.toLowerCase();
+    for (let page = 1; page <= 20; page++) {
+      const { data, error } = await supabaseAdmin.auth.admin.listUsers({ page, perPage: 1000 });
+      if (error) throw new ServiceError('lookup_failed', error.message, 500);
+      const match = data.users.find((u) => (u.email ?? '').toLowerCase() === target);
+      if (match) return { id: match.id };
+      if (data.users.length < 1000) break;
+    }
+    return null;
   }
 
   async getAccountByAuthUserId(authUserId: string): Promise<Account | null> {

@@ -31,6 +31,24 @@ export class PortalService {
    */
   async requestLoginLink(email: string, redirectTo: string): Promise<void> {
     const normalized = email.trim().toLowerCase();
+
+    // An email that's already a professional/business login can't be an owner
+    // too (accounts.email is unique) — say so NOW, not as a dead-end 403 after
+    // they click the emailed link. No probing risk: it's their own login email.
+    const { data: existingAccount, error: accountError } = await supabaseAdmin
+      .from('accounts')
+      .select('account_type')
+      .ilike('email', normalized)
+      .maybeSingle();
+    if (accountError) throw new ServiceError('portal_lookup_failed', accountError.message, 500);
+    if (existingAccount && existingAccount.account_type !== 'owner') {
+      throw new ServiceError(
+        'professional_email',
+        'That email is a professional login, so it can\'t also be an owner portal login. Use a different email for the portal — a Gmail "+" alias (you+pup@gmail.com) works and still lands in your inbox.',
+        409
+      );
+    }
+
     const { data: client, error } = await supabaseAdmin
       .from('clients')
       .select('id')
@@ -38,15 +56,24 @@ export class PortalService {
       .limit(1)
       .maybeSingle();
     if (error) throw new ServiceError('portal_lookup_failed', error.message, 500);
-    if (!client) return; // unknown email — silently do nothing
+    if (!client) return; // unknown email — silently do nothing (no probing)
 
     const { error: otpError } = await supabaseAnon.auth.signInWithOtp({
       email: normalized,
       options: { emailRedirectTo: redirectTo },
     });
     if (otpError) {
-      // Rate limits shouldn't 500 the UI, but do surface in server logs.
-      console.error(`[portal] magic link failed: ${otpError.message}`);
+      // A real failure must not masquerade as "link sent" — that's how the
+      // founder lost an hour to a silent Supabase refusal. Rate limits and
+      // invalid addresses get actionable messages.
+      console.error(`[portal] magic link failed: [${otpError.status}] ${otpError.code ?? ''} ${otpError.message}`);
+      if (otpError.code === 'over_email_send_rate_limit' || otpError.status === 429) {
+        throw new ServiceError('rate_limited', 'Too many login emails just now — wait a couple of minutes and try again.', 429);
+      }
+      if (otpError.code === 'email_address_invalid') {
+        throw new ServiceError('email_invalid', 'That email address was refused by the mail service — double-check it.', 422);
+      }
+      throw new ServiceError('otp_failed', 'The login email could not be sent right now — try again shortly.', 502);
     }
   }
 
@@ -74,7 +101,18 @@ export class PortalService {
         .insert({ auth_user_id: data.user.id, account_type: 'owner', email })
         .select()
         .single();
-      if (accountError) throw new ServiceError('account_failed', accountError.message, 500);
+      if (accountError) {
+        if (accountError.code === '23505') {
+          // accounts.email is unique — some other account already owns this
+          // address. Friendlier than the raw Postgres duplicate-key error.
+          throw new ServiceError(
+            'email_in_use',
+            'This email already belongs to another PetPro account, so it can\'t open an owner portal. Use a different email for the portal.',
+            409
+          );
+        }
+        throw new ServiceError('account_failed', accountError.message, 500);
+      }
       account = created as Account;
 
       // Profile name comes from whatever the professional recorded.
