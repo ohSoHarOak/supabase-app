@@ -228,21 +228,31 @@ Each week has two lists:
 ## Week 7 — Messaging + Notifications
 
 ### 🤖 Claude Code Tasks
-- [ ] Build message threads + messages (REST first)
-- [ ] Wire real-time delivery via Supabase Realtime
-- [ ] Build offline draft sync endpoint
-- [ ] Build email notifications for: contract ready, contract signed, payment received, appointment reminder
-  - Founder requirement (2026-07-13): the **contract signed** email goes to the client **with the signed contract included**. Decision to make at build time: attach as PDF (needs an HTML→PDF step) vs. a secure view link to the signed copy — PDF preferred, fall back to link if PDF generation gets heavy.
-- [ ] Keep notification sending channel-agnostic (template + recipient + channel), with email as the only channel for now — so SMS walk reports (backlog P2-2) plug in later without rework
-- [ ] Add "Print / download" on the signed-contract view *(added 2026-07-15, user-walkthrough finding W-1)* — today a signed contract can only be viewed inside the app; there's no way to hand the client a copy. Pairs with the contract-signed email task above: both need the same "signed contract as a document the client keeps" rendering, so decide PDF vs. print-styled HTML once and reuse it for both.
-- [ ] Extend the UI: simple message thread view
-- [ ] Write manual test script (send message → confirm real-time delivery → trigger event → confirm email)
+- [x] Build message threads + messages (REST first)
+  - `MessagingService` + `/api/threads` (one thread per client, race-safe get-or-create), `/api/threads/:id/messages`, mark-read, unread counts. Built 2026-07-15.
+- [x] Wire real-time delivery via Supabase Realtime
+  - Migration 015: RLS on messages/threads + realtime publication, so the browser subscribes with the public anon key + the user's JWT and can only ever receive its own threads. Verified live in-browser: "● live" indicator, API-sent message appeared in an open conversation with no reload. An 8s polling fallback covers the CDN/socket failing — messaging never goes dark.
+- [x] Build offline draft sync endpoint
+  - `POST /api/messages/sync` — device-generated `client_draft_id` + the schema's UNIQUE constraint make every retry idempotent (verified: resend + sync of an already-sent draft report `duplicate`, never a double message). UI queues failed sends in localStorage and syncs on reconnect.
+- [x] Build email notifications for: contract ready, contract signed, payment received, appointment reminder
+  - All four wired (payment = receipt to client AND "you got paid" to the professional, both riding Week 5's paid-exactly-once transition; reminders = 24h before, auto-cancelled when the walk is cancelled/completed, auto-shifted on reschedule). Templates render at **send time** from ids, so a stale reminder can't fire and a fixed email typo is picked up automatically. **Decision (2026-07-15): print-styled HTML, not server-side PDF** — the signed email attaches the standalone HTML copy; browser Print → "Save as PDF" produces the PDF. A real PDF pipeline (puppeteer-sized dependency) wasn't worth it pre-demo; revisit only if clients ask.
+- [x] Keep notification sending channel-agnostic (template + recipient + channel), with email as the only channel for now — so SMS walk reports (backlog P2-2) plug in later without rework
+  - Everything is a `notification_queue` row (template + recipient + channel); email goes through an `IEmailProvider` adapter (Resend implemented, SendGrid would be a drop-in). SMS later = second adapter + `channel: 'sms'`, no caller changes. **With no email key set, the app runs fine — rows queue as `pending` and send automatically once `RESEND_API_KEY` lands** (worker retries every 30s). `POST /api/notifications/test` is the founder's key probe.
+- [x] Add "Print / download" on the signed-contract view *(added 2026-07-15, user-walkthrough finding W-1)*
+  - `GET /api/contracts/:id/document` renders the standalone print-styled copy (same rendering the signed email attaches, so both are always identical); the signed-contract view got "⬇ Download" (.html file) and "🖨 Print / save as PDF" (hidden-iframe print — immune to popup blockers).
+- [x] Extend the UI: simple message thread view
+  - Messages tab: thread list (previews, unread badges, "message a client" starter) + conversation view (bubbles, Enter to send, live delivery, queued-offline state). "✉ Message" shortcut on client detail. Verified in-browser 2026-07-15.
+- [x] Write manual test script (send message → confirm real-time delivery → trigger event → confirm email)
+  - `scripts/week7-test.ps1` (7 steps, incl. the email-key probe with founder instructions) — green locally 2026-07-15. `npm test` extended to 10 steps: messaging idempotency + notification queue/reminder lifecycle.
 
 ### 🧑 Founder Tasks
 - [ ] Create Resend or SendGrid account, note API key
+  - Build assumed **Resend** (simpler API; SendGrid still drops in behind the adapter if you prefer it). Put the key in local `.env` AND Render as `RESEND_API_KEY`. Note: until you verify a sending domain in Resend, emails only deliver to the Resend account owner's own inbox — enough for all Week 7 testing.
 - [ ] Provide email API key to Claude Code via `.env` (not chat)
 - [ ] Run test script — send a message, confirm it arrives in real time
+  - `.\scripts\week7-test.ps1` (add `-BaseUrl` for Render). Step 7 probes the email key live — per our earlier key-paste incidents, don't trust "key is in" until that step says SENT. For real-time: open the same conversation in two browser windows and send from one.
 - [ ] Trigger a contract signing, confirm the email notification arrives
+  - Client needs an email address on file; the signed email arrives with their copy of the agreement attached.
 - [ ] Confirm status: mark this week done, or note what broke
 
 ---
@@ -350,19 +360,22 @@ The schema and API are far richer than the UI shows. Pets support photo, date of
 
 | Command | What it proves | Human steps? |
 |---|---|---|
-| `npm test` | **The everything check** — weeks 1–6 in one command: auth, CRM + search, contract sign + immutability, billing + void, scheduling (recurrence, conflicts, complete → auto-invoice, per-day boarding, profile service mapping), event log. Run this before/after any deploy. | None — fully automated |
+| `npm test` | **The everything check** — weeks 1–7 in one command: auth, CRM + search, contract sign + immutability, billing + void, scheduling (recurrence, conflicts, complete → auto-invoice, per-day boarding, profile service mapping), event log, messaging (idempotent sends + draft sync), notifications (queued emails + reminder lifecycle). Run this before/after any deploy. | None — fully automated |
 | `.\scripts\week1-test.ps1` | Signup → login → authenticated session | None |
 | `.\scripts\week2-test.ps1` | Clients + pets CRUD, search across both | None |
 | `.\scripts\week3-test.ps1` | Contract generate → sign → immutability lock | None |
 | `.\scripts\week4-test.ps1` | UI is served + API smoke test | None |
 | `.\scripts\week5-test.ps1` | Full Stripe payment loop, paid exactly once | **Yes** — pays with test card `4242…` in the browser |
 | `.\scripts\week6-test.ps1` | Scheduling loop: service → recurring series → conflict 409 → complete → auto-invoice → series cancel | None |
+| `.\scripts\week7-test.ps1` | Messaging idempotency + draft sync, contract emails queued, signed-contract document, reminder lifecycle, live email-key probe | None (step 7 sends a real email once `RESEND_API_KEY` is set) |
 
 ---
 
 ## Running Notes / Blockers Log
 
 *Use this space for anything that doesn't fit neatly into a single week's checklist — a decision that needs revisiting, a recurring issue, a scope question.*
+
+- 2026-07-15 (Week 7 build session): **Week 7 Claude Code side complete** — messaging (REST + Supabase Realtime + offline draft sync + Messages tab), channel-agnostic notifications (contract ready/signed, payment receipt + you-got-paid, 24h appointment reminders), and W-1's print/download on signed contracts. Migration 015 applied to live Supabase (RLS + realtime publication for messages). All 10 `npm test` steps + all 7 `week7-test.ps1` steps green locally; full messaging flow driven in-browser (realtime delivery confirmed live). **Deployed to Render same day — all 10 `npm test` steps green against https://petpro-app.onrender.com.** **Two decisions made at build time:** (1) signed-contract copy is print-styled HTML, not server-side PDF — browser Print → Save-as-PDF covers the PDF need with zero heavy dependencies; (2) payment emails go to both sides (client receipt + professional "you got paid"). **Founder's turn:** create the Resend account, put `RESEND_API_KEY` in `.env` + Render, then run `week7-test.ps1` — everything email-related is already queued and sends the moment the key lands.
 
 - 2026-07-15 (later): **`PHASE_2_ROADMAP.md` created** at founder direction — Phase 2 organized into workstreams: 0 (Phase 1 code cleanup — baseline verified same day: typecheck clean, 0 audit vulnerabilities, all commits pushed), Q (QA checkpoints + two scheduled security reviews — audit found no RLS policies and no helmet/rate-limiting, both scheduled into review #1), M (mobile-ready, PWA-first), U (UI/UX polish + modernization), X (multi-profession expansion for trainers/groomers/sitters/boarding), F (the P2-1…P2-11 backlog, tiered). Living document; Weeks 7–8 here still finish first.
 - 2026-07-15 (post-close): **Typical-user walkthrough of the live UI** (Claude, acting as a brand-new dog walker, drove the full flow in-browser: signup → new client → pet → service → contract generate/sign → recurring booking → mark complete → auto-invoice — everything worked, no bugs found). Findings are UX/coverage gaps, labeled **W-1…W-4** where scheduled: **W-1** no way to print/hand the client a signed contract → added to Week 7 (pairs with the contract-signed email). **W-2** no forgot-password/change-password anywhere → added to Week 8 (pairs with password hardening). **W-3** clients and pets can't be *edited* through the UI at all (API PATCH exists; UI never calls it except the status flip) → added to Week 8. **W-4** Today screen shows no walks and "Needs your attention" ignores unpaid invoices → added to Week 8. Bigger items went to the backlog as **P2-9** (record cash/Venmo payments — no non-Stripe mark-as-paid exists), **P2-10** (no-show/late-cancel fees — `no_show` status and per-client fee fields exist but are unreachable from the UI), and **P2-11** (full pet profile + vaccination records — Week 2's vaccination API has zero UI). A recurring theme worth knowing: the schema/API is consistently ahead of the UI, so most of these are thin UI slices, not backend work.
@@ -391,5 +404,5 @@ The schema and API are far richer than the UI shows. Pets support photo, date of
 | 4 — Contracts Hardening + UI | ✅ Done | ✅ Done |
 | 5 — Payments | ✅ Done (full loop verified live) | ✅ Done |
 | 6 — Scheduling | ✅ Done (verified live on Render) | ✅ Done |
-| 7 — Messaging | Not started | Not started |
+| 7 — Messaging | ✅ Done (deployed, verified live on Render) | 🔄 Email key + walkthrough pending |
 | 8 — Owner Portal + Demo | Not started | Not started |
