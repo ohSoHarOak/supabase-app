@@ -477,6 +477,64 @@
     }
   }
 
+  // ------------------------------------------------------------ clients ----
+  async function renderClients(query = '') {
+    appEl.innerHTML = header('clients') + `<div class="page loading">Loading clients…</div>`;
+    let clients;
+    try {
+      clients = await api('GET', `/api/clients${query ? `?q=${encodeURIComponent(query)}` : ''}`);
+    } catch (err) {
+      toast(err.message);
+      appEl.innerHTML = header('clients') + `<div class="page"><div class="empty">Couldn't load your clients. <a class="backlink" href="#/clients">Retry</a></div></div>`;
+      return;
+    }
+
+    const statusPill = {
+      active: '<span class="pill pill-sage">active</span>',
+      prospect: '<span class="pill pill-draft">pending</span>',
+      inactive: '<span class="pill pill-alert">inactive</span>',
+    };
+    const row = (c) => `
+      <div class="card client-row" data-nav="#/client/${c.id}" tabindex="0" role="link">
+        <div class="avatar" style="background:${['#2B7192', '#6D9280', '#1C4C64'][c.full_name.length % 3]}">${esc(initials(c.full_name))}</div>
+        <div class="who">
+          <div class="name">${esc(c.full_name)}</div>
+          <div class="pets">${esc(petSummary(c.pets))}</div>
+        </div>
+        ${statusPill[c.status] ?? ''}
+        <span class="chev">›</span>
+      </div>`;
+    const section = (label, list) =>
+      list.length ? `<div class="eyebrow">${label}</div><div class="stack">${list.map(row).join('')}</div>` : '';
+
+    appEl.innerHTML = header('clients') + `
+      <div class="page">
+        <h1 class="page-title">Clients</h1>
+        <p class="page-sub">${clients.length} client${clients.length === 1 ? '' : 's'}</p>
+        <div class="search-row">
+          <input id="search" type="search" placeholder="Search clients, pets, breeds, phone…"
+                 aria-label="Search clients and pets" value="${esc(query)}" />
+          <button class="btn btn-quiet" data-nav="#/client-new">+ New client</button>
+        </div>
+        ${section('Active', clients.filter((c) => c.status === 'active'))}
+        ${section('Pending', clients.filter((c) => c.status === 'prospect'))}
+        ${section('Inactive', clients.filter((c) => c.status === 'inactive'))}
+        ${clients.length === 0 ? `<div class="card empty">${query ? 'No clients match your search.' : 'No clients yet — add your first one.'}</div>` : ''}
+      </div>`;
+
+    let debounce;
+    document.getElementById('search').oninput = (e) => {
+      clearTimeout(debounce);
+      debounce = setTimeout(() => renderClients(e.target.value.trim()), 350);
+    };
+    wireNav();
+    if (query) {
+      const s = document.getElementById('search');
+      s.focus();
+      s.setSelectionRange(s.value.length, s.value.length);
+    }
+  }
+
   // -------------------------------------------------------- new client ----
   function renderNewClient() {
     appEl.innerHTML = header('clients') + `
@@ -2046,6 +2104,7 @@
     if (!token) { renderLogin(); return; }
 
     if (parts[0] === 'login') { renderLogin(); return; }
+    if (parts[0] === 'clients') { renderClients(); return; }
     if (parts[0] === 'schedule') { renderSchedule(Number(params.get('w')) || 0); return; }
     if (parts[0] === 'messages' && parts[1]) { renderThread(parts[1]); return; }
     if (parts[0] === 'messages') { renderMessages(); return; }
@@ -2062,7 +2121,7 @@
     if (parts[0] === 'invoice' && parts[1] && parts[2] === 'return') {
       renderInvoiceReturn(parts[1], params.get('canceled') === '1'); return;
     }
-    renderToday(); // default: today (also covers #/clients)
+    renderToday(); // default: today
   }
 
   window.addEventListener('hashchange', render);
