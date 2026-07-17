@@ -774,26 +774,10 @@
         </div>
 
         <div class="eyebrow">Services</div>
-        <div class="stack">${serviceRows.join('') || '<div class="card empty">No services yet — set up what this client is buying below (e.g. "Private walk — $30 per visit").</div>'}</div>
-
-        <div class="card fieldset" style="margin-top:12px">
-          <strong style="font-size:14px">Add a service</strong>
-          <form id="svc-form"><div class="form-grid">
-            <div><label for="s-name">Name</label><input id="s-name" required placeholder="e.g. Private walk (30 min)" /></div>
-            <div><label for="s-type">Type</label>
-              <select id="s-type">${typeOptionsHtml()}</select></div>
-            <div><label for="s-price">Price</label><input id="s-price" required class="money" placeholder="$30.00" /></div>
-            <div><label for="s-sessions"># of sessions <span class="hint">— for packages, optional</span></label>
-              <input id="s-sessions" type="number" min="1" max="500" class="num" placeholder="e.g. 10" /></div>
-            <div><label for="s-cadence">Billed</label>
-              <select id="s-cadence">${cadenceOptionsHtml(offeredTypes()[0])}</select></div>
-            <div><label for="s-duration">Duration <span class="hint">minutes</span></label>
-              <input id="s-duration" type="number" min="5" max="1440" value="30" class="num" /></div>
-          </div>
-          <div class="form-foot" style="margin-top:0">
-            <div class="spacer"></div>
-            <button class="btn btn-quiet" type="submit">Add service</button>
-          </div></form>
+        <div class="stack">${serviceRows.join('') || `<div class="card empty">No services yet — services come from a signed contract, so they'll appear here once ${esc(client.full_name.split(' ')[0])} signs one.</div>`}</div>
+        <div class="row-actions" style="margin-top:10px">
+          <div class="spacer"></div>
+          <button class="btn btn-ghost" data-nav="#/client/${client.id}/new-contract">＋ Add services</button>
         </div>
 
         <div class="eyebrow">Contracts</div>
@@ -931,30 +915,11 @@
       });
     };
     // --------------------------------------------------------- services --
-    wireTypeToCadence('s-type', 's-cadence');
-    document.getElementById('svc-form').onsubmit = async (e) => {
-      e.preventDefault();
-      const btn = e.target.querySelector('button[type=submit]');
-      await withBusy(btn, async () => {
-        try {
-          const price = parseMoney(document.getElementById('s-price').value);
-          if (!price) { toast('Enter a price, e.g. $30.00'); return; }
-          await api('POST', '/api/services', {
-            client_id: clientId,
-            name: document.getElementById('s-name').value.trim(),
-            service_type: document.getElementById('s-type').value,
-            price_cents: price,
-            billing_cadence: document.getElementById('s-cadence').value,
-            session_count: Number(document.getElementById('s-sessions').value) || null,
-            duration_minutes: Number(document.getElementById('s-duration').value) || null,
-          });
-          toast('Service added.', 'ok');
-          renderClient(clientId);
-        } catch (err) {
-          toast(err.message);
-        }
-      });
-    };
+    // W-7/W-8: no ad-hoc "add service" form here any more. Services are born
+    // from a signed contract, and "＋ Add services" routes into that same flow
+    // — an unsigned add button quietly reintroduces exactly the drift W-5…W-7
+    // exist to fix (a service on the profile the client never agreed a price
+    // for). The API endpoint still exists for scripts and seeded data.
     document.querySelectorAll('[data-end-service]').forEach((btn) => {
       btn.onclick = () =>
         withBusy(btn, async () => {
@@ -1109,6 +1074,15 @@
       return;
     }
 
+    // Every service is for a pet (W-5), so a contract can't be written before
+    // there's one to name. Send them back with the reason rather than showing
+    // a form whose first field is empty and unfillable.
+    if (client.pets.length === 0) {
+      toast(`Add ${client.full_name.split(' ')[0]}'s pet first — every service on a contract is for a specific pet.`);
+      location.hash = `#/client/${clientId}`;
+      return;
+    }
+
     appEl.innerHTML = header('clients') + `
       <div class="page">
         <a class="backlink" href="#/client/${client.id}">‹ ${esc(client.full_name)}</a>
@@ -1119,15 +1093,16 @@
 
         <form id="k-form">
         <div class="card fieldset" style="margin-top:18px">
+          <strong style="font-size:14px">Services</strong>
+          <p class="page-sub" style="margin:4px 0 12px">What ${esc(client.full_name.split(' ')[0])} is buying. These appear on their profile once the contract is signed.</p>
+          <div id="k-services"></div>
+          <button class="btn btn-ghost" type="button" id="k-add-service" style="margin-top:8px">＋ Add another service</button>
+        </div>
+
+        <div class="card fieldset" style="margin-top:12px">
           <div class="form-grid">
             <div class="full"><label for="k-template">Template</label>
               <select id="k-template">${templates.map((t) => `<option value="${t.id}">${esc(t.name)}</option>`).join('')}</select></div>
-            <div><label>Walk type</label>
-              <div class="seg" role="group" aria-label="Walk type" id="k-walktype">
-                <button type="button" aria-pressed="true" data-value="Private Walk">Private walk</button>
-                <button type="button" aria-pressed="false" data-value="Group Walk">Group walk</button>
-              </div></div>
-            <div><label for="k-price">Price</label><input id="k-price" required class="money" placeholder="$30.00 per 30-minute walk" /></div>
             <div class="full"><label for="k-sched">Schedule <span class="hint">— written out, e.g. "Mon/Wed/Fri, 30-minute midday walk"</span></label>
               <input id="k-sched" required placeholder="Mon/Wed/Fri, 30-minute midday walk" /></div>
             <div><label for="k-start">First day of service</label><input id="k-start" type="date" required /></div>
@@ -1153,7 +1128,7 @@
       </div>`;
 
     // segmented controls
-    for (const segId of ['k-walktype', 'k-photo']) {
+    for (const segId of ['k-photo']) {
       document.getElementById(segId).querySelectorAll('button').forEach((b) => {
         b.onclick = () => {
           b.parentElement.querySelectorAll('button').forEach((o) => o.setAttribute('aria-pressed', 'false'));
@@ -1163,6 +1138,89 @@
     }
     const segValue = (id) =>
       document.getElementById(id).querySelector('button[aria-pressed="true"]').dataset.value;
+
+    // ------------------------------------------------- service blocks (W-5/6) --
+    // Field order is deliberate: Pet first. "Which dog is this for" is the
+    // question the old client-profile form never asked, and it's what makes
+    // the rest of the block make sense.
+    const servicesEl = document.getElementById('k-services');
+    let serviceSeq = 0;
+
+    const addServiceBlock = () => {
+      const n = serviceSeq++;
+      const block = document.createElement('div');
+      block.className = 'card fieldset';
+      block.style.cssText = 'margin-bottom:10px;background:transparent';
+      block.dataset.serviceBlock = String(n);
+      block.innerHTML = `
+        <div class="row-actions" style="justify-content:space-between;align-items:center;margin-bottom:8px">
+          <strong style="font-size:13px" data-block-title>Service ${n + 1}</strong>
+          <button class="btn btn-quiet" type="button" data-remove-service hidden>Remove</button>
+        </div>
+        <div class="form-grid">
+          <div class="full"><label>Pet <span class="hint">— one walk covering two dogs is one service</span></label>
+            <div class="row-actions" style="flex-wrap:wrap;gap:10px" data-pets>
+              ${client.pets.map((p) => `
+                <label style="display:flex;align-items:center;gap:6px;font-weight:400">
+                  <input type="checkbox" value="${p.id}" ${client.pets.length === 1 ? 'checked' : ''} />
+                  ${esc(p.name)}
+                </label>`).join('')}
+            </div></div>
+          <div><label for="ks-type-${n}">Type</label>
+            <select id="ks-type-${n}" data-f="type">${typeOptionsHtml()}</select></div>
+          <div><label for="ks-price-${n}">Price</label>
+            <input id="ks-price-${n}" data-f="price" required class="money" placeholder="$30.00" /></div>
+          <div><label for="ks-sessions-${n}"># of sessions <span class="hint">— for packages, optional</span></label>
+            <input id="ks-sessions-${n}" data-f="sessions" type="number" min="1" max="500" class="num" placeholder="e.g. 10" /></div>
+          <div><label for="ks-cadence-${n}">Billed</label>
+            <select id="ks-cadence-${n}" data-f="cadence">${cadenceOptionsHtml(offeredTypes()[0])}</select></div>
+          <div><label for="ks-duration-${n}">Duration <span class="hint">minutes</span></label>
+            <input id="ks-duration-${n}" data-f="duration" type="number" min="5" max="1440" value="30" class="num" /></div>
+          <div class="full"><label for="ks-notes-${n}">Notes</label>
+            <textarea id="ks-notes-${n}" data-f="notes" rows="2" placeholder="Anything specific about this service…"></textarea></div>
+        </div>`;
+      servicesEl.appendChild(block);
+      wireTypeToCadence(`ks-type-${n}`, `ks-cadence-${n}`);
+      block.querySelector('[data-remove-service]').onclick = () => {
+        block.remove();
+        renumberServiceBlocks();
+      };
+      renumberServiceBlocks();
+    };
+
+    // Titles and the Remove affordance depend on how many blocks exist, so
+    // they're recomputed rather than baked in at creation.
+    const renumberServiceBlocks = () => {
+      const blocks = [...servicesEl.querySelectorAll('[data-service-block]')];
+      blocks.forEach((b, i) => {
+        b.querySelector('[data-block-title]').textContent = `Service ${i + 1}`;
+        // Nothing to remove when it's the only one — a contract with no
+        // services is what W-5…W-7 exist to prevent.
+        b.querySelector('[data-remove-service]').hidden = blocks.length === 1;
+      });
+    };
+
+    document.getElementById('k-add-service').onclick = addServiceBlock;
+    addServiceBlock();
+
+    /** Read the blocks into the API's services[] shape, or throw for the toast. */
+    const readServiceBlocks = () =>
+      [...servicesEl.querySelectorAll('[data-service-block]')].map((block, i) => {
+        const field = (f) => block.querySelector(`[data-f="${f}"]`);
+        const petIds = [...block.querySelectorAll('[data-pets] input:checked')].map((c) => c.value);
+        if (petIds.length === 0) throw new Error(`Service ${i + 1}: choose which pet it's for.`);
+        const price = parseMoney(field('price').value);
+        if (!price) throw new Error(`Service ${i + 1}: enter a price, e.g. $30.00`);
+        return {
+          service_type: field('type').value,
+          price_cents: price,
+          billing_cadence: field('cadence').value,
+          session_count: Number(field('sessions').value) || null,
+          duration_minutes: Number(field('duration').value) || null,
+          description: field('notes').value.trim() || null,
+          pet_ids: petIds,
+        };
+      });
 
     document.getElementById('k-form').onsubmit = async (e) => {
       e.preventDefault();
@@ -1174,10 +1232,11 @@
           const result = await api('POST', '/api/contracts', {
             template_id: document.getElementById('k-template').value,
             client_id: client.id,
+            services: readServiceBlocks(),
             variables: {
-              walk_type: segValue('k-walktype'),
+              // walk_type and service_price are derived from the services now
+              // (W-5) — the server fills them, so they're deliberately absent.
               photo_consent: segValue('k-photo'),
-              service_price: document.getElementById('k-price').value.trim(),
               service_schedule: document.getElementById('k-sched').value.trim(),
               start_date: startDate,
               no_show_fee: document.getElementById('k-fee').value.trim(),
