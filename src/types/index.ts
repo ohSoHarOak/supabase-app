@@ -124,6 +124,20 @@ export type ServiceType =
   | 'boarding'
   | 'other';
 
+/** Human labels for service types. The server needs these because it builds
+ *  service names itself now (W-5) rather than taking a typed-in name.
+ *  Mirrored by SERVICE_TYPES in public/app.js, which needs them for the Type
+ *  dropdown — keep the two in step when adding a profession. */
+export const SERVICE_TYPE_LABELS: Record<ServiceType, string> = {
+  group_walk: 'Group walk',
+  private_walk: 'Private walk',
+  training_session: 'Training session',
+  grooming: 'Grooming',
+  sitting: 'Sitting',
+  boarding: 'Boarding',
+  other: 'Service',
+};
+
 export type BillingCadence =
   | 'weekly'
   | 'biweekly'
@@ -133,14 +147,30 @@ export type BillingCadence =
   | 'per_package'
   | 'one_time';
 
+/** Mirrored by CADENCES in public/app.js — keep the two in step. */
+export const BILLING_CADENCE_LABELS: Record<BillingCadence, string> = {
+  per_visit: 'per visit',
+  per_day: 'per day',
+  weekly: 'weekly',
+  biweekly: 'every 2 weeks',
+  monthly: 'monthly',
+  per_package: 'per package',
+  one_time: 'one-time',
+};
+
 export type ServiceStatus = 'draft' | 'active' | 'paused' | 'ended';
 
 export interface Service {
   id: string;
   client_id: string;
   professional_account_id: string;
+  /** The contract that created this service (016). Null = predates W-5, when
+   *  services were still set up ad-hoc on the client profile. */
+  contract_id: string | null;
   service_type: ServiceType;
+  /** Auto-built as "Type — Pet" at creation (W-5); no longer typed by hand. */
   name: string;
+  /** Surfaced in the UI as "Notes" (W-5). */
   description: string | null;
   duration_minutes: number | null;
   price_cents: number;
@@ -151,6 +181,13 @@ export interface Service {
   status: ServiceStatus;
   created_at: string;
   updated_at: string;
+}
+
+/** Pets covered by a service — the service_pets join (004), written from W-6
+ *  onward. One walk covering two dogs is one service at one price. */
+export interface ServicePet {
+  service_id: string;
+  pet_id: string;
 }
 
 // ---------------------------------------------------------------------------

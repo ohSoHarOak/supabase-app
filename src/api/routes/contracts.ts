@@ -4,6 +4,14 @@ import { accountService } from '../../services/AccountService';
 import { contractService } from '../../services/ContractService';
 import { renderContractDocument } from '../../services/contractDocument';
 import { requireAuth, requireAccountType } from '../middleware/auth';
+import {
+  billingCadenceEnum,
+  durationMinutes,
+  priceCents,
+  serviceNotes,
+  serviceTypeEnum,
+  sessionCount,
+} from '../validation';
 
 // ----------------------------------------------------------- validation ----
 
@@ -12,10 +20,24 @@ const templateSchema = z.object({
   body_html: z.string().min(1, 'Template body is required.'),
 });
 
+// A service block on the contract form (W-5/W-6). No `name` — it's derived
+// from service_type + pets. At least one pet: "which dog is this for" is the
+// question the old ad-hoc flow never asked.
+const contractServiceSchema = z.object({
+  service_type: serviceTypeEnum,
+  price_cents: priceCents,
+  billing_cadence: billingCadenceEnum,
+  session_count: sessionCount,
+  duration_minutes: durationMinutes,
+  description: serviceNotes,
+  pet_ids: z.array(z.string().uuid()).min(1, 'Choose which pet each service is for.').max(20),
+});
+
 const generateSchema = z.object({
   template_id: z.string().uuid('template_id must be a UUID.'),
   client_id: z.string().uuid('client_id must be a UUID.'),
   service_id: z.string().uuid().nullish(),
+  services: z.array(contractServiceSchema).max(20).optional(),
   variables: z.record(z.string(), z.string()).optional(),
 });
 

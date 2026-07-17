@@ -2,6 +2,16 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { schedulingService } from '../../services/SchedulingService';
 import { requireAuth, requireAccountType } from '../middleware/auth';
+import {
+  billingCadenceEnum,
+  durationMinutes,
+  isoDate,
+  priceCents,
+  serviceNotes,
+  serviceStatusEnum,
+  serviceTypeEnum,
+  sessionCount,
+} from '../validation';
 
 // ----------------------------------------------------------- validation ----
 
@@ -9,28 +19,19 @@ const isoDateTime = z.string().datetime({ offset: true, message: 'Must be an ISO
 
 const serviceSchema = z.object({
   client_id: z.string().uuid('client_id must be a UUID.'),
-  service_type: z.enum([
-    'group_walk',
-    'private_walk',
-    'training_session',
-    'grooming',
-    'sitting',
-    'boarding',
-    'other',
-  ]),
-  name: z.string().trim().min(1, 'Service name is required.').max(120),
-  description: z.string().trim().max(1000).nullish(),
-  duration_minutes: z.number().int().min(5).max(24 * 60).nullish(),
-  price_cents: z
-    .number()
-    .int('Price must be whole cents.')
-    .positive('Price must be positive.')
-    .max(100_000_000, 'Price is unreasonably large.'),
-  billing_cadence: z.enum(['weekly', 'biweekly', 'monthly', 'per_visit', 'per_day', 'per_package', 'one_time']),
-  session_count: z.number().int().min(1).max(500).nullish(),
-  start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'start_date must be YYYY-MM-DD.').nullish(),
-  end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'end_date must be YYYY-MM-DD.').nullish(),
-  status: z.enum(['draft', 'active', 'paused', 'ended']).optional(),
+  service_type: serviceTypeEnum,
+  // Optional since W-5 — omitted, it's derived as "Type — Pet". Still accepted
+  // so existing callers and seeded data keep working.
+  name: z.string().trim().min(1).max(120).optional(),
+  description: serviceNotes,
+  duration_minutes: durationMinutes,
+  price_cents: priceCents,
+  billing_cadence: billingCadenceEnum,
+  session_count: sessionCount,
+  pet_ids: z.array(z.string().uuid()).max(20).optional(),
+  start_date: isoDate('start_date'),
+  end_date: isoDate('end_date'),
+  status: serviceStatusEnum.optional(),
 });
 
 const serviceUpdateSchema = serviceSchema.omit({ client_id: true }).partial();

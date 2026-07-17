@@ -4,7 +4,9 @@ import {
   AppointmentStatus,
   BillingCadence,
   Invoice,
+  Pet,
   Service,
+  SERVICE_TYPE_LABELS,
   ServiceStatus,
   ServiceType,
 } from '../types';
@@ -17,7 +19,10 @@ import { paymentService } from './PaymentService';
 export interface ServiceInput {
   client_id: string;
   service_type: ServiceType;
-  name: string;
+  /** Optional since W-5: omit it and the name is built as "Type — Pet" from
+   *  service_type + pet_ids. Callers that still pass one (Week 6 scripts,
+   *  seeded data) keep working. */
+  name?: string;
   description?: string | null;
   duration_minutes?: number | null;
   price_cents: number;
@@ -26,6 +31,11 @@ export interface ServiceInput {
   start_date?: string | null;
   end_date?: string | null;
   status?: ServiceStatus;
+  /** The contract that created this service (016, W-7). */
+  contract_id?: string | null;
+  /** Pets covered — written to the service_pets join (W-6). One walk covering
+   *  two dogs is one service at one price, not two services. */
+  pet_ids?: string[];
 }
 
 export interface AppointmentInput {
@@ -56,6 +66,26 @@ const MAX_REPEAT_WEEKS = 26;
 const DEFAULT_DURATION_MINUTES = 30;
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
+/**
+ * W-5: the service name is derived, not typed. "Private walk — Pepper" reads
+ * the way a walker talks about the job, and it keeps invoice descriptions
+ * (see generateInvoice) legible without a naming convention nobody follows.
+ *
+ * Written to the existing NOT NULL services.name, so no migration and every
+ * existing reader keeps working. Falls back to the bare type label when a
+ * service covers no pets — pre-W-6 rows and "other" services both hit this.
+ */
+export function buildServiceName(type: ServiceType, petNames: string[]): string {
+  const label = SERVICE_TYPE_LABELS[type] ?? 'Service';
+  if (petNames.length === 0) return label;
+  // "Pepper", "Pepper & Biscuit", "Pepper, Biscuit & Moose"
+  const pets =
+    petNames.length === 1
+      ? petNames[0]
+      : `${petNames.slice(0, -1).join(', ')} & ${petNames[petNames.length - 1]}`;
+  return `${label} — ${pets}`;
+}
+
 function fmtSlot(iso: string): string {
   return new Date(iso).toLocaleString('en-US', {
     weekday: 'short',
@@ -85,20 +115,128 @@ export class SchedulingService {
 
   async createService(professionalAccountId: string, input: ServiceInput): Promise<Service> {
     const client = await clientService.getClient(professionalAccountId, input.client_id);
+
+    // pet_ids lives on the join table, not the row — keep it out of the insert.
+    const { pet_ids: petIds, ...columns } = input;
+    const pets = this.resolvePets(client.pets, petIds);
+
     const { data, error } = await supabaseAdmin
       .from('services')
       .insert({
-        ...input,
+        ...columns,
+        name: input.name?.trim() || buildServiceName(input.service_type, pets.map((p) => p.name)),
         client_id: client.id,
         professional_account_id: professionalAccountId,
         // DB default is 'draft', but a walker creating "Private walk — $30"
         // means to use it now; drafts would just be a surprise dead end.
+        // Contract-created services are the exception — they pass 'draft'
+        // explicitly and only go active when the client signs (W-7).
         status: input.status ?? 'active',
       })
       .select()
       .single();
     if (error) throw new ServiceError('service_create_failed', error.message, 500);
-    return data as Service;
+    const service = data as Service;
+
+    await this.setServicePets(service.id, pets.map((p) => p.id));
+    return service;
+  }
+
+  /**
+   * Validate pet_ids against the client's own pets, so a service can't be
+   * pointed at someone else's dog. Empty/absent = no pets on the join, which
+   * is how every pre-W-6 service looks.
+   */
+  private resolvePets(clientPets: Pet[], petIds?: string[]): Pet[] {
+    if (!petIds?.length) return [];
+    const byId = new Map(clientPets.map((p) => [p.id, p]));
+    return petIds.map((id) => {
+      const pet = byId.get(id);
+      if (!pet) {
+        throw new ServiceError('pet_not_on_client', 'That pet is not on this client.', 422);
+      }
+      return pet;
+    });
+  }
+
+  /** Replace a service's pet coverage. Delete-then-insert: the join is a tiny
+   *  set with no history worth preserving, and the PK makes upserts fiddlier
+   *  than they're worth. */
+  private async setServicePets(serviceId: string, petIds: string[]): Promise<void> {
+    const { error: clearError } = await supabaseAdmin
+      .from('service_pets')
+      .delete()
+      .eq('service_id', serviceId);
+    if (clearError) throw new ServiceError('service_pets_failed', clearError.message, 500);
+    if (petIds.length === 0) return;
+
+    const { error } = await supabaseAdmin
+      .from('service_pets')
+      .insert(petIds.map((pet_id) => ({ service_id: serviceId, pet_id })));
+    if (error) throw new ServiceError('service_pets_failed', error.message, 500);
+  }
+
+  /** Pets covered by each of the given services, keyed by service id (W-6). */
+  async getPetsForServices(serviceIds: string[]): Promise<Map<string, Pet[]>> {
+    const byService = new Map<string, Pet[]>();
+    if (serviceIds.length === 0) return byService;
+
+    const { data, error } = await supabaseAdmin
+      .from('service_pets')
+      .select('service_id, pets(*)')
+      .in('service_id', serviceIds);
+    if (error) throw new ServiceError('service_pets_lookup_failed', error.message, 500);
+
+    // The embedded row comes back as an object for a to-one FK, but the client's
+    // generated types widen it to an array — normalize rather than trust either.
+    type JoinRow = { service_id: string; pets: Pet | Pet[] | null };
+    for (const row of (data ?? []) as unknown as JoinRow[]) {
+      if (!row.pets) continue;
+      const pets = Array.isArray(row.pets) ? row.pets : [row.pets];
+      const list = byService.get(row.service_id) ?? [];
+      list.push(...pets);
+      byService.set(row.service_id, list);
+    }
+    return byService;
+  }
+
+  /** Services a contract created, draft or otherwise (W-7). */
+  async listServicesForContract(
+    professionalAccountId: string,
+    contractId: string
+  ): Promise<Service[]> {
+    const { data, error } = await supabaseAdmin
+      .from('services')
+      .select('*')
+      .eq('professional_account_id', professionalAccountId)
+      .eq('contract_id', contractId)
+      .order('created_at', { ascending: true });
+    if (error) throw new ServiceError('service_list_failed', error.message, 500);
+    return (data ?? []) as Service[];
+  }
+
+  /**
+   * W-7: a contract's services come alive when it's signed, not when it's
+   * generated — a draft can still be edited or voided, and a service that
+   * exists before the client agreed to the price is exactly the drift W-5…W-7
+   * removes.
+   *
+   * Scoped to draft: re-running this on an already-signed contract is a no-op
+   * rather than resurrecting services the walker has since paused or ended.
+   */
+  async activateServicesForContract(
+    professionalAccountId: string,
+    contractId: string
+  ): Promise<Service[]> {
+    const { data, error } = await supabaseAdmin
+      .from('services')
+      .update({ status: 'active' })
+      .eq('professional_account_id', professionalAccountId)
+      .eq('contract_id', contractId)
+      .eq('status', 'draft')
+      .select();
+    if (error) throw new ServiceError('service_activate_failed', error.message, 500);
+    return (data ?? []) as Service[];
   }
 
   async listServices(
