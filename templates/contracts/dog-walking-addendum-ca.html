@@ -1,0 +1,79 @@
+<!--
+  Addendum to Dog Walking Service Agreement (California) — DRAFT v1, for counsel review
+  W-8/W-9. Adds services to an existing signed agreement instead of replacing it.
+
+  ⚠️ NOT YET APPROVED. Do not seed this template or generate a real contract from
+  it until counsel has reviewed it. See templates/contracts/COUNSEL_REVIEW.md for
+  the open questions this draft is asking them to settle.
+
+  Placeholders are snake_case in double curly braces, substituted by
+  ContractService.generateContract(). Two are new and NOT yet implemented:
+    {{original_agreement_date}} — the parent agreement's signed date
+    {{original_pet_list}}       — pets covered by the parent agreement
+  Both need a parent-contract link in code before this template can render.
+  {{services_table}} is the trusted-markup seam; see servicesTableHtml().
+-->
+<article class="contract">
+  <style>
+    .contract { font-family: Georgia, 'Times New Roman', serif; max-width: 52rem; margin: 0 auto; line-height: 1.45; color: #111; }
+    .contract h1 { text-align: center; font-size: 1.5rem; margin-bottom: 0.25rem; }
+    .contract h2 { font-size: 1rem; margin: 1rem 0 0.25rem; }
+    .contract .notice { border: 1px solid #b8860b; background: #fff3cd; padding: 0.6rem 0.8rem; font-style: italic; font-size: 0.9rem; margin: 0.75rem 0; }
+    .contract table.key-terms { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+    .contract table.key-terms th, .contract table.key-terms td { border: 1px solid #bbb; padding: 0.35rem 0.5rem; text-align: left; vertical-align: top; }
+    .contract table.key-terms th { background: #f2f2f2; width: 27%; font-weight: bold; }
+    .contract .fine-print { font-size: 0.85rem; font-style: italic; }
+    .contract .signatures { display: flex; gap: 2rem; margin-top: 1rem; }
+    .contract .signatures > div { flex: 1; }
+    .contract .sig-image img { max-height: 80px; }
+  </style>
+
+  <h1>Addendum to Dog Walking Service Agreement</h1>
+
+  <p>This Addendum (&ldquo;Addendum&rdquo;) is entered into as of {{effective_date}} between {{provider_business_name}} (&ldquo;Service Provider&rdquo;) and {{client_name}} (&ldquo;Client&rdquo;). It supplements, and does not replace, the Dog Walking Service Agreement between the same parties entered into as of {{original_agreement_date}} (the &ldquo;Original Agreement&rdquo;).</p>
+
+  <p class="notice"><strong>NOTICE:</strong> This template is provided for convenience and is not legal advice. Both parties should have this Addendum reviewed by their own legal counsel before signing.</p>
+
+  <h2>Additional Services</h2>
+  <p>The following services are added to the Original Agreement as of {{start_date}}:</p>
+  {{services_table}}
+  <p class="fine-print">The services listed above are part of this Addendum. In case of conflict between this table and the sections below, the table controls.</p>
+
+  <h2>1. Effect of this Addendum</h2>
+  <p>This Addendum adds the services listed above to the Original Agreement. It is the written amendment contemplated by Section 17 (Entire Agreement) of the Original Agreement. Except as expressly modified here, every term of the Original Agreement remains in full force and unchanged, and applies to the services added by this Addendum as if they had been listed in the Original Agreement when it was signed.</p>
+
+  <h2>2. Services previously agreed</h2>
+  <p>The services already in effect under the Original Agreement continue on their existing terms. This Addendum does not change their price, schedule, or cadence.</p>
+
+  <h2>3. Pets covered</h2>
+  <p>The Original Agreement covers: {{original_pet_list}}. The services added by this Addendum cover the pet(s) identified in the table above. Where a pet is covered by this Addendum but was not listed in the Original Agreement, Client makes the same certifications for that pet as in Section 6 (Health Requirements) of the Original Agreement, and the emergency veterinary authorization in the Original Agreement&rsquo;s Key Terms extends to that pet.</p>
+
+  <h2>4. Fees</h2>
+  <p>Fees for the services added by this Addendum are as listed in the table above. Invoices are due upon receipt unless otherwise agreed in writing. The payment, suspension, cancellation-notice, and late-cancellation / no-show terms of the Original Agreement apply to these services unchanged.</p>
+
+  <h2>5. Term &amp; Termination</h2>
+  <p>The services added by this Addendum begin on {{start_date}} and continue on the same month-to-month basis as the Original Agreement, terminating together with it under Section 4 (Term &amp; Termination) of the Original Agreement. Either party may terminate the services added by this Addendum on the same notice, without terminating the Original Agreement or the services already in effect under it.</p>
+
+  <h2>6. Risk, Liability &amp; Indemnification</h2>
+  <p>Sections 11 (Assumption of Risk), 12 (Limitation of Liability), and 13 (Indemnification) of the Original Agreement apply to the services added by this Addendum. Nothing in this Addendum waives rights that cannot be waived under California law.</p>
+
+  <h2>7. Governing Law</h2>
+  <p>This Addendum is governed by California law and is subject to Sections 15 (Governing Law), 16 (Severability), and 18 (Electronic Signatures) of the Original Agreement.</p>
+
+  <h2>Signatures</h2>
+  <p>By signing below, each party agrees to the terms of this Addendum and confirms that the Original Agreement, as supplemented by this Addendum, remains in effect.</p>
+  <div class="signatures">
+    <div>
+      <p><strong>CLIENT</strong></p>
+      <p class="sig-image">Signature: {{client_signature_image}}</p>
+      <p>Name: {{client_name}}</p>
+      <p>Date: {{signed_date}}</p>
+    </div>
+    <div>
+      <p><strong>SERVICE PROVIDER</strong></p>
+      <p class="sig-image">Signature: {{provider_signature_image}}</p>
+      <p>Name: {{provider_name}}</p>
+      <p>Date: {{signed_date}}</p>
+    </div>
+  </div>
+</article>
