@@ -284,10 +284,13 @@ powershell -ExecutionPolicy Bypass -File .\scripts\week7-test.ps1 -BaseUrl "http
 - [!] **Q-2: Supabase dashboard settings still unverified — demo risk.** The URL allowlist and min-password-length founder tasks below are still open. `/api/auth/forgot-password` returns `sent:true`, but that only proves Supabase accepted the send — the allowlist governs the link *inside* the email, which can't be verified without inbox access. **If the allowlist isn't set, password-reset and owner-portal magic links break in production.** Verify before demo day.
 - [x] **Q-3: live payment loop — CLOSED 2026-07-16, and it proved more than the script would have.** Founder paid the test card on the Checkout the QA run had opened ($90.00, `cs_test_a1OMEXqOWFj64F…`). Because that script had already been stopped, **nothing on our side was polling** — yet the invoice still flipped to `paid` and `payment_received` fired with `"via": "webhook"`. That's the webhook recording a real payment entirely unassisted, which the normal script run (where the sync fallback is racing the webhook) can't distinguish. Verified against live Render: invoice `paid` $90.00; **exactly one** succeeded `payment_transactions` row carrying `stripe_event_id` (webhook's own record, not sync); 3 further sync replays still left exactly one transaction; exactly one `payment_received` event. Week 5 steps 6–8 are therefore green.
 - [!] **Q-4: declined-card error state still unrun — founder step.** The remaining piece of the QA brief. **Founder: run `.\scripts\week5-test.ps1 -BaseUrl "https://petpro-app.onrender.com"` and pay with the declined card `4000 0000 0000 0002`** — confirm Stripe's decline reads clearly and the invoice stays `open` (not stuck mid-state) rather than silently failing. Entering card numbers is the human step by this roadmap's own convention (Test Scripts table; Week 8 line 276), so QA can't close this one.
-- [~] Fix bugs surfaced during founder + tester testing
-  - **Q-1 fixed and browser-verified 2026-07-16** (see above); awaiting commit + deploy. Q-2 and Q-4 are founder actions, not code bugs. No other defects surfaced in the QA pass.
-- [ ] Deploy final version to Render production tier
-- [ ] Prepare a short "known issues / what's next for Phase 2" note
+- [x] Fix bugs surfaced during founder + tester testing
+  - **Q-1 fixed, browser-verified, and deployed 2026-07-16** (commits `6147595` + `af49624`, live on Render ~45s after push; production confirmed serving `href="#/clients"`, and `npm test` 11/11 still green post-deploy). Q-2 and Q-4 are founder actions, not code bugs. No other defects surfaced in the QA pass.
+- [~] Deploy final version to Render production tier
+  - **Code side done 2026-07-16** — `main` is pushed, auto-deployed, and verified live (11/11 `npm test` against the deployed URL, health OK). This is the final cut unless the founder's remaining checks surface something.
+  - ⚠️ **"Production tier" is still a founder decision, and it's a live demo risk.** `render.yaml` says `plan: free`, but that file is ignored (the service is dashboard-managed) — so the real tier can only be confirmed in the Render dashboard. **Render's free tier sleeps after ~15 min idle and takes ~50s to cold-start**, which in front of an audience looks like a broken app. Either upgrade to a paid instance, or warm the URL right before demoing (see the demo-day note below). Weak evidence it may not be sleeping: the first request of the QA session returned in 0.34s — but it had likely been warmed by the founder's own testing.
+- [x] Prepare a short "known issues / what's next for Phase 2" note
+  - Written 2026-07-16: **`KNOWN_ISSUES.md`** at the repo root. Covers what works end to end, known limitations (email domain, magic-link rate limit, security hardening scheduled not done, platform-Stripe branding, no cash/Venmo, no no-show fees, schema-ahead-of-UI gaps), deliberate scope decisions (in-person signing, print-to-PDF, cadence invoicing, non-exclusive boarding, one-email-one-account), and the Phase 2 ordering. Written so nothing in it is a surprise on demo day — every item traces to a decision already logged here.
 
 ### 🧑 Founder Tasks
 - [ ] Supabase dashboard settings for the Week 8 auth pass (5 minutes, needed before reset emails and the owner portal work in production):
@@ -301,7 +304,31 @@ powershell -ExecutionPolicy Bypass -File .\scripts\week7-test.ps1 -BaseUrl "http
 - [ ] Collect their feedback and any points of confusion
 - [ ] Run the full end-to-end integration test yourself
 - [ ] Confirm the production deployment is accessible and stable
-- [ ] Prepare and deliver the 8-week demo
+- [ ] Prepare and deliver the 8-week demo — **recommended method: live web app on your laptop, two devices, with a recorded backup.** See "Demo Day — Delivery Plan" below.
+
+---
+
+## Demo Day — Delivery Plan
+
+*Added 2026-07-16 after the QA pass. The recommendation is grounded in what QA actually found, not in what would look nicest.*
+
+**Method: live web app, on your own laptop, driving two screens — with a recorded walkthrough as backup.**
+
+Why live rather than slides or a video: the whole point of Phase 1 is that the loop *actually works* against real Stripe, real Supabase, and a real deployment. A recording of a working app is strictly less convincing than the app, and this build survived a full QA pass — it can take the weight. Slides can't show a contract locking itself or an invoice appearing the instant a walk is marked done.
+
+Why two devices: the story lands hardest when the audience sees **both sides**. Laptop = your professional view (Today → client → contract → schedule → mark complete → invoice). Phone or a second window = the pet owner's portal (they sign, they pay, they message you). One flow, two perspectives, no hand-waving about "and the client would see…".
+
+**The three risks that can actually break a live demo — all fixable in advance:**
+
+1. **Cold start.** If the Render service is on the free tier it sleeps after ~15 min idle and takes ~50s to wake — which reads as "the app is broken". **Load the URL a few minutes before you present**, or upgrade the instance. Confirm the tier in the Render dashboard.
+2. **Magic-link rate limit — the sharpest one.** Supabase's built-in mailer allows only a couple of login-link emails per hour, and portal sessions last ~1 hour. **Do not request a portal link live in front of people.** Log the portal in ~10 minutes beforehand and leave the tab/phone open. If you must show the link arriving, that's your one shot — don't burn it rehearsing an hour before.
+3. **Email visibility.** Until `itchytail.com` is verified at resend.com/domains, notification email only reaches the Resend account owner's inbox. **Use a "+" alias of your own inbox** (e.g. `nitro.shae.clark+pup@gmail.com`) for the demo client so the contract-signed email and payment receipt actually land somewhere you can show.
+
+**Pre-seed, don't create from scratch.** Have a demo client with pets, a signed contract, a booked recurring walk, and payment history already in place — then create *one* new thing live (a walk completion → auto-invoice is the best single "wow" moment: zero manual steps, money appears). Building an entire client from an empty account live burns minutes and invites typos.
+
+**The moments worth showing, in order:** (1) mark a walk complete → invoice appears by itself; (2) pay it with the test card → it flips to paid and the event log records it exactly once; (3) sign a contract → try to edit it → the database itself refuses; (4) hand over to the owner portal for the client's-eye view.
+
+**Backup:** record the full loop as a screen capture beforehand. Not to play instead of the demo — to have in your pocket if the venue wifi dies. Also keep `KNOWN_ISSUES.md` open in a tab: if someone asks "can it take cash?" or "is it secure?", the honest, already-planned answer is better than an improvised one.
 
 ---
 
