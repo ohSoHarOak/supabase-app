@@ -705,7 +705,7 @@
 
     appEl.innerHTML = header('clients') + `
       <div class="page">
-        <a class="backlink" href="#/today">‹ All clients</a>
+        <a class="backlink" href="#/clients">‹ All clients</a>
         <div class="detail-head">
           <div class="who">
             <h1 class="page-title">${esc(client.full_name)}</h1>
