@@ -87,6 +87,32 @@
   function fmtTime(iso) {
     return new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
   }
+  // Date-only strings (YYYY-MM-DD) must not go through new Date(iso) — that
+  // parses as UTC midnight and shifts a day west of Greenwich.
+  function fmtDateOnly(ymd) {
+    const [y, m, d] = String(ymd).split('-').map(Number);
+    return new Date(y, m - 1, d).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  }
+  // W-11: US 10-digit numbers (optionally with a leading 1) display as
+  // (555)010-1234; anything else — international, extensions, letters — is
+  // left exactly as typed. Stored values only change when a form saves them.
+  function fmtPhone(raw) {
+    const text = String(raw ?? '').trim();
+    if (!text || !/^[\d\s\-().+]+$/.test(text)) return text;
+    const digits = text.replace(/\D/g, '');
+    const us =
+      digits.length === 10 ? digits
+      : digits.length === 11 && digits[0] === '1' ? digits.slice(1)
+      : null;
+    return us ? `(${us.slice(0, 3)})${us.slice(3, 6)}-${us.slice(6)}` : text;
+  }
+  // Format phone fields when the user leaves them (delegated — forms are
+  // re-rendered constantly, a per-input listener would need re-wiring).
+  document.addEventListener('focusout', (e) => {
+    if (e.target instanceof HTMLInputElement && 'phone' in e.target.dataset) {
+      e.target.value = fmtPhone(e.target.value);
+    }
+  });
   // ISO <-> the value format of <input type="datetime-local"> (local time)
   function toLocalInput(iso) {
     const d = new Date(iso);
@@ -551,7 +577,7 @@
         <div class="card fieldset" style="margin-top:14px">
           <div class="form-grid">
             <div><label for="c-name">Full name</label><input id="c-name" required placeholder="e.g. Dana Whitfield" /></div>
-            <div><label for="c-phone">Phone</label><input id="c-phone" placeholder="+1 (555) 000-0000" /></div>
+            <div><label for="c-phone">Phone</label><input id="c-phone" data-phone placeholder="(555)000-0000" /></div>
             <div><label for="c-email">Email</label><input id="c-email" type="email" placeholder="name@example.com" /></div>
             <div><label for="c-status">Status</label>
               <select id="c-status">
@@ -560,7 +586,7 @@
               </select></div>
             <div class="full"><label for="c-address">Address</label><input id="c-address" placeholder="Street, city, state" /></div>
             <div><label for="c-ecname">Emergency contact</label><input id="c-ecname" placeholder="Name" /></div>
-            <div><label for="c-ecphone">Emergency phone</label><input id="c-ecphone" placeholder="+1 (555) 000-0000" /></div>
+            <div><label for="c-ecphone">Emergency phone</label><input id="c-ecphone" data-phone placeholder="(555)000-0000" /></div>
             <div><label for="c-window">Cancellation notice <span class="hint">hours</span></label><input id="c-window" type="number" min="0" value="24" class="num" /></div>
             <div class="full"><label for="c-entry">Entry instructions <span class="hint">— private, never appears in contracts</span></label><input id="c-entry" placeholder="Lockbox code, gate, alarm…" /></div>
           </div>
@@ -582,10 +608,10 @@
           const client = await api('POST', '/api/clients', {
             full_name: document.getElementById('c-name').value.trim(),
             email: val('c-email'),
-            phone: val('c-phone'),
+            phone: fmtPhone(val('c-phone')) || null,
             address: val('c-address'),
             emergency_contact_name: val('c-ecname'),
-            emergency_contact_phone: val('c-ecphone'),
+            emergency_contact_phone: fmtPhone(val('c-ecphone')) || null,
             cancellation_window_hours: Number(document.getElementById('c-window').value) || 0,
             entry_instructions: val('c-entry'),
             status: document.getElementById('c-status').value,
@@ -666,17 +692,22 @@
       ended: '<span class="pill pill-alert">ended</span>',
     };
     const serviceRows = services.map((s) => `
-      <div class="card contract-row">
+      <div class="card contract-row" id="svc-row-${s.id}">
         <div class="what">
           <div class="title">${esc(s.name)}</div>
-          <div class="meta">${esc(SERVICE_TYPES[s.service_type] ?? s.service_type)} · ${esc(fmtMoney(s.price_cents))} ${esc(CADENCES[s.billing_cadence] ?? s.billing_cadence)}${s.session_count ? ` · ${esc(s.session_count)} sessions` : ''}${s.duration_minutes ? ` · ${esc(s.duration_minutes)} min` : ''}</div>
+          <div class="meta">${esc(SERVICE_TYPES[s.service_type] ?? s.service_type)} · ${esc(fmtMoney(s.price_cents))} ${esc(CADENCES[s.billing_cadence] ?? s.billing_cadence)}${s.session_count ? ` · ${esc(s.session_count)} sessions` : ''}${s.duration_minutes ? ` · ${esc(s.duration_minutes)} min` : ''}${s.end_date ? ` · until ${esc(fmtDateOnly(s.end_date))}` : ''}</div>
         </div>
         ${servicePill[s.status] ?? ''}
         <div class="row-actions">
           ${s.status === 'active'
-            ? `<button class="btn btn-ghost" data-end-service="${s.id}">End</button>
+            ? `<button class="btn btn-ghost" data-until-service="${s.id}">${s.end_date ? 'Change end date' : 'Set end date'}</button>
+               <button class="btn btn-ghost" data-pause-service="${s.id}">Pause</button>
+               <button class="btn btn-ghost" data-end-service="${s.id}">End</button>
                <button class="btn btn-quiet" data-nav="#/appointment-new?client=${client.id}&service=${s.id}">Schedule</button>`
-            : ''}
+            : s.status === 'paused'
+              ? `<button class="btn btn-ghost" data-end-service="${s.id}">End</button>
+                 <button class="btn btn-quiet" data-resume-service="${s.id}">Resume</button>`
+              : ''}
         </div>
       </div>`);
 
@@ -711,10 +742,10 @@
             <h1 class="page-title">${esc(client.full_name)}</h1>
             <div class="contact-line">${[
               client.address ? esc(client.address) : null,
-              client.phone ? `<a href="tel:${esc(client.phone.replace(/[^+\d]/g, ''))}">${esc(client.phone)}</a>` : null,
+              client.phone ? `<a href="tel:${esc(client.phone.replace(/[^+\d]/g, ''))}">${esc(fmtPhone(client.phone))}</a>` : null,
               client.email ? `<a href="mailto:${esc(client.email)}">${esc(client.email)}</a>` : null,
             ].filter(Boolean).join(' · ') || 'No contact details yet'}</div>
-            ${client.emergency_contact_name ? `<div class="contact-line">Emergency: ${esc(client.emergency_contact_name)}${client.emergency_contact_phone ? `, ${esc(client.emergency_contact_phone)}` : ''}</div>` : ''}
+            ${client.emergency_contact_name ? `<div class="contact-line">Emergency: ${esc(client.emergency_contact_name)}${client.emergency_contact_phone ? `, ${esc(fmtPhone(client.emergency_contact_phone))}` : ''}</div>` : ''}
           </div>
           <div style="display:flex; gap:10px; flex-wrap:wrap">
             ${opts.edit ? '' : `<button class="btn btn-ghost" data-nav="#/client/${client.id}?edit=1">✎ Edit</button>`}
@@ -728,11 +759,11 @@
           <strong style="font-size:14px">Edit client</strong>
           <form id="ec-form"><div class="form-grid">
             <div><label for="ec-name">Full name</label><input id="ec-name" required value="${esc(client.full_name)}" /></div>
-            <div><label for="ec-phone">Phone</label><input id="ec-phone" value="${esc(client.phone ?? '')}" placeholder="+1 (555) 000-0000" /></div>
+            <div><label for="ec-phone">Phone</label><input id="ec-phone" data-phone value="${esc(fmtPhone(client.phone ?? ''))}" placeholder="(555)000-0000" /></div>
             <div><label for="ec-email">Email</label><input id="ec-email" type="email" value="${esc(client.email ?? '')}" placeholder="name@example.com" /></div>
             <div class="full"><label for="ec-address">Address</label><input id="ec-address" value="${esc(client.address ?? '')}" placeholder="Street, city, state" /></div>
             <div><label for="ec-ecname">Emergency contact</label><input id="ec-ecname" value="${esc(client.emergency_contact_name ?? '')}" placeholder="Name" /></div>
-            <div><label for="ec-ecphone">Emergency phone</label><input id="ec-ecphone" value="${esc(client.emergency_contact_phone ?? '')}" placeholder="+1 (555) 000-0000" /></div>
+            <div><label for="ec-ecphone">Emergency phone</label><input id="ec-ecphone" data-phone value="${esc(fmtPhone(client.emergency_contact_phone ?? ''))}" placeholder="(555)000-0000" /></div>
             <div><label for="ec-window">Cancellation notice <span class="hint">hours</span></label><input id="ec-window" type="number" min="0" value="${esc(client.cancellation_window_hours ?? 24)}" class="num" /></div>
             <div><label for="ec-noshow">No-show fee</label><input id="ec-noshow" class="money" value="${client.no_show_fee_cents ? esc(fmtMoney(client.no_show_fee_cents)) : ''}" placeholder="$0.00" /></div>
             <div class="full"><label for="ec-entry">Entry instructions <span class="hint">— private, never appears in contracts</span></label><input id="ec-entry" value="${esc(client.entry_instructions ?? '')}" placeholder="Lockbox code, gate, alarm…" /></div>
@@ -822,10 +853,10 @@
             await api('PATCH', `/api/clients/${clientId}`, {
               full_name: document.getElementById('ec-name').value.trim(),
               email: val('ec-email'),
-              phone: val('ec-phone'),
+              phone: fmtPhone(val('ec-phone')) || null,
               address: val('ec-address'),
               emergency_contact_name: val('ec-ecname'),
-              emergency_contact_phone: val('ec-ecphone'),
+              emergency_contact_phone: fmtPhone(val('ec-ecphone')) || null,
               cancellation_window_hours: Number(document.getElementById('ec-window').value) || 0,
               no_show_fee_cents: parseMoney(document.getElementById('ec-noshow').value) ?? 0,
               entry_instructions: val('ec-entry'),
@@ -920,10 +951,30 @@
     // — an unsigned add button quietly reintroduces exactly the drift W-5…W-7
     // exist to fix (a service on the profile the client never agreed a price
     // for). The API endpoint still exists for scripts and seeded data.
+    // W-13: pause / resume / end / extend, all over PATCH /api/services.
+    // Booking on a paused or ended service already 409s server-side; already-
+    // booked walks stay on the schedule, so ending warns about them instead
+    // of quietly leaving orphans the walker forgot about.
+    const upcomingWalkCount = async (serviceId) => {
+      try {
+        const appts = await api(
+          'GET',
+          `/api/appointments?client_id=${clientId}&status=scheduled&from=${encodeURIComponent(new Date().toISOString())}`
+        );
+        return appts.filter((a) => a.service_id === serviceId).length;
+      } catch {
+        return 0; // the warning is best-effort — never block the action on it
+      }
+    };
     document.querySelectorAll('[data-end-service]').forEach((btn) => {
       btn.onclick = () =>
         withBusy(btn, async () => {
           try {
+            const n = await upcomingWalkCount(btn.dataset.endService);
+            const walks = n
+              ? ` ${n} upcoming walk${n === 1 ? ' is' : 's are'} still booked and will stay on the schedule — cancel ${n === 1 ? 'it' : 'them'} from the Schedule tab if ${n === 1 ? "it shouldn't" : "they shouldn't"} happen.`
+              : '';
+            if (!confirm(`End this service? Its history stays on record, but new walks can't be booked on it.${walks}`)) return;
             await api('PATCH', `/api/services/${btn.dataset.endService}`, { status: 'ended' });
             toast('Service ended — its history stays on record.', 'ok');
             renderClient(clientId);
@@ -931,6 +982,72 @@
             toast(err.message);
           }
         });
+    });
+    document.querySelectorAll('[data-pause-service]').forEach((btn) => {
+      btn.onclick = () =>
+        withBusy(btn, async () => {
+          try {
+            const n = await upcomingWalkCount(btn.dataset.pauseService);
+            await api('PATCH', `/api/services/${btn.dataset.pauseService}`, { status: 'paused' });
+            toast(
+              `Service paused — new walks can't be booked until you resume it.${n ? ` ${n} already-booked walk${n === 1 ? '' : 's'} stay${n === 1 ? 's' : ''} on the schedule.` : ''}`,
+              'ok'
+            );
+            renderClient(clientId);
+          } catch (err) {
+            toast(err.message);
+          }
+        });
+    });
+    document.querySelectorAll('[data-resume-service]').forEach((btn) => {
+      btn.onclick = () =>
+        withBusy(btn, async () => {
+          try {
+            await api('PATCH', `/api/services/${btn.dataset.resumeService}`, { status: 'active' });
+            toast('Service resumed — booking is open again.', 'ok');
+            renderClient(clientId);
+          } catch (err) {
+            toast(err.message);
+          }
+        });
+    });
+    // Extend (or set / clear) the service's end date, inline in the row.
+    document.querySelectorAll('[data-until-service]').forEach((btn) => {
+      btn.onclick = () => {
+        const s = services.find((x) => x.id === btn.dataset.untilService);
+        const actions = document.getElementById(`svc-row-${s.id}`).querySelector('.row-actions');
+        actions.innerHTML = `
+          <input type="date" id="svc-until-${s.id}" value="${esc(s.end_date ?? '')}" aria-label="Service end date" />
+          ${s.end_date ? `<button class="btn btn-ghost" data-clear-until>No end date</button>` : ''}
+          <button class="btn btn-ghost" data-cancel-until>Cancel</button>
+          <button class="btn btn-quiet" data-save-until>Save</button>`;
+        actions.querySelector('[data-cancel-until]').onclick = () => renderClient(clientId);
+        const clearBtn = actions.querySelector('[data-clear-until]');
+        if (clearBtn) {
+          clearBtn.onclick = () =>
+            withBusy(clearBtn, async () => {
+              try {
+                await api('PATCH', `/api/services/${s.id}`, { end_date: null });
+                toast('End date removed — the service runs until you end it.', 'ok');
+                renderClient(clientId);
+              } catch (err) {
+                toast(err.message);
+              }
+            });
+        }
+        actions.querySelector('[data-save-until]').onclick = (e) =>
+          withBusy(e.target, async () => {
+            const v = document.getElementById(`svc-until-${s.id}`).value;
+            if (!v) { toast('Pick a date, or Cancel.'); return; }
+            try {
+              await api('PATCH', `/api/services/${s.id}`, { end_date: v });
+              toast(`Service runs until ${fmtDateOnly(v)}.`, 'ok');
+              renderClient(clientId);
+            } catch (err) {
+              toast(err.message);
+            }
+          });
+      };
     });
 
     // ---------------------------------------------------------- billing --
@@ -1789,8 +1906,27 @@
         <h1 class="page-title">Your profile</h1>
         <p class="page-sub">${esc(account?.email ?? '')}</p>
 
-        <form id="pf-form">
         <div class="card fieldset" style="margin-top:18px">
+          <div class="media-row">
+            <div class="media-slot">
+              <div class="avatar media-avatar">${esc(initials(profile?.full_name ?? ''))}</div>
+              <div>
+                <strong>Profile photo</strong>
+                <div class="media-note">Uploads arrive with Phase 2 branding — your initials stand in for now.</div>
+              </div>
+            </div>
+            <div class="media-slot">
+              <div class="media-logo">${PAW}</div>
+              <div>
+                <strong>Business logo</strong>
+                <div class="media-note">Will appear on branded invoices &amp; receipts (Phase 2).</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <form id="pf-form">
+        <div class="card fieldset" style="margin-top:14px">
           <div class="form-grid">
             <div><label for="pf-name">Your full name</label>
               <input id="pf-name" required value="${esc(profile?.full_name ?? '')}" /></div>

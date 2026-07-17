@@ -468,3 +468,21 @@ label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 5px; }
 }
 .msg-composer textarea:focus { outline: 2px solid var(--steel); outline-offset: -1px; }
 .msg-live { margin-top: 6px; font-size: 11px; color: var(--sage); min-height: 14px; }
+
+/* ------------------------------------------- profile media (W-12) */
+/* Placeholders only — uploads arrive with Phase 2 branding (P2-7). */
+.media-row { display: flex; gap: 28px; flex-wrap: wrap; }
+.media-slot { display: flex; gap: 12px; align-items: center; flex: 1 1 260px; }
+.media-slot strong { font-size: 13.5px; }
+.media-avatar { width: 56px; height: 56px; font-size: 19px; }
+.media-logo {
+  flex: none;
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  border: 1.5px dashed var(--ink-soft);
+  display: grid;
+  place-items: center;
+  opacity: 0.75;
+}
+.media-note { font-size: 12px; color: var(--ink-soft); margin-top: 2px; }
