@@ -463,15 +463,19 @@ async function main(): Promise<void> {
       `Cancelling walks must cancel their reminders; statuses: ${reminders.map((r) => r.status).join(', ')}`
     );
 
-    const processed = (await ok('POST', '/api/notifications/process', {}, '10. Process')).data as {
-      configured: boolean; sent: number; failed: number;
-    };
-    if (processed.configured) {
-      // Sends to this test's throwaway addresses are refused by Resend until
-      // a sending domain is verified — that's expected, not a failure.
-      pass(`10. Notifications: contract emails queued, cancelled walks' reminders cancelled (${processed.sent} sent, ${processed.failed} refused this pass — refusals are expected for non-inbox recipients until a Resend domain is verified)`);
+    // Draining the queue is opt-in (PETPRO_E2E_SEND=1) and it must stay that
+    // way. Every recipient this suite creates is at example.com — an IANA
+    // reserved domain that accepts no mail — so a real send pass produces one
+    // hard bounce per queued row. That was harmless while the sandbox sender
+    // refused non-owner recipients, but now that eastwestoak.com is verified
+    // those bounces land against its reputation, which is slow to repair.
+    if (process.env.PETPRO_E2E_SEND === '1') {
+      const processed = (await ok('POST', '/api/notifications/process', {}, '10. Process')).data as {
+        configured: boolean; sent: number; failed: number;
+      };
+      pass(`10. Notifications: contract emails queued, cancelled walks' reminders cancelled, queue drained on request (configured=${processed.configured}, ${processed.sent} sent, ${processed.failed} failed — expect failures, these recipients don't exist)`);
     } else {
-      pass('10. Notifications: contract emails queued, cancelled walks\' reminders cancelled (email key not set — rows stay pending, will send once RESEND_API_KEY exists)');
+      pass('10. Notifications: contract emails queued, cancelled walks\' reminders cancelled (send pass skipped so example.com recipients can\'t bounce against the verified domain — set PETPRO_E2E_SEND=1 to drain it deliberately)');
     }
   }
 
