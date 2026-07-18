@@ -13,6 +13,7 @@ import { z } from 'zod';
 export const serviceTypeEnum = z.enum([
   'group_walk',
   'private_walk',
+  'drop_in', // short check-in, not a walk (018)
   'training_session',
   'grooming',
   'sitting',

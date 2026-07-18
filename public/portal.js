@@ -64,15 +64,28 @@
   // ------------------------------------------------------------ helpers ----
   // Formatters, withBusy and the sign-screen pieces come from shared.js so
   // this portal and the professional app cannot drift — see T-3 in ROADMAP.md.
-  const { esc, fmtDate, fmtTime, fmtMoney, fmtPhone, withBusy } = PetPro;
+  const { esc, fmtDate, fmtTime, fmtDateOnly, fmtMoney, fmtPhone, withBusy } = PetPro;
 
   function fmtDay(iso) {
     return new Date(iso).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
   }
+  // R-9: species named only for non-dogs — "(Beagle)" already reads as a dog,
+  // but a cat has to say so. Mirrors petDetail() in app.js.
   function petSummary(pets) {
     if (!pets?.length) return '';
-    return pets.map((p) => (p.breed ? `${p.name} (${p.breed})` : p.name)).join(' · ');
+    return pets.map((p) => {
+      const species = p.species && p.species !== 'dog' ? p.species : null;
+      const detail = [p.breed, species].filter(Boolean).join(' ');
+      return detail ? `${p.name} (${detail})` : p.name;
+    }).join(' · ');
   }
+  // Owner-facing cadence wording. Deliberately plainer than the professional
+  // app's CADENCES: an owner reads "billed per visit", not "per_visit".
+  const CADENCES = {
+    per_visit: 'per visit', per_day: 'per day', weekly: 'weekly',
+    biweekly: 'every 2 weeks', monthly: 'monthly',
+    per_package: 'per package', one_time: 'one-time',
+  };
 
   const PAW_LOGIN = `<svg width="64" height="64" viewBox="0 0 44 44" aria-hidden="true"><circle cx="22" cy="22" r="22" fill="#6D9280"/><g fill="#F7F2EB"><ellipse cx="15" cy="16" rx="3.4" ry="4.4" transform="rotate(-18 15 16)"/><ellipse cx="29" cy="16" rx="3.4" ry="4.4" transform="rotate(18 29 16)"/><ellipse cx="9.5" cy="23.5" rx="2.8" ry="3.6" transform="rotate(-38 9.5 23.5)"/><ellipse cx="34.5" cy="23.5" rx="2.8" ry="3.6" transform="rotate(38 34.5 23.5)"/><path d="M22 21c4.4 0 8.4 3.5 8.4 7.6 0 2.9-2.2 4.6-4.7 4.6-1.5 0-2.6-0.6-3.7-0.6s-2.2 0.6-3.7 0.6c-2.5 0-4.7-1.7-4.7-4.6C13.6 24.5 17.6 21 22 21z"/></g></svg>`;
 
@@ -90,6 +103,7 @@
         <a class="brand" href="#/home">🐾 PetPro Connect</a>
         <nav class="app-nav">
           ${tab('home', 'Home')}
+          ${tab('billing', 'Billing')}
           ${tab('messages', 'Messages')}
           ${tab('profile', 'Profile')}
           <a href="#" onclick="window.petproPortalLogout(); return false;">Log out</a>
@@ -203,14 +217,24 @@
         <div class="row-actions"><button class="btn btn-ghost" data-nav="#/contract/${k.id}">View</button></div>
       </div>`);
 
-    const paidRows = ov.invoices.filter((inv) => inv.status === 'paid').map((inv) => `
+    // R-15: what they actually signed up for — service, price, cadence — so
+    // the home screen answers "what am I paying for?" without opening the
+    // agreement. Sessions are shown when the service is a package.
+    const planRows = (ov.services ?? []).map((s) => `
       <div class="card contract-row">
         <div class="what">
-          <div class="title">${esc(fmtMoney(inv.amount_cents))} — ${esc(inv.description || 'Services')}</div>
-          <div class="meta">Paid ${esc(fmtDate(inv.paid_at))}</div>
+          <div class="title">${esc(s.name)}</div>
+          <div class="meta">${esc(fmtMoney(s.price_cents))} ${esc(CADENCES[s.billing_cadence] ?? s.billing_cadence)}${
+            s.session_count ? ` · ${esc(s.session_count)} sessions included` : ''
+          }${s.duration_minutes ? ` · ${esc(s.duration_minutes)} min` : ''}${
+            s.end_date ? ` · until ${esc(fmtDateOnly(s.end_date))}` : ''
+          }</div>
         </div>
-        <span class="pill pill-sage">paid</span>
       </div>`);
+
+    const paidTotal = ov.invoices
+      .filter((inv) => inv.status === 'paid')
+      .reduce((sum, inv) => sum + inv.amount_cents, 0);
 
     appEl.innerHTML = header('home') + `
       <div class="page">
@@ -222,10 +246,20 @@
         <div class="eyebrow">Upcoming visits</div>
         <div class="stack">${apptRows.join('') || '<div class="card empty">No upcoming visits scheduled.</div>'}</div>
 
+        ${planRows.length ? `<div class="eyebrow">Your plan</div><div class="stack">${planRows.join('')}</div>` : ''}
+
         <div class="eyebrow">Agreements</div>
         <div class="stack">${signedRows.join('') || '<div class="card empty">No signed agreements yet.</div>'}</div>
 
-        ${paidRows.length ? `<div class="eyebrow">Payment history</div><div class="stack">${paidRows.join('')}</div>` : ''}
+        ${paidTotal ? `
+        <div class="eyebrow">Billing</div>
+        <div class="card contract-row">
+          <div class="what">
+            <div class="title">${esc(fmtMoney(paidTotal))} paid to date</div>
+            <div class="meta">Every invoice, open and paid, with dates and what it covered.</div>
+          </div>
+          <div class="row-actions"><button class="btn btn-quiet" data-nav="#/billing">View billing</button></div>
+        </div>` : ''}
       </div>`;
 
     document.querySelectorAll('[data-pay-invoice]').forEach((btn) => {
@@ -343,6 +377,122 @@
   // C-2, read-only per D2: the owner sees what their professional holds on
   // file and messages them to correct it. No write path exists by design —
   // the client record belongs to the professional's CRM.
+  // ----------------------------------------------------------- billing ----
+  // R-12: the old payment history was a flat tail on the home screen — no
+  // total, no dates beyond "Paid <date>", no way to see an open invoice next
+  // to a paid one, and nothing said what a payment covered beyond a
+  // description that is often blank. This is the whole billing record,
+  // newest first, grouped by year so a date range is readable at a glance.
+  // (A printable per-invoice document is still P2-7 — see C-4.)
+  async function renderBilling() {
+    appEl.innerHTML = header('billing') + `<div class="page loading">Loading your billing…</div>`;
+    let ov;
+    try {
+      ov = await api('GET', '/api/portal/overview');
+    } catch (err) {
+      toast(err.message);
+      appEl.innerHTML = header('billing') + `<div class="page"><div class="empty">Couldn't load your billing. <a class="backlink" href="#/billing">Retry</a></div></div>`;
+      return;
+    }
+    unreadCount = ov.unread_messages ?? 0;
+
+    const clientById = Object.fromEntries(ov.clients.map((c) => [c.id, c]));
+    const proName = (clientId) => {
+      const pro = clientById[clientId]?.professional;
+      return pro ? (pro.business_name || pro.full_name) : 'your professional';
+    };
+    const serviceById = Object.fromEntries((ov.services ?? []).map((s) => [s.id, s]));
+
+    // Void invoices are shown too: an owner who saw a charge appear and then
+    // vanish deserves to see that it was cancelled, not to wonder.
+    const invoices = [...ov.invoices].sort(
+      (a, b) => new Date(b.created_at) - new Date(a.created_at)
+    );
+    const paid = invoices.filter((inv) => inv.status === 'paid');
+    const open = invoices.filter((inv) => inv.status === 'open' || inv.status === 'draft');
+    const paidTotal = paid.reduce((sum, inv) => sum + inv.amount_cents, 0);
+    const openTotal = open.reduce((sum, inv) => sum + inv.amount_cents, 0);
+
+    const pill = {
+      paid: '<span class="pill pill-sage">paid</span>',
+      open: '<span class="pill pill-alert">due</span>',
+      draft: '<span class="pill pill-draft">draft</span>',
+      void: '<span class="pill pill-draft">cancelled</span>',
+      uncollectible: '<span class="pill pill-draft">written off</span>',
+    };
+
+    const invoiceRow = (inv) => {
+      const svc = inv.service_id ? serviceById[inv.service_id] : null;
+      const covered = inv.description || svc?.name || 'Services';
+      return `
+        <div class="card contract-row">
+          <div class="what">
+            <div class="title">${esc(fmtMoney(inv.amount_cents))} — ${esc(covered)}</div>
+            <div class="meta">${esc(proName(inv.client_id))} · billed ${esc(fmtDate(inv.created_at))}${
+              inv.status === 'paid' && inv.paid_at ? ` · paid ${esc(fmtDate(inv.paid_at))}` : ''
+            }${
+              inv.status !== 'paid' && inv.due_date ? ` · due ${esc(fmtDateOnly(inv.due_date))}` : ''
+            }</div>
+          </div>
+          ${pill[inv.status] ?? ''}
+          ${inv.status === 'open' || inv.status === 'draft'
+            ? `<div class="row-actions"><button class="btn btn-primary" data-pay-invoice="${inv.id}">Pay now</button></div>`
+            : ''}
+        </div>`;
+    };
+
+    // Group by calendar year — the cheapest thing that makes a multi-year
+    // history scannable without building a date-range picker nobody asked for.
+    const byYear = new Map();
+    for (const inv of invoices) {
+      const year = new Date(inv.created_at).getFullYear();
+      if (!byYear.has(year)) byYear.set(year, []);
+      byYear.get(year).push(inv);
+    }
+    const yearSections = [...byYear.entries()].map(([year, rows]) => {
+      const yearPaid = rows
+        .filter((inv) => inv.status === 'paid')
+        .reduce((sum, inv) => sum + inv.amount_cents, 0);
+      return `
+        <div class="eyebrow">${year}${yearPaid ? ` · ${esc(fmtMoney(yearPaid))} paid` : ''}</div>
+        <div class="stack">${rows.map(invoiceRow).join('')}</div>`;
+    });
+
+    appEl.innerHTML = header('billing') + `
+      <div class="page">
+        <h1 class="page-title">Billing</h1>
+        <p class="page-sub">Every invoice from your pet care professional — what it covered, when it was billed, and when it was paid.</p>
+
+        <div class="stack" style="margin-top:16px">
+          <div class="card contract-row">
+            <div class="what">
+              <div class="meta">Paid to date</div>
+              <div class="title">${esc(fmtMoney(paidTotal))}</div>
+            </div>
+            ${openTotal ? `<div class="what" style="text-align:right">
+              <div class="meta">Awaiting payment</div>
+              <div class="title">${esc(fmtMoney(openTotal))}</div>
+            </div>` : ''}
+          </div>
+        </div>
+
+        ${yearSections.join('') || '<div class="card empty">No invoices yet.</div>'}
+      </div>`;
+
+    document.querySelectorAll('[data-pay-invoice]').forEach((btn) => {
+      btn.onclick = () =>
+        withBusy(btn, async () => {
+          try {
+            const { checkout_url } = await api('POST', `/api/portal/invoices/${btn.dataset.payInvoice}/checkout`);
+            location.href = checkout_url;
+          } catch (err) {
+            toast(err.message);
+          }
+        });
+    });
+    wireNav();
+  }
+
   async function renderProfile() {
     appEl.innerHTML = header('profile') + `<div class="page loading">Loading your details…</div>`;
     let ov;
@@ -359,33 +509,49 @@
       ? `<div class="contract-row"><div class="what"><div class="meta">${esc(label)}</div><div class="title">${esc(value)}</div></div></div>`
       : '';
 
+    // R-14: the old card ran the owner's details and their walker's details
+    // together, with the walker's name rendered as a bare title — so "is this
+    // my name or theirs? is this a person or a business?" had no answer on
+    // screen. Two separately headed cards now, and every line is labelled,
+    // including business name and contact name as distinct rows.
     const sections = ov.clients.map((c) => `
-      <div class="card fieldset">
-        ${row('Name', c.full_name)}
-        ${row('Email', c.email)}
-        ${row('Phone', c.phone ? fmtPhone(c.phone) : '')}
-        ${row('Address', c.address)}
-        ${row('Emergency contact', [c.emergency_contact_name, c.emergency_contact_phone ? fmtPhone(c.emergency_contact_phone) : '']
-          .filter(Boolean).join(' · '))}
-        ${(c.pets ?? []).length ? `<div class="contract-row"><div class="what"><div class="meta">Pets</div><div class="title">${esc(petSummary(c.pets))}</div></div></div>` : ''}
+      <div class="profile-block">
+        <div class="eyebrow">Your details</div>
+        <div class="card fieldset">
+          ${row('Your name', c.full_name)}
+          ${row('Your email', c.email)}
+          ${row('Your phone', c.phone ? fmtPhone(c.phone) : '')}
+          ${row('Your address', c.address)}
+          ${row('Your emergency contact', [c.emergency_contact_name, c.emergency_contact_phone ? fmtPhone(c.emergency_contact_phone) : '']
+            .filter(Boolean).join(' · '))}
+          ${(c.pets ?? []).length ? row('Your pets', petSummary(c.pets)) : ''}
+        </div>
         ${c.professional ? `
-          <div class="contract-row">
-            <div class="what">
-              <div class="meta">Your pet care professional</div>
-              <div class="title">${esc(c.professional.business_name || c.professional.full_name)}</div>
-              <div class="contact-line">${[
-                c.professional.phone ? `<a href="tel:${esc(String(c.professional.phone).replace(/[^+\d]/g, ''))}">${esc(fmtPhone(c.professional.phone))}</a>` : '',
-                c.professional.email ? `<a href="mailto:${esc(c.professional.email)}">${esc(c.professional.email)}</a>` : '',
-              ].filter(Boolean).join(' · ')}</div>
-            </div>
-            <button class="btn btn-quiet" data-nav="#/messages">Message</button>
-          </div>` : ''}
+        <div class="eyebrow">Your pet care professional</div>
+        <div class="card fieldset">
+          ${row('Business name', c.professional.business_name)}
+          ${row('Your contact there', c.professional.full_name)}
+          ${c.professional.phone ? `
+            <div class="contract-row"><div class="what">
+              <div class="meta">Their phone</div>
+              <div class="title"><a href="tel:${esc(String(c.professional.phone).replace(/[^+\d]/g, ''))}">${esc(fmtPhone(c.professional.phone))}</a></div>
+            </div></div>` : ''}
+          ${c.professional.email ? `
+            <div class="contract-row"><div class="what">
+              <div class="meta">Their email</div>
+              <div class="title"><a href="mailto:${esc(c.professional.email)}">${esc(c.professional.email)}</a></div>
+            </div></div>` : ''}
+          <div class="form-foot" style="margin-top:0">
+            <div class="spacer"></div>
+            <button class="btn btn-quiet" data-nav="#/messages">Message them</button>
+          </div>
+        </div>` : ''}
       </div>`);
 
     appEl.innerHTML = header('profile') + `
       <div class="page">
-        <h1 class="page-title">Your details</h1>
-        <p class="page-sub">This is what your professional has on file. Something wrong? Message them and they'll update it.</p>
+        <h1 class="page-title">Profile</h1>
+        <p class="page-sub">Your details as your professional has them on file, and how to reach your professional. Something wrong? Message them and they'll update it.</p>
         ${sections.join('') || '<div class="card empty">No details on file yet.</div>'}
       </div>`;
     wireNav();
@@ -619,6 +785,7 @@
     }
     if (parts[0] === 'thread' && parts[1]) { renderThread(parts[1]); return; }
     if (parts[0] === 'messages') { renderMessages(); return; }
+    if (parts[0] === 'billing') { renderBilling(); return; }
     if (parts[0] === 'profile') { renderProfile(); return; }
     renderHome();
   }

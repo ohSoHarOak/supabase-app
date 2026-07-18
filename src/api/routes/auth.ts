@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { accountService } from '../../services/AccountService';
 import { requireAuth } from '../middleware/auth';
+import { serviceTypeEnum } from '../validation';
 
 export const authRouter = Router();
 
@@ -120,12 +121,10 @@ const profileUpdateSchema = z.object({
   phone: z.string().trim().max(40).nullish(),
   bio: z.string().trim().max(2000).nullish(),
   years_experience: z.number().int().min(0).max(80).nullish(),
-  offered_service_types: z
-    .array(
-      z.enum(['group_walk', 'private_walk', 'training_session', 'grooming', 'sitting', 'boarding', 'other'])
-    )
-    .max(7)
-    .optional(),
+  // Imported, not re-listed: this route had its own copy of the enum and so
+  // silently rejected 'drop_in' after 018 added it. validation.ts is the one
+  // place a new profession gets added.
+  offered_service_types: z.array(serviceTypeEnum).max(20).optional(),
 });
 
 /** PATCH /api/auth/profile — the professional edits their own profile. */

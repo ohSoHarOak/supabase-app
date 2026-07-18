@@ -20,6 +20,7 @@ export interface ClientInput {
 export interface PetInput {
   name: string;
   photo_url?: string | null;
+  species?: string;
   breed?: string | null;
   date_of_birth?: string | null;
   weight_lb?: number | null;

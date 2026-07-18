@@ -88,6 +88,9 @@ export interface Pet {
   client_id: string;
   name: string;
   photo_url: string | null;
+  /** dog | cat | other — free text, not an enum, so a new species never
+   *  costs a migration (018). Defaults to 'dog' server-side. */
+  species: string;
   breed: string | null;
   date_of_birth: string | null;
   weight_lb: number | null;
@@ -118,6 +121,7 @@ export interface VaccinationRecord {
 export type ServiceType =
   | 'group_walk'
   | 'private_walk'
+  | 'drop_in' // short check-in, not a walk (018)
   | 'training_session'
   | 'grooming'
   | 'sitting'
@@ -131,6 +135,7 @@ export type ServiceType =
 export const SERVICE_TYPE_LABELS: Record<ServiceType, string> = {
   group_walk: 'Group walk',
   private_walk: 'Private walk',
+  drop_in: 'Drop-in visit',
   training_session: 'Training session',
   grooming: 'Grooming',
   sitting: 'Sitting',

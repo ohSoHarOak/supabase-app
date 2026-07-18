@@ -219,6 +219,41 @@ label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 5px; }
 .form-foot .spacer { flex: 1; }
 .field-error { color: var(--alert); font-size: 12.5px; margin-top: 4px; }
 
+/* R-1: walk notes and other narrative fields grow with what's typed.
+   The JS sets an explicit height, so no min-height fight here. */
+textarea { resize: vertical; line-height: 1.5; }
+textarea[data-autogrow] { overflow-y: hidden; }
+
+/* R-5: required / optional markers. Appended by markFieldRequirements()
+   from each control's own `required` attribute — cosmetic only, the marker
+   carries no behaviour and is aria-hidden (the attribute speaks for itself). */
+.reqmark { font-weight: 400; margin-left: 6px; }
+.req { color: var(--alert); font-weight: 700; }
+.reqmark.opt { font-size: 12px; color: var(--ink-soft); }
+.req-legend { font-size: 12px; color: var(--ink-soft); margin: 0 0 4px; }
+
+/* R-4: password requirements, ticking as you type. */
+.pw-rules { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; }
+.pw-rules li {
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  padding-left: 20px;
+  position: relative;
+  line-height: 1.45;
+}
+.pw-rules li::before {
+  content: '○';
+  position: absolute;
+  left: 2px;
+}
+.pw-rules li.ok { color: var(--sage); }
+.pw-rules li.ok::before { content: '✓'; font-weight: 700; }
+.pw-rules li.pw-note::before { content: '·'; }
+
+/* R-14: portal profile — owner's details and their professional's details as
+   two separately headed blocks, so no row is ambiguous about whose it is. */
+.profile-block + .profile-block { margin-top: 8px; }
+
 .seg { display: flex; border: 1px solid var(--hairline); border-radius: 8px; overflow: hidden; }
 .seg button {
   font: inherit; font-size: 13.5px; font-weight: 600;

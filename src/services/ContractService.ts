@@ -96,8 +96,19 @@ function formatCents(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
 }
 
+/** "Pepper (Beagle)", "Mochi (Siamese cat)", "Mochi (cat)", "Pepper".
+ *  Species is only named for non-dogs (R-9, 018): the agreements read as
+ *  dog-walking documents, so "(Beagle)" already implies dog and spelling it
+ *  out on every line would be noise — but a cat described as a dog is the
+ *  kind of wrongness a client notices in a binding document. */
 function petList(pets: Pet[]): string {
-  return pets.map((p) => (p.breed ? `${p.name} (${p.breed})` : p.name)).join(', ');
+  return pets
+    .map((p) => {
+      const species = p.species && p.species !== 'dog' ? p.species : null;
+      const detail = [p.breed, species].filter(Boolean).join(' ');
+      return detail ? `${p.name} (${detail})` : p.name;
+    })
+    .join(', ');
 }
 
 /** Every pet across a contract's services, de-duplicated — Biscuit on both a

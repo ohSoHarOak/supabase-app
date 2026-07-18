@@ -34,6 +34,9 @@ const clientSchema = z.object({
 const petSchema = z.object({
   name: z.string().trim().min(1, 'Pet name is required.'),
   photo_url: z.string().url().nullish(),
+  // Free text by design (018) — the UI dropdown is authoritative, but a
+  // walker whose client keeps a rabbit shouldn't need a deploy.
+  species: z.string().trim().min(1).max(40).optional(),
   breed: z.string().nullish(),
   date_of_birth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'date_of_birth must be YYYY-MM-DD.').nullish(),
   weight_lb: z.number().positive().max(500).nullish(),

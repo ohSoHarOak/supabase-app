@@ -50,7 +50,7 @@
   // ------------------------------------------------------------ helpers ----
   // Formatters, withBusy and the sign-screen pieces live in shared.js so the
   // owner portal uses the same code — see T-3 in ROADMAP.md.
-  const { esc, fmtDate, fmtTime, fmtMoney, fmtPhone, withBusy } = PetPro;
+  const { esc, fmtDate, fmtTime, fmtDateOnly, fmtMoney, fmtPhone, withBusy } = PetPro;
   function initials(name) {
     return name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('') || '?';
   }
@@ -84,22 +84,80 @@
     }
     return color;
   }
+  // Species is named only for non-dogs (R-9): "(Beagle)" already reads as a
+  // dog, but a cat has to say so or the whole app calls it a dog.
+  const SPECIES = { dog: 'Dog', cat: 'Cat', other: 'Other' };
+  function petDetail(p) {
+    const species = p.species && p.species !== 'dog' ? p.species : null;
+    return [p.breed, species].filter(Boolean).join(' ');
+  }
   function petSummary(pets) {
     if (!pets?.length) return 'No pets yet';
-    return pets.map((p) => (p.breed ? `${p.name} (${p.breed})` : p.name)).join(' · ');
+    return pets.map((p) => { const d = petDetail(p); return d ? `${p.name} (${d})` : p.name; }).join(' · ');
   }
   // "$30", "30.00", "$30.50" -> integer cents (or null if unparseable)
   function parseMoney(text) {
     const n = parseFloat(String(text).replace(/[^0-9.]/g, ''));
     return Number.isFinite(n) && n > 0 ? Math.round(n * 100) : null;
   }
-  // Date-only strings (YYYY-MM-DD) must not go through new Date(iso) — that
-  // parses as UTC midnight and shifts a day west of Greenwich.
-  function fmtDateOnly(ymd) {
-    const [y, m, d] = String(ymd).split('-').map(Number);
-    return new Date(y, m - 1, d).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-  }
+  // fmtDateOnly moved to shared.js when the portal needed it too (R-15) —
+  // copying it would have recreated the F-8 divergence PH-3 warns about.
   PetPro.installPhoneFormatting();
+
+  // R-1: a [data-autogrow] textarea grows with its content instead of making
+  // the walker scroll a 3-line box. Delegated, so re-rendered forms (the
+  // completion form is rebuilt on every schedule render) need no re-wiring.
+  document.addEventListener('input', (e) => {
+    const el = e.target;
+    if (!el.matches?.('textarea[data-autogrow]')) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  });
+
+  // R-5: every field states whether it's required. The marker is DERIVED from
+  // the control's own `required` attribute rather than hand-written into ~60
+  // labels — a hand-written marker drifts the moment a form changes, and a
+  // label that lies about being optional is worse than no marker at all.
+  // `required` already conveys this to screen readers, hence aria-hidden.
+  function markFieldRequirements(root) {
+    root.querySelectorAll('form').forEach((form) => {
+      let anyRequired = false;
+      form.querySelectorAll('label[for]').forEach((label) => {
+        if (label.querySelector('.reqmark')) return;
+        const field = form.querySelector(`#${CSS.escape(label.getAttribute('for'))}`);
+        if (!field || field.type === 'checkbox' || field.type === 'hidden') return;
+        const mark = document.createElement('span');
+        mark.setAttribute('aria-hidden', 'true');
+        if (field.required) {
+          anyRequired = true;
+          mark.className = 'reqmark req';
+          mark.textContent = '*';
+        } else {
+          // Some labels already say "optional" in their own hint text.
+          if (/optional/i.test(label.textContent)) return;
+          mark.className = 'reqmark opt';
+          mark.textContent = 'optional';
+        }
+        label.appendChild(mark);
+      });
+      if (anyRequired && !form.querySelector('.req-legend')) {
+        const legend = document.createElement('p');
+        legend.className = 'req-legend';
+        legend.innerHTML = '<span class="req">*</span> required';
+        form.prepend(legend);
+      }
+    });
+  }
+  // Screens render asynchronously from a dozen different functions, so this
+  // watches the app root rather than hooking each one (and each new one).
+  // The pass mutates what it observes, so it re-entrancy-guards: without the
+  // flag every marker appended would re-trigger the observer.
+  let marking = false;
+  new MutationObserver(() => {
+    if (marking) return;
+    marking = true;
+    try { markFieldRequirements(appEl); } finally { marking = false; }
+  }).observe(appEl, { childList: true, subtree: true });
   // ISO <-> the value format of <input type="datetime-local"> (local time)
   function toLocalInput(iso) {
     const d = new Date(iso);
@@ -115,8 +173,9 @@
     return new Date(date.getTime() - ((date.getDay() + 6) % 7) * DAY_MS); // Monday
   }
   const SERVICE_TYPES = {
-    private_walk: 'Private walk', group_walk: 'Group walk', training_session: 'Training session',
-    grooming: 'Grooming', sitting: 'Sitting', boarding: 'Boarding', other: 'Other',
+    private_walk: 'Private walk', group_walk: 'Group walk', drop_in: 'Drop-in visit',
+    training_session: 'Training session', grooming: 'Grooming', sitting: 'Sitting',
+    boarding: 'Boarding', other: 'Other',
   };
   const CADENCES = {
     per_visit: 'per visit', per_day: 'per day', weekly: 'weekly', biweekly: 'every 2 weeks',
@@ -235,8 +294,9 @@
           <div><label for="f-name">Your full name</label><input id="f-name" required autocomplete="name" /></div>
           <div><label for="f-biz">Business name <span class="hint">optional</span></label><input id="f-biz" autocomplete="organization" /></div>` : ''}
           <div><label for="f-email">Email</label><input id="f-email" type="email" required autocomplete="username" /></div>
-          <div><label for="f-pass">Password ${isSignup ? `<span class="hint">${PASSWORD_HINT}</span>` : ''}</label>
-            <input id="f-pass" type="password" required minlength="${isSignup ? 12 : 1}" autocomplete="${isSignup ? 'new-password' : 'current-password'}" /></div>
+          <div><label for="f-pass">Password</label>
+            <input id="f-pass" type="password" required minlength="${isSignup ? 12 : 1}" autocomplete="${isSignup ? 'new-password' : 'current-password'}" />
+            ${isSignup ? passwordChecklist('f-pass') : ''}</div>
           <button class="btn btn-primary" type="submit">${isSignup ? 'Create account' : 'Log in'}</button>
         </form>
         <div class="login-foot">
@@ -247,6 +307,7 @@
       </div></div>`;
 
     document.getElementById('mode-switch').onclick = () => renderLogin(isSignup ? 'login' : 'signup');
+    if (isSignup) wirePasswordChecklist('f-pass');
     const forgotLink = document.getElementById('forgot-link');
     if (forgotLink) forgotLink.onclick = () => renderForgotPassword();
     document.getElementById('login-form').onsubmit = async (e) => {
@@ -348,7 +409,37 @@
   }
 
   // ------------------------------------------------- password recovery ----
-  const PASSWORD_HINT = '12+ characters, mixing upper &amp; lowercase with numbers or symbols';
+  // R-4: the old one-line hint told people the length and left the rest to
+  // guesswork ("mixing … with numbers or symbols" doesn't say how many of
+  // what). This is the server's actual policy, itemised, ticking as you type,
+  // so the rule is legible before the server rejects you. The last two rules
+  // can only be checked server-side (a common-password list and a live
+  // HaveIBeenPwned lookup), so they're stated but not ticked — claiming a
+  // green tick we haven't verified would be the same lie the markers avoid.
+  function passwordChecklist(inputId) {
+    return `
+      <ul class="pw-rules" id="pwr-${inputId}">
+        <li data-rule="len">At least 12 characters</li>
+        <li data-rule="classes">A mix of at least 3 of: lowercase, UPPERCASE, numbers, symbols</li>
+        <li class="pw-note">Checked when you submit: not a common password, and not one that has appeared in a known data breach</li>
+      </ul>`;
+  }
+  function wirePasswordChecklist(inputId) {
+    const input = document.getElementById(inputId);
+    const list = document.getElementById(`pwr-${inputId}`);
+    if (!input || !list) return;
+    const set = (rule, ok) =>
+      list.querySelector(`[data-rule="${rule}"]`).classList.toggle('ok', ok);
+    const update = () => {
+      const v = input.value;
+      set('len', v.length >= 12);
+      const classes = [/[a-z]/, /[A-Z]/, /[0-9]/, /[^a-zA-Z0-9]/]
+        .filter((re) => re.test(v)).length;
+      set('classes', classes >= 3);
+    };
+    input.addEventListener('input', update);
+    update();
+  }
 
   function renderForgotPassword() {
     document.body.classList.add('login-bg');
@@ -393,8 +484,9 @@
           <div class="tag">Choose a new password</div>
         </div>
         <form id="reset-form">
-          <div><label for="f-pass">New password <span class="hint">${PASSWORD_HINT}</span></label>
-            <input id="f-pass" type="password" required minlength="12" autocomplete="new-password" /></div>
+          <div><label for="f-pass">New password</label>
+            <input id="f-pass" type="password" required minlength="12" autocomplete="new-password" />
+            ${passwordChecklist('f-pass')}</div>
           <div><label for="f-pass2">Repeat new password</label>
             <input id="f-pass2" type="password" required minlength="12" autocomplete="new-password" /></div>
           <button class="btn btn-primary" type="submit">Set new password</button>
@@ -403,6 +495,7 @@
       </div></div>`;
     const backToLogin = () => { history.replaceState(null, '', location.pathname); renderLogin(); };
     document.getElementById('back-login').onclick = backToLogin;
+    wirePasswordChecklist('f-pass');
     document.getElementById('reset-form').onsubmit = async (e) => {
       e.preventDefault();
       const pass = document.getElementById('f-pass').value;
@@ -720,7 +813,12 @@
           <div class="pet-photo">${PAW.replace('#1C4C64', 'transparent').replace('#F7F2EB', '#6D9280').replace('<circle cx="22" cy="22" r="22" fill="transparent"/>', '')}</div>
           <div>
             <div class="pet-name">${esc(p.name)}</div>
-            <div class="pet-breed">${esc([p.breed, p.weight_lb ? `${p.weight_lb} lb` : null].filter(Boolean).join(' · ') || 'dog')}</div>
+            <div class="pet-breed">${esc([
+              // With a breed, "Siamese cat" reads as a phrase; without one the
+              // species stands alone as a label, so it's capitalised.
+              p.breed ? petDetail(p) : (SPECIES[p.species] ?? p.species ?? 'Dog'),
+              p.weight_lb ? `${p.weight_lb} lb` : null,
+            ].filter(Boolean).join(' · '))}</div>
           </div>
           <div class="spacer"></div>
           <button class="btn btn-ghost" data-edit-pet="${p.id}" aria-label="Edit ${esc(p.name)}">✎</button>
@@ -875,6 +973,9 @@
           <strong style="font-size:14px">Add a pet</strong>
           <form id="pet-form"><div class="form-grid">
             <div><label for="p-name">Name</label><input id="p-name" required placeholder="e.g. Peanut" /></div>
+            <div><label for="p-species">Species</label><select id="p-species">
+              ${Object.entries(SPECIES).map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}
+            </select></div>
             <div><label for="p-breed">Breed</label><input id="p-breed" placeholder="e.g. Beagle" /></div>
             <div><label for="p-weight">Weight <span class="hint">lb</span></label><input id="p-weight" type="number" min="1" max="500" step="0.1" class="num" /></div>
             <div><label for="p-vet">Emergency vet</label><input id="p-vet" placeholder="Clinic, phone" /></div>
@@ -981,6 +1082,9 @@
         card.innerHTML = `
           <form class="pet-edit-form"><div class="form-grid">
             <div><label for="pe-name-${p.id}">Name</label><input id="pe-name-${p.id}" required value="${esc(p.name)}" /></div>
+            <div><label for="pe-species-${p.id}">Species</label><select id="pe-species-${p.id}">
+              ${Object.entries(SPECIES).map(([v, l]) => `<option value="${v}" ${(p.species ?? 'dog') === v ? 'selected' : ''}>${l}</option>`).join('')}
+            </select></div>
             <div><label for="pe-breed-${p.id}">Breed</label><input id="pe-breed-${p.id}" value="${esc(p.breed ?? '')}" placeholder="e.g. Beagle" /></div>
             <div><label for="pe-weight-${p.id}">Weight <span class="hint">lb</span></label><input id="pe-weight-${p.id}" type="number" min="1" max="500" step="0.1" class="num" value="${esc(p.weight_lb ?? '')}" /></div>
             <div><label for="pe-vet-${p.id}">Emergency vet</label><input id="pe-vet-${p.id}" value="${esc(p.emergency_vet ?? '')}" placeholder="Clinic, phone" /></div>
@@ -1001,6 +1105,7 @@
               const weight = document.getElementById(`pe-weight-${p.id}`).value;
               await api('PATCH', `/api/pets/${p.id}`, {
                 name: document.getElementById(`pe-name-${p.id}`).value.trim(),
+                species: document.getElementById(`pe-species-${p.id}`).value,
                 breed: val(`pe-breed-${p.id}`),
                 weight_lb: weight ? Number(weight) : null,
                 emergency_vet: val(`pe-vet-${p.id}`),
@@ -1035,6 +1140,7 @@
           const weight = document.getElementById('p-weight').value;
           await api('POST', `/api/clients/${clientId}/pets`, {
             name: document.getElementById('p-name').value.trim(),
+            species: document.getElementById('p-species').value,
             breed: val('p-breed'),
             weight_lb: weight ? Number(weight) : null,
             emergency_vet: val('p-vet'),
@@ -1666,7 +1772,8 @@
               <div><label for="cf-end-${a.id}">Actually ended</label>
                 <input id="cf-end-${a.id}" type="datetime-local" value="${toLocalInput(a.ends_at)}" /></div>
               <div class="full"><label for="cf-notes-${a.id}">Walk notes <span class="hint">— goes in the walk report</span></label>
-                <input id="cf-notes-${a.id}" placeholder="e.g. Full loop around the park, lots of squirrel patrol" /></div>
+                <textarea id="cf-notes-${a.id}" rows="3" data-autogrow
+                  placeholder="e.g. Full loop around the park, lots of squirrel patrol.&#10;Met another dog at the gate and did great."></textarea></div>
               <div class="full appt-flags">
                 <label class="flag"><input type="checkbox" id="cf-good-${a.id}" checked /> Were they a good dog? 🐶</label>
                 <label class="flag"><input type="checkbox" id="cf-treat-${a.id}" checked /> Did they get a treat? 🦴</label>
@@ -2041,8 +2148,9 @@
           <div class="form-grid">
             <div><label for="pw-current">Current password</label>
               <input id="pw-current" type="password" required autocomplete="current-password" /></div>
-            <div><label for="pw-new">New password <span class="hint">${PASSWORD_HINT}</span></label>
-              <input id="pw-new" type="password" required minlength="12" autocomplete="new-password" /></div>
+            <div><label for="pw-new">New password</label>
+              <input id="pw-new" type="password" required minlength="12" autocomplete="new-password" />
+              ${passwordChecklist('pw-new')}</div>
           </div>
         </div>
         <div class="form-foot">
@@ -2074,6 +2182,7 @@
         }
       });
     };
+    wirePasswordChecklist('pw-new');
     document.getElementById('pw-form').onsubmit = async (e) => {
       e.preventDefault();
       const btn = e.target.querySelector('button[type=submit]');

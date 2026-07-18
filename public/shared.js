@@ -35,6 +35,13 @@ window.PetPro = (() => {
     return new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
   }
 
+  /* Date-only strings (YYYY-MM-DD) must NOT go through new Date(iso) — that
+     parses as UTC midnight and shows the previous day west of Greenwich. */
+  function fmtDateOnly(ymd) {
+    const [y, m, d] = String(ymd).split('-').map(Number);
+    return new Date(y, m - 1, d).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  }
+
   function fmtMoney(cents) {
     return `$${(cents / 100).toFixed(2)}`;
   }
@@ -252,7 +259,7 @@ window.PetPro = (() => {
   }
 
   return {
-    esc, fmtDate, fmtTime, fmtMoney, fmtPhone, installPhoneFormatting,
+    esc, fmtDate, fmtTime, fmtDateOnly, fmtMoney, fmtPhone, installPhoneFormatting,
     withBusy, createToast,
     contractPane, wireContractPane, signPadCard, createSignaturePad,
   };
