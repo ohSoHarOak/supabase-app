@@ -266,12 +266,85 @@
           const session = await api('POST', isSignup ? '/api/auth/signup' : '/api/auth/login', body);
           saveSession(session);
           await loadProfile();
-          location.hash = '#/today';
+          // O-1: new professionals land in setup; returning ones go to work.
+          location.hash = isSignup ? '#/setup' : '#/today';
         } catch (err) {
           toast(err.message);
         }
       });
     };
+  }
+
+  // ---------------------------------------------------------- onboarding ----
+  // O-1: three steps after signup. "Done" is derived from the profile itself
+  // rather than a flag column — nothing to migrate, nothing to keep in sync.
+  const setupDone = () =>
+    Boolean(profile?.full_name && account?.phone && profile?.offered_service_types?.length);
+
+  function renderSetup(step) {
+    const stepper = ['1 · You', '2 · Services', '3 · Ready']
+      .map((label, i) => `<span class="step${i === step - 1 ? ' on' : ''}">${label}</span>`).join('');
+    const skip = step < 3
+      ? `<a class="backlink" href="#/setup/${step + 1}">Skip for now</a>`
+      : `<a class="backlink" href="#/today">Go to today</a>`;
+
+    const body = step === 1 ? `
+      <div class="form-grid">
+        <div><label for="su-name">Your full name</label>
+          <input id="su-name" required value="${esc(profile?.full_name ?? '')}" /></div>
+        <div><label for="su-biz">Business name</label>
+          <input id="su-biz" value="${esc(profile?.business_name ?? '')}" placeholder="e.g. Sunny Trails Walking Co." /></div>
+        <div><label for="su-phone">Your phone</label>
+          <input id="su-phone" data-phone value="${esc(fmtPhone(account?.phone ?? ''))}" placeholder="(555)000-0000" /></div>
+      </div>
+      <p class="preview-note">Your business name heads every contract and invoice; your phone is how clients reach you from their portal.</p>`
+      : step === 2 ? `
+      <label>Which services do you offer?</label>
+      <div class="appt-flags" style="margin-top:6px">
+        ${Object.entries(SERVICE_TYPES).map(([v, l]) => `
+          <label class="flag"><input type="checkbox" data-offer="${v}" ${(profile?.offered_service_types ?? []).includes(v) ? 'checked' : ''} /> ${l}</label>`).join('')}
+      </div>
+      <p class="preview-note" style="margin-top:10px">Only what you check appears when you build a contract, so you never wade past Grooming to find Dog walking.</p>`
+      : `
+      <p>Your agreement is ready to use — the packaged Pet Services Agreement, with your business details merged in.</p>
+      <p class="preview-note">⚠️ It's a general template, not legal advice. Have it reviewed before a real client signs.</p>`;
+
+    appEl.innerHTML = header('today') + `
+      <div class="page">
+        <h1 class="page-title">${step === 3 ? "You're set up" : 'Set up your business'}</h1>
+        <p class="page-sub">Three quick steps — you can stop after any of them and finish later.</p>
+        <div class="stepper">${stepper}</div>
+        <form id="su-form">
+          <div class="card fieldset" style="margin-top:14px">${body}</div>
+          <div class="form-foot">
+            ${skip}
+            <div class="spacer"></div>
+            <button class="btn btn-primary" type="submit">${step === 3 ? 'Add your first client' : 'Save & continue'}</button>
+          </div>
+        </form>
+      </div>`;
+
+    document.getElementById('su-form').onsubmit = async (e) => {
+      e.preventDefault();
+      if (step === 3) { location.hash = '#/client-new'; return; }
+      await withBusy(e.target.querySelector('button[type=submit]'), async () => {
+        try {
+          await api('PATCH', '/api/auth/profile', step === 1 ? {
+            full_name: document.getElementById('su-name').value.trim(),
+            business_name: document.getElementById('su-biz').value.trim() || null,
+            phone: fmtPhone(document.getElementById('su-phone').value) || null,
+          } : {
+            offered_service_types: [...document.querySelectorAll('[data-offer]')]
+              .filter((cb) => cb.checked).map((cb) => cb.dataset.offer),
+          });
+          await loadProfile();
+          location.hash = `#/setup/${step + 1}`;
+        } catch (err) {
+          toast(err.message);
+        }
+      });
+    };
+    wireNav();
   }
 
   // ------------------------------------------------- password recovery ----
@@ -445,6 +518,16 @@
         <span class="chev">›</span>
       </div>`);
 
+    // O-1: nags until setup is finished, but never blocks the app.
+    const setupCue = setupDone() ? '' : `
+      <div class="card contract-row" data-nav="#/setup" tabindex="0" role="link">
+        <div class="what">
+          <div class="title">Finish setting up your business</div>
+          <div class="meta">Your phone and the services you offer — a minute, and contracts fill themselves in.</div>
+        </div>
+        <span class="chev">›</span>
+      </div>`;
+
     appEl.innerHTML = header('today') + `
       <div class="page">
         <h1 class="page-title">${firstName ? `Good ${new Date().getHours() < 12 ? 'morning' : 'afternoon'}, ${esc(firstName)}` : 'Today'}</h1>
@@ -457,7 +540,7 @@
 
         <div class="eyebrow">Needs your attention</div>
         <div class="stack">
-          ${cueCards.join('') + invoiceCues.join('') + pendingRows.join('') || '<div class="card empty">Nothing needs your attention. 🎉</div>'}
+          ${setupCue + cueCards.join('') + invoiceCues.join('') + pendingRows.join('') || '<div class="card empty">Nothing needs your attention. 🎉</div>'}
         </div>
 
         <div class="eyebrow">Active clients</div>
@@ -2312,6 +2395,7 @@
     if (parts[0] === 'messages') { renderMessages(); return; }
     if (parts[0] === 'profile') { renderProfile(); return; }
     if (parts[0] === 'appointment-new') { renderNewAppointment(params); return; }
+    if (parts[0] === 'setup') { renderSetup(Math.min(3, Math.max(1, Number(parts[1]) || 1))); return; }
     if (parts[0] === 'client-new') { renderNewClient(); return; }
     if (parts[0] === 'client' && parts[1] && parts[2] === 'new-contract') {
       renderNewContract(parts[1], params.get('replace')); return;
