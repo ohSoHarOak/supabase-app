@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { messagingService } from '../../services/MessagingService';
+import { notificationService } from '../../services/NotificationService';
 import { requireAuth, requireAccountType } from '../middleware/auth';
 
 // ----------------------------------------------------------- validation ----
@@ -84,6 +85,19 @@ threadsRouter.post('/:id/messages', async (req, res, next) => {
       req.params.id,
       parsed.data
     );
+    // O-2: let the owner know, but not per keystroke in a chatty thread —
+    // this goes out in 5 minutes and the renderer cancels it if they've
+    // already read the message in the portal by then. Skipped on a duplicate
+    // resend, which is the same message arriving twice.
+    if (!duplicate) {
+      await notificationService.enqueue({
+        accountId: req.account!.id,
+        category: 'message',
+        template: 'message_received',
+        data: { message_id: message.id, origin: `${req.protocol}://${req.get('host')}` },
+        scheduledFor: new Date(Date.now() + 5 * 60_000).toISOString(),
+      });
+    }
     res.status(duplicate ? 200 : 201).json({ ok: true, data: message });
   } catch (err) {
     next(err);

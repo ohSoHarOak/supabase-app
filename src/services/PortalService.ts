@@ -192,13 +192,17 @@ export class PortalService {
     appointments: (Appointment & { services: { name: string } | null })[];
     contracts: Contract[];
     invoices: Invoice[];
+    /** Messages the professional sent that this owner hasn't read (O-2). */
+    unread_messages: number;
   }> {
     const clients = await this.listClients(ownerAccountId);
     const ids = clients.map((c) => c.id);
-    if (ids.length === 0) return { clients: [], appointments: [], contracts: [], invoices: [] };
+    if (ids.length === 0) {
+      return { clients: [], appointments: [], contracts: [], invoices: [], unread_messages: 0 };
+    }
 
     const professionalIds = [...new Set(clients.map((c) => c.professional_account_id))];
-    const [profilesRes, accountsRes, apptsRes, contractsRes, invoicesRes] = await Promise.all([
+    const [profilesRes, accountsRes, apptsRes, contractsRes, invoicesRes, unreadRes] = await Promise.all([
       supabaseAdmin
         .from('professional_profiles')
         .select('account_id, business_name, full_name')
@@ -227,8 +231,18 @@ export class PortalService {
         .select('*')
         .in('client_id', ids)
         .order('created_at', { ascending: false }),
+      // O-2: unread = anything in this owner's threads that they didn't send
+      // and haven't read. Without this the owner has no way to learn the
+      // professional replied — which is what makes the read-only portal (D2)
+      // workable, since "message your walker" is the only correction path.
+      supabaseAdmin
+        .from('messages')
+        .select('id, message_threads!inner(client_id)', { count: 'exact', head: true })
+        .in('message_threads.client_id', ids)
+        .is('read_at', null)
+        .neq('sender_account_id', ownerAccountId),
     ]);
-    for (const r of [profilesRes, accountsRes, apptsRes, contractsRes, invoicesRes]) {
+    for (const r of [profilesRes, accountsRes, apptsRes, contractsRes, invoicesRes, unreadRes]) {
       if (r.error) throw new ServiceError('portal_overview_failed', r.error.message, 500);
     }
     const contactByAccount = new Map(
@@ -253,6 +267,7 @@ export class PortalService {
       appointments: (apptsRes.data ?? []) as (Appointment & { services: { name: string } | null })[],
       contracts: (contractsRes.data ?? []) as Contract[],
       invoices: (invoicesRes.data ?? []) as Invoice[],
+      unread_messages: unreadRes.count ?? 0,
     };
   }
 

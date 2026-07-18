@@ -76,15 +76,22 @@
 
   const PAW_LOGIN = `<svg width="64" height="64" viewBox="0 0 44 44" aria-hidden="true"><circle cx="22" cy="22" r="22" fill="#6D9280"/><g fill="#F7F2EB"><ellipse cx="15" cy="16" rx="3.4" ry="4.4" transform="rotate(-18 15 16)"/><ellipse cx="29" cy="16" rx="3.4" ry="4.4" transform="rotate(18 29 16)"/><ellipse cx="9.5" cy="23.5" rx="2.8" ry="3.6" transform="rotate(-38 9.5 23.5)"/><ellipse cx="34.5" cy="23.5" rx="2.8" ry="3.6" transform="rotate(38 34.5 23.5)"/><path d="M22 21c4.4 0 8.4 3.5 8.4 7.6 0 2.9-2.2 4.6-4.7 4.6-1.5 0-2.6-0.6-3.7-0.6s-2.2 0.6-3.7 0.6c-2.5 0-4.7-1.7-4.7-4.6C13.6 24.5 17.6 21 22 21z"/></g></svg>`;
 
+  // O-2: last known unread count, so the badge survives navigation between
+  // renders without re-fetching the overview on every page.
+  let unreadCount = 0;
+
   function header(active) {
     const tab = (id, label) =>
-      `<a href="#/${id}" class="${active === id ? 'active' : ''}">${label}</a>`;
+      `<a href="#/${id}" class="${active === id ? 'active' : ''}">${label}${
+        id === 'messages' && unreadCount ? ` <span class="unread-dot">${unreadCount}</span>` : ''
+      }</a>`;
     return `
       <header class="app-header"><div class="inner">
         <a class="brand" href="#/home">🐾 PetPro Connect</a>
         <nav class="app-nav">
           ${tab('home', 'Home')}
           ${tab('messages', 'Messages')}
+          ${tab('profile', 'Profile')}
           <a href="#" onclick="window.petproPortalLogout(); return false;">Log out</a>
         </nav>
       </div></header>`;
@@ -100,12 +107,15 @@
           <div class="wordmark">PetPro Connect</div>
           <div class="tag">Pet owner portal</div>
         </div>
+        <!-- C-6: said before the field, not after it — a cold tester went
+             looking for a signup button because this sat below the button. -->
+        <p class="login-lede">There's no account to create and no password to remember. Enter your email and we'll send you a secure link.</p>
         <form id="login-form">
           <div><label for="f-email">Your email</label>
             <input id="f-email" type="email" required autocomplete="username" placeholder="The email your walker has on file" /></div>
           <button class="btn btn-primary" type="submit">Email me a login link</button>
         </form>
-        <div class="login-foot">No password needed — we email you a secure one-time link.</div>
+        <div class="login-foot">The link lasts about an hour — check spam if it's slow to arrive.</div>
       </div></div>`;
 
     document.getElementById('login-form').onsubmit = async (e) => {
@@ -146,7 +156,16 @@
     // Cues: contracts awaiting signature, invoices awaiting payment.
     const unsigned = ov.contracts.filter((k) => k.status === 'draft' || k.status === 'sent');
     const openInvoices = ov.invoices.filter((inv) => inv.status === 'open' || inv.status === 'draft');
+    unreadCount = ov.unread_messages ?? 0;
     const cues = [
+      ...(unreadCount ? [`
+        <div class="card cue-card">
+          <div class="cue-text">
+            <div class="cue-title">${unreadCount} new message${unreadCount > 1 ? 's' : ''} from ${esc(proName(ov.clients[0]?.id))}</div>
+            <div class="cue-sub">Tap to read and reply.</div>
+          </div>
+          <button class="btn btn-primary" data-nav="#/messages">Read</button>
+        </div>`] : []),
       ...unsigned.map((k) => `
         <div class="card cue-card">
           <div class="cue-text">
@@ -193,29 +212,6 @@
         <span class="pill pill-sage">paid</span>
       </div>`);
 
-    // C-3: the walker's contact details. Read-only per D2 — the owner can
-    // call, email, or message, but can't edit anything here. De-duplicated by
-    // account id because one owner may have several clients with one walker.
-    const proCards = [...new Map(
-      ov.clients
-        .filter((c) => c.professional)
-        .map((c) => [c.professional_account_id, c.professional])
-    ).values()].map((pro) => {
-      const lines = [
-        pro.phone ? `<a href="tel:${esc(String(pro.phone).replace(/[^+\d]/g, ''))}">${esc(fmtPhone(pro.phone))}</a>` : null,
-        pro.email ? `<a href="mailto:${esc(pro.email)}">${esc(pro.email)}</a>` : null,
-      ].filter(Boolean);
-      return `
-      <div class="card contract-row">
-        <div class="what">
-          <div class="title">${esc(pro.business_name || pro.full_name)}</div>
-          ${pro.business_name ? `<div class="meta">${esc(pro.full_name)}</div>` : ''}
-          ${lines.length ? `<div class="contact-line">${lines.join(' · ')}</div>` : ''}
-        </div>
-        <button class="btn btn-quiet" data-nav="#/messages">Message</button>
-      </div>`;
-    });
-
     appEl.innerHTML = header('home') + `
       <div class="page">
         <h1 class="page-title">${firstName ? `Welcome, ${esc(firstName)}` : 'Welcome'}</h1>
@@ -230,8 +226,6 @@
         <div class="stack">${signedRows.join('') || '<div class="card empty">No signed agreements yet.</div>'}</div>
 
         ${paidRows.length ? `<div class="eyebrow">Payment history</div><div class="stack">${paidRows.join('')}</div>` : ''}
-
-        ${proCards.length ? `<div class="eyebrow">Your pet care professional</div><div class="stack">${proCards.join('')}</div>` : ''}
       </div>`;
 
     document.querySelectorAll('[data-pay-invoice]').forEach((btn) => {
@@ -345,6 +339,58 @@
     wireNav();
   }
 
+  // ---------------------------------------------------------- profile ----
+  // C-2, read-only per D2: the owner sees what their professional holds on
+  // file and messages them to correct it. No write path exists by design —
+  // the client record belongs to the professional's CRM.
+  async function renderProfile() {
+    appEl.innerHTML = header('profile') + `<div class="page loading">Loading your details…</div>`;
+    let ov;
+    try {
+      ov = await api('GET', '/api/portal/overview');
+    } catch (err) {
+      toast(err.message);
+      appEl.innerHTML = header('profile') + `<div class="page"><div class="empty">Couldn't load your details. <a class="backlink" href="#/profile">Retry</a></div></div>`;
+      return;
+    }
+    unreadCount = ov.unread_messages ?? 0;
+
+    const row = (label, value) => value
+      ? `<div class="contract-row"><div class="what"><div class="meta">${esc(label)}</div><div class="title">${esc(value)}</div></div></div>`
+      : '';
+
+    const sections = ov.clients.map((c) => `
+      <div class="card fieldset">
+        ${row('Name', c.full_name)}
+        ${row('Email', c.email)}
+        ${row('Phone', c.phone ? fmtPhone(c.phone) : '')}
+        ${row('Address', c.address)}
+        ${row('Emergency contact', [c.emergency_contact_name, c.emergency_contact_phone ? fmtPhone(c.emergency_contact_phone) : '']
+          .filter(Boolean).join(' · '))}
+        ${(c.pets ?? []).length ? `<div class="contract-row"><div class="what"><div class="meta">Pets</div><div class="title">${esc(petSummary(c.pets))}</div></div></div>` : ''}
+        ${c.professional ? `
+          <div class="contract-row">
+            <div class="what">
+              <div class="meta">Your pet care professional</div>
+              <div class="title">${esc(c.professional.business_name || c.professional.full_name)}</div>
+              <div class="contact-line">${[
+                c.professional.phone ? `<a href="tel:${esc(String(c.professional.phone).replace(/[^+\d]/g, ''))}">${esc(fmtPhone(c.professional.phone))}</a>` : '',
+                c.professional.email ? `<a href="mailto:${esc(c.professional.email)}">${esc(c.professional.email)}</a>` : '',
+              ].filter(Boolean).join(' · ')}</div>
+            </div>
+            <button class="btn btn-quiet" data-nav="#/messages">Message</button>
+          </div>` : ''}
+      </div>`);
+
+    appEl.innerHTML = header('profile') + `
+      <div class="page">
+        <h1 class="page-title">Your details</h1>
+        <p class="page-sub">This is what your professional has on file. Something wrong? Message them and they'll update it.</p>
+        ${sections.join('') || '<div class="card empty">No details on file yet.</div>'}
+      </div>`;
+    wireNav();
+  }
+
   // ----------------------------------------------------- invoice return ----
   async function renderInvoiceReturn(invoiceId, canceled) {
     appEl.innerHTML = header('home') + `<div class="page loading">${canceled ? 'Checking payment status…' : 'Confirming your payment…'}</div>`;
@@ -438,6 +484,7 @@
     try {
       messages = await api('GET', `/api/portal/threads/${threadId}/messages`);
       await api('POST', `/api/portal/threads/${threadId}/read`);
+      unreadCount = 0; // opening the thread is what clears the badge
     } catch (err) {
       toast(err.message);
       location.hash = '#/home';
@@ -572,6 +619,7 @@
     }
     if (parts[0] === 'thread' && parts[1]) { renderThread(parts[1]); return; }
     if (parts[0] === 'messages') { renderMessages(); return; }
+    if (parts[0] === 'profile') { renderProfile(); return; }
     renderHome();
   }
 

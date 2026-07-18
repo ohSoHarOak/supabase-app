@@ -23,7 +23,9 @@ export type NotificationTemplate =
   | 'contract_signed'
   | 'payment_receipt'
   | 'payment_received'
-  | 'appointment_reminder';
+  | 'appointment_reminder'
+  | 'portal_invite'
+  | 'message_received';
 
 export interface EnqueueInput {
   /** The professional account this notification belongs to (recipients are
@@ -298,6 +300,10 @@ export class NotificationService {
         return this.renderPaymentReceived(payload.invoice_id as string);
       case 'appointment_reminder':
         return this.renderAppointmentReminder(payload.appointment_id as string);
+      case 'portal_invite':
+        return this.renderPortalInvite(payload.client_id as string, payload.origin as string);
+      case 'message_received':
+        return this.renderMessageReceived(payload.message_id as string, payload.origin as string);
       default:
         return { kind: 'cancel', reason: `unknown template: ${String(payload.template)}` };
     }
@@ -459,6 +465,86 @@ export class NotificationService {
   }
 
   // ------------------------------------------------------- render helpers ----
+
+  /**
+   * P2-13: the welcome a client gets when their professional adds them.
+   * Deliberately links to /portal rather than emailing a magic link —
+   * Supabase's built-in mailer allows only a couple of link emails per hour,
+   * so auto-sending one here would burn that budget on people who aren't
+   * ready to log in. They request their own link when they arrive.
+   */
+  private async renderPortalInvite(clientId: string, origin: string): Promise<RenderResult> {
+    const { data, error } = await supabaseAdmin
+      .from('clients')
+      .select('*')
+      .eq('id', clientId)
+      .maybeSingle();
+    if (error) return { kind: 'cancel', reason: error.message };
+    const client = data as Client | null;
+    if (!client) return { kind: 'cancel', reason: 'client no longer exists' };
+    if (!client.email) return { kind: 'cancel', reason: 'client has no email on file' };
+    const businessName = await this.businessName(client.professional_account_id);
+    return {
+      kind: 'send',
+      email: {
+        to: client.email,
+        subject: `${businessName} set up your pet care portal`,
+        html: emailLayout(
+          businessName,
+          `<p>Hi ${escapeHtml(client.full_name)},</p>
+           <p>${escapeHtml(businessName)} has added you to PetPro Connect. Your portal is where you can review and sign agreements, pay invoices, see upcoming visits, and message ${escapeHtml(businessName)} directly.</p>
+           <p><a href="${escapeHtml(origin)}/portal">Open your portal</a></p>
+           <p>There's no account to create and no password to remember — enter this email address and we'll send you a secure link.</p>`
+        ),
+      },
+    };
+  }
+
+  /**
+   * O-2: tells an owner their professional replied. Without it the portal is
+   * a place you have to remember to check — which breaks the read-only
+   * design, where messaging is the only way a client corrects their details.
+   */
+  private async renderMessageReceived(messageId: string, origin: string): Promise<RenderResult> {
+    const { data, error } = await supabaseAdmin
+      .from('messages')
+      .select('id, body, read_at, sender_account_id, message_threads(client_id, professional_account_id)')
+      .eq('id', messageId)
+      .maybeSingle();
+    if (error) return { kind: 'cancel', reason: error.message };
+    const row = data as {
+      body: string;
+      read_at: string | null;
+      message_threads: { client_id: string; professional_account_id: string } | null;
+    } | null;
+    if (!row?.message_threads) return { kind: 'cancel', reason: 'message or thread no longer exists' };
+    // Already read in-app — the email would be noise.
+    if (row.read_at) return { kind: 'cancel', reason: 'message was read before the email went out' };
+
+    const { data: clientRow } = await supabaseAdmin
+      .from('clients')
+      .select('full_name, email')
+      .eq('id', row.message_threads.client_id)
+      .maybeSingle();
+    const client = clientRow as { full_name: string; email: string | null } | null;
+    if (!client?.email) return { kind: 'cancel', reason: 'client has no email on file' };
+    const businessName = await this.businessName(row.message_threads.professional_account_id);
+    const preview = row.body.length > 160 ? `${row.body.slice(0, 160)}…` : row.body;
+    return {
+      kind: 'send',
+      email: {
+        to: client.email,
+        subject: `New message from ${businessName}`,
+        html: emailLayout(
+          businessName,
+          `<p>Hi ${escapeHtml(client.full_name)},</p>
+           <p>${escapeHtml(businessName)} sent you a message:</p>
+           <blockquote style="margin:0;padding:10px 14px;border-left:3px solid #2f6f4f;color:#334155">${escapeHtml(preview)}</blockquote>
+           <p><a href="${escapeHtml(origin)}/portal#/messages">Read and reply in your portal</a></p>`
+        ),
+      },
+    };
+  }
 
   private async contractContext(contractId: string): Promise<
     | { contract: Contract; client: Client; businessName: string }

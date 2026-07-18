@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { clientService } from '../../services/ClientService';
+import { notificationService } from '../../services/NotificationService';
 import { requireAuth, requireAccountType } from '../middleware/auth';
 
 export const clientsRouter = Router();
@@ -80,6 +81,17 @@ clientsRouter.post('/', async (req, res, next) => {
     const parsed = clientSchema.safeParse(req.body);
     if (!parsed.success) return validationError(res, parsed.error.issues);
     const client = await clientService.createClient(req.account!.id, parsed.data);
+    // P2-13: welcome the client to their portal. Enqueued from the route
+    // because the email needs an absolute link and `origin` lives on the
+    // request — the same pattern the Stripe and magic-link URLs use.
+    if (client.email) {
+      await notificationService.enqueue({
+        accountId: req.account!.id,
+        category: 'portal_invite',
+        template: 'portal_invite',
+        data: { client_id: client.id, origin: `${req.protocol}://${req.get('host')}` },
+      });
+    }
     res.status(201).json({ ok: true, data: client });
   } catch (err) {
     next(err);

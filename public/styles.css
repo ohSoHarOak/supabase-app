@@ -243,6 +243,7 @@ label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 5px; }
 .login-brand .tag { font-size: 13px; color: var(--ink-soft); }
 .login-card form { display: grid; gap: 16px; }
 .login-card .btn-primary { width: 100%; margin-top: 4px; }
+.login-lede { text-align: center; font-size: 13.5px; color: var(--ink-soft); margin: 0 0 16px; line-height: 1.5; }
 .login-foot { text-align: center; font-size: 13px; color: var(--ink-soft); margin-top: 18px; }
 .login-foot a { color: var(--steel); font-weight: 600; text-decoration: none; cursor: pointer; }
 @media (prefers-color-scheme: dark) { .login-foot a { color: #7FB4CD; } }

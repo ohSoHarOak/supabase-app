@@ -139,7 +139,18 @@ async function main(): Promise<void> {
       '2. Search',
       `Searching the pet's name should surface exactly its client; got ${search.data.length} result(s)`
     );
-    pass('2. Client + 2 pets + search by pet name');
+    // P2-13: a client with an email gets a portal welcome. It links to
+    // /portal rather than carrying a magic link, so it can't burn the
+    // Supabase mailer's ~2/hour budget on someone who isn't ready to log in.
+    const inviteQueue = (await ok('GET', '/api/notifications', undefined, '2. Portal invite')).data as {
+      payload: { template?: string; client_id?: string };
+    }[];
+    assert(
+      inviteQueue.some((r) => r.payload.template === 'portal_invite' && r.payload.client_id === client.id),
+      '2. Portal invite',
+      'P2-13: creating a client with an email did not queue the portal invite'
+    );
+    pass('2. Client + 2 pets + search by pet name + portal invite queued');
   }
 
   // --- 3. Contract: generate → sign → locked --------------------------------
@@ -574,6 +585,40 @@ async function main(): Promise<void> {
     );
     const proView = (await ok('GET', `/api/threads/${thread.id}/messages`, undefined, '11. Professional sees it')).data as { body: string }[];
     assert(proView.some((m) => m.body === 'Portal hello'), '11. Professional sees it', 'Owner message not visible to the professional');
+
+    // O-2: the walker replies and the owner must be able to notice. This is
+    // what makes the read-only portal (D2) workable — "message your walker"
+    // is the only correction path, so the reply has to surface somewhere.
+    // Relative to a baseline: earlier steps already left professional messages
+    // unread in this thread, so assert the delta rather than an absolute count.
+    const baseUnread = (await ok('GET', '/api/portal/overview', undefined, '11. Unread baseline', ownerToken)).data.unread_messages;
+    await ok('POST', `/api/threads/${thread.id}/messages`, { body: 'Walker reply', client_draft_id: `e2e-o2-${stamp}` }, '11. Walker reply');
+    const withUnread = (await ok('GET', '/api/portal/overview', undefined, '11. Unread', ownerToken)).data;
+    assert(
+      withUnread.unread_messages === baseUnread + 1,
+      '11. Unread',
+      `O-2: walker reply should raise unread from ${baseUnread} to ${baseUnread + 1}, got ${withUnread.unread_messages}`
+    );
+    // The walker's reply queues an email, scheduled 5 minutes out so a chatty
+    // thread doesn't send one per message.
+    const msgQueue = (await ok('GET', '/api/notifications', undefined, '11. Message email')).data as {
+      category: string; status: string; scheduled_for: string; payload: { template?: string };
+    }[];
+    const queuedMessageEmail = msgQueue.find((r) => r.payload.template === 'message_received');
+    assert(Boolean(queuedMessageEmail), '11. Message email', 'O-2: walker reply did not queue a message_received email');
+    assert(
+      new Date(queuedMessageEmail!.scheduled_for).getTime() > Date.now() + 60_000,
+      '11. Message email',
+      'O-2: message email should be deferred, not sent immediately'
+    );
+
+    await ok('POST', `/api/portal/threads/${thread.id}/read`, {}, '11. Owner reads', ownerToken);
+    const afterRead = (await ok('GET', '/api/portal/overview', undefined, '11. Unread cleared', ownerToken)).data;
+    assert(
+      afterRead.unread_messages === 0,
+      '11. Unread cleared',
+      `O-2: unread should be 0 after the owner reads, got ${afterRead.unread_messages}`
+    );
 
     // Access control seals the seam: neither token works on the other side.
     const ownerOnPro = await api('GET', '/api/clients', undefined, ownerToken);
