@@ -16,7 +16,9 @@ Verified against the live deployment on 2026-07-16: all 11 automated end-to-end 
 
 ## Known limitations (Phase 1)
 
-**Email delivery is blocked by a mismatched sender address.** The sending domain `eastwestoak.com` is verified at Resend (2026-07-17), but Render's `EMAIL_FROM` still points at `info@itchytail.com` — an earlier, superseded domain — so Resend refuses every send. The sender comes solely from the `EMAIL_FROM` environment variable (`src/config/env.ts`), so this is a Render dashboard change, not a code change: set it to an address on the verified domain, in `Name <addr>` form. Pick one that can actually receive mail — contract emails invite clients to reply. The app itself is fine: messages queue and send automatically once the sender is right.
+**Email delivery works.** ✅ *(resolved 2026-07-18.)* The sending domain `eastwestoak.com` is verified at Resend, and Render's `EMAIL_FROM` is set to `info@eastwestoak.com` — a real monitored mailbox, which matters because contract emails invite clients to reply. Confirmed by a live test send against production: the queue row came back `sent` with no error (a mismatched sender returns a 403 and would have been stored as `failed`).
+
+⚠️ **The sender lives only in the `EMAIL_FROM` environment variable** (`src/config/env.ts`) — it is not in code, so it can only be changed in the Render dashboard, and this service ignores `render.yaml`. Two silent failure modes to know: unset falls back to `onboarding@resend.dev`, which delivers only to the Resend account owner; and any address outside the verified domain is refused outright. Diagnose with `select status, error from notification_queue order by created_at desc limit 10`.
 
 **Owner-portal login links are rate-limited.** Magic links come from Supabase's built-in mailer, which allows only a couple of emails per hour. Portal sessions last about an hour before a fresh link is needed. Fine for real use; it needs planning around for a live demo.
 
