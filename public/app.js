@@ -695,7 +695,7 @@
       <div class="card contract-row" id="svc-row-${s.id}">
         <div class="what">
           <div class="title">${esc(s.name)}</div>
-          <div class="meta">${esc(SERVICE_TYPES[s.service_type] ?? s.service_type)} · ${esc(fmtMoney(s.price_cents))} ${esc(CADENCES[s.billing_cadence] ?? s.billing_cadence)}${s.session_count ? ` · ${esc(s.session_count)} sessions` : ''}${s.duration_minutes ? ` · ${esc(s.duration_minutes)} min` : ''}${s.end_date ? ` · until ${esc(fmtDateOnly(s.end_date))}` : ''}</div>
+          <div class="meta">${esc(SERVICE_TYPES[s.service_type] ?? s.service_type)} · ${esc(fmtMoney(s.price_cents))} ${esc(CADENCES[s.billing_cadence] ?? s.billing_cadence)}${s.session_count ? ` · ${esc(s.session_count)} sessions` : ''}${s.duration_minutes ? ` · ${esc(s.duration_minutes)} min` : ''}${s.end_date ? ` · until ${esc(fmtDateOnly(s.end_date))}` : ''}${s.status === 'active' && s.next_invoice_date ? ` · next invoice ${esc(fmtDateOnly(s.next_invoice_date))}` : ''}</div>
         </div>
         ${servicePill[s.status] ?? ''}
         <div class="row-actions">
@@ -1219,7 +1219,7 @@
         <div class="card fieldset" style="margin-top:12px">
           <div class="form-grid">
             <div class="full"><label for="k-template">Template</label>
-              <select id="k-template">${templates.map((t) => `<option value="${t.id}">${esc(t.name)}</option>`).join('')}</select></div>
+              <select id="k-template">${templates.map((t) => `<option value="${t.id}"${t.name === 'Pet Services Agreement' ? ' selected' : ''}>${esc(t.name)}</option>`).join('')}</select></div>
             <div class="full"><label for="k-sched">Schedule <span class="hint">— written out, e.g. "Mon/Wed/Fri, 30-minute midday walk"</span></label>
               <input id="k-sched" required placeholder="Mon/Wed/Fri, 30-minute midday walk" /></div>
             <div><label for="k-start">First day of service</label><input id="k-start" type="date" required /></div>

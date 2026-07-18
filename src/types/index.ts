@@ -178,6 +178,11 @@ export interface Service {
   session_count: number | null; // sessions included in a package (014)
   start_date: string | null;
   end_date: string | null;
+  /** End of the current billing period for weekly/biweekly/monthly services
+   *  (017). The recurring-invoice worker invoices when it arrives and
+   *  advances it one period. Null = not scheduled (other cadences, or
+   *  awaiting the worker's first pass). */
+  next_invoice_date: string | null;
   status: ServiceStatus;
   created_at: string;
   updated_at: string;

@@ -1,11 +1,65 @@
 import Stripe from 'stripe';
 import { env } from '../config/env';
 import { supabaseAdmin } from '../config/supabase';
-import { BillingPeriod, Invoice, InvoiceStatus, PaymentTransaction, StripeProduct } from '../types';
+import {
+  BillingCadence,
+  BillingPeriod,
+  Invoice,
+  InvoiceStatus,
+  PaymentTransaction,
+  Service,
+  StripeProduct,
+} from '../types';
 import { clientService } from './ClientService';
 import { ServiceError } from './errors';
 import { eventService } from './EventService';
 import { notificationService } from './NotificationService';
+
+// ------------------------------------------------- recurring billing math ----
+// Founder decision 2026-07-17 (resolves the Week 6 [d]): weekly / biweekly /
+// monthly services invoice at the END of each billing period. These helpers
+// are the one place period math lives; SchedulingService uses them when a
+// service is created, activated, or resumed.
+
+export const RECURRING_CADENCES: readonly BillingCadence[] = ['weekly', 'biweekly', 'monthly'];
+
+export function isRecurringCadence(cadence: BillingCadence): boolean {
+  return (RECURRING_CADENCES as BillingCadence[]).includes(cadence);
+}
+
+const PERIOD_NOUN: Record<string, string> = { weekly: 'week', biweekly: '2 weeks', monthly: 'month' };
+
+function ymd(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+export function ymdToday(): string {
+  return ymd(new Date());
+}
+
+/** One billing period after fromYmd. Monthly rides Date's month arithmetic
+ *  (Jan 31 + 1 month lands early March) — acceptable drift for Phase 1. */
+export function advancePeriod(fromYmd: string, cadence: BillingCadence): string {
+  const [y, m, d] = fromYmd.split('-').map(Number);
+  const date = new Date(y, m - 1, d);
+  if (cadence === 'monthly') date.setMonth(date.getMonth() + 1);
+  else date.setDate(date.getDate() + (cadence === 'biweekly' ? 14 : 7));
+  return ymd(date);
+}
+
+/** When a recurring service comes alive: its first invoice lands one period
+ *  after its start date (or after today, if the start is unset or already
+ *  past — reviving an old start date would owe periods nobody was served). */
+export function initialInvoiceDate(startYmd: string | null | undefined, cadence: BillingCadence): string {
+  const today = ymdToday();
+  const anchor = startYmd && startYmd > today ? startYmd : today;
+  return advancePeriod(anchor, cadence);
+}
+
+function formatYmd(value: string): string {
+  const [y, m, d] = value.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+}
 
 export interface BillableItemInput {
   name: string;
@@ -461,6 +515,89 @@ export class PaymentService {
       });
     }
   }
+
+  // ------------------------------------------------- recurring invoicing ----
+
+  /**
+   * One worker pass: invoice every active weekly/biweekly/monthly service
+   * whose billing period has ended, and advance its next_invoice_date.
+   *
+   * Exactly-once per period: the advance UPDATE is compare-and-set on the
+   * current next_invoice_date, so overlapping passes can't both invoice the
+   * same period. The advance wins BEFORE the invoice is created — a crash in
+   * between loses at most one invoice (recoverable by hand via the Week 5
+   * billing UI); the reverse order could double-bill, which is not.
+   *
+   * Services the feature has never seen (next_invoice_date null) are
+   * scheduled one period out and NOT invoiced — no surprise catch-up
+   * invoices for periods that predate the feature.
+   */
+  async generateRecurringInvoices(): Promise<number> {
+    const today = ymdToday();
+    const { data, error } = await supabaseAdmin
+      .from('services')
+      .select('*')
+      .eq('status', 'active')
+      .in('billing_cadence', RECURRING_CADENCES as string[]);
+    if (error) throw new ServiceError('recurring_invoice_scan_failed', error.message, 500);
+
+    let generated = 0;
+    for (const service of (data ?? []) as Service[]) {
+      try {
+        if (!service.next_invoice_date) {
+          await supabaseAdmin
+            .from('services')
+            .update({ next_invoice_date: advancePeriod(today, service.billing_cadence) })
+            .eq('id', service.id)
+            .is('next_invoice_date', null);
+          continue;
+        }
+        if (service.next_invoice_date > today) continue;
+        // W-13 end date: a service that has run past its end has nothing
+        // left to bill; the walker Ends it (or extends the date) from the UI.
+        if (service.end_date && service.next_invoice_date > service.end_date) continue;
+
+        const next = advancePeriod(service.next_invoice_date, service.billing_cadence);
+        const { data: claimed, error: claimError } = await supabaseAdmin
+          .from('services')
+          .update({ next_invoice_date: next })
+          .eq('id', service.id)
+          .eq('next_invoice_date', service.next_invoice_date)
+          .select()
+          .maybeSingle();
+        if (claimError || !claimed) continue; // another pass got here first
+
+        await this.createInvoice(service.professional_account_id, {
+          client_id: service.client_id,
+          amount_cents: service.price_cents,
+          description: `${service.name} — ${PERIOD_NOUN[service.billing_cadence] ?? 'period'} ending ${formatYmd(service.next_invoice_date)}`,
+          service_id: service.id,
+        });
+        generated++;
+      } catch (err) {
+        // One service's failure must not starve the rest of the pass.
+        console.error(`[billing] recurring invoice failed for service ${service.id}:`, err);
+      }
+    }
+    return generated;
+  }
 }
 
 export const paymentService = new PaymentService();
+
+/** Interval driver for period-end invoicing, mirroring the notification
+ *  worker. Runs a pass at boot too: on hosting that sleeps between requests
+ *  (Render free tier), boot is the one moment we know we're awake. */
+export function startRecurringInvoiceWorker(intervalMs = 5 * 60_000): NodeJS.Timeout {
+  const pass = () =>
+    void paymentService.generateRecurringInvoices().then(
+      (n) => {
+        if (n > 0) console.log(`[billing] generated ${n} recurring invoice(s)`);
+      },
+      (err) => console.error('[billing] recurring invoice pass failed:', err)
+    );
+  pass();
+  const timer = setInterval(pass, intervalMs);
+  timer.unref();
+  return timer;
+}

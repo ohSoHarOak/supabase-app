@@ -14,7 +14,7 @@ import { clientService } from './ClientService';
 import { ServiceError } from './errors';
 import { eventService } from './EventService';
 import { notificationService } from './NotificationService';
-import { paymentService } from './PaymentService';
+import { initialInvoiceDate, isRecurringCadence, paymentService, ymdToday } from './PaymentService';
 
 export interface ServiceInput {
   client_id: string;
@@ -120,6 +120,7 @@ export class SchedulingService {
     const { pet_ids: petIds, ...columns } = input;
     const pets = this.resolvePets(client.pets, petIds);
 
+    const status = input.status ?? 'active';
     const { data, error } = await supabaseAdmin
       .from('services')
       .insert({
@@ -131,7 +132,13 @@ export class SchedulingService {
         // means to use it now; drafts would just be a surprise dead end.
         // Contract-created services are the exception — they pass 'draft'
         // explicitly and only go active when the client signs (W-7).
-        status: input.status ?? 'active',
+        status,
+        // Period-end billing starts its clock the moment a recurring service
+        // is live; drafts wait for signing (activateServicesForContract).
+        next_invoice_date:
+          status === 'active' && isRecurringCadence(input.billing_cadence)
+            ? initialInvoiceDate(input.start_date, input.billing_cadence)
+            : null,
       })
       .select()
       .single();
@@ -236,7 +243,27 @@ export class SchedulingService {
       .eq('status', 'draft')
       .select();
     if (error) throw new ServiceError('service_activate_failed', error.message, 500);
-    return (data ?? []) as Service[];
+    const activated = (data ?? []) as Service[];
+
+    // Signing is when a recurring service's billing clock starts (founder
+    // decision 2026-07-17: invoice at period end). Cadences differ per
+    // service, so this can't ride the bulk UPDATE above.
+    for (const service of activated) {
+      if (!isRecurringCadence(service.billing_cadence)) continue;
+      const next = initialInvoiceDate(service.start_date, service.billing_cadence);
+      const { error: dateError } = await supabaseAdmin
+        .from('services')
+        .update({ next_invoice_date: next })
+        .eq('id', service.id);
+      if (dateError) {
+        // Same philosophy as the signing race: the service is validly active;
+        // a missing billing date is recoverable (the worker initializes it).
+        console.error(`[billing] could not schedule first invoice for service ${service.id}:`, dateError.message);
+      } else {
+        service.next_invoice_date = next;
+      }
+    }
+    return activated;
   }
 
   async listServices(
@@ -275,10 +302,20 @@ export class SchedulingService {
     serviceId: string,
     input: Partial<Omit<ServiceInput, 'client_id'>>
   ): Promise<Service> {
-    await this.getService(professionalAccountId, serviceId); // ownership check
+    const current = await this.getService(professionalAccountId, serviceId); // ownership check
+
+    // Resuming a paused recurring service re-anchors its billing cycle at
+    // today: paused time was unserved and unbilled, so the next invoice is
+    // one full period from the resume — never a catch-up for the pause.
+    const patch: Record<string, unknown> = { ...input };
+    const cadence = input.billing_cadence ?? current.billing_cadence;
+    if (input.status === 'active' && current.status === 'paused' && isRecurringCadence(cadence)) {
+      patch.next_invoice_date = initialInvoiceDate(ymdToday(), cadence);
+    }
+
     const { data, error } = await supabaseAdmin
       .from('services')
-      .update(input)
+      .update(patch)
       .eq('id', serviceId)
       .select()
       .single();
