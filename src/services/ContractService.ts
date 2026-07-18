@@ -57,6 +57,12 @@ export interface SignInPersonInput {
   signature_image: string;
 }
 
+/** Contract joined with the name of the template it was generated from,
+ *  mirroring SchedulingService's AppointmentWithDetails pattern. */
+export type ContractWithTemplate = Contract & {
+  contract_templates: { name: string } | null;
+};
+
 export interface GeneratedContract {
   contract: Contract;
   /** Placeholders left untouched because no value was available. The three
@@ -67,13 +73,17 @@ export interface GeneratedContract {
 /** Placeholders that must survive generation for the signing flow to fill. */
 const SIGNING_PLACEHOLDERS = ['client_signature_image', 'provider_signature_image', 'signed_date'];
 
-const SEED_TEMPLATE_NAME = 'Dog Walking Service Agreement (California)';
-const SEED_TEMPLATE_FILE = path.join(
-  process.cwd(),
-  'templates',
-  'contracts',
-  'dog-walking-agreement-ca.html'
-);
+/** Packaged templates copied into each professional's account by /seed.
+ *  First entry is the default (and what the seed endpoint returns, so
+ *  existing callers keep their shape). The Pet Services Agreement carries
+ *  {{services_table}}, making it the multi-service-capable option; the CA
+ *  agreement stays single-service until counsel returns the W-9 v2. */
+const SEED_TEMPLATES = [
+  { name: 'Dog Walking Service Agreement (California)', file: 'dog-walking-agreement-ca.html' },
+  { name: 'Pet Services Agreement', file: 'pet-services-agreement.html' },
+];
+const seedTemplatePath = (file: string) =>
+  path.join(process.cwd(), 'templates', 'contracts', file);
 
 const SIGNATURE_BUCKET = 'contracts';
 const MAX_SIGNATURE_BYTES = 500 * 1024;
@@ -263,30 +273,42 @@ export class ContractService {
   }
 
   /**
-   * Copy the packaged CA dog-walking template into this professional's
-   * account. Idempotent: returns the existing copy if one is already there.
+   * Copy every packaged template into this professional's account.
+   * Idempotent per template (matched by name), so accounts that predate a
+   * newly packaged template pick it up on their next seed call. Returns the
+   * default (first packaged) template — the shape existing callers expect.
    */
   async seedDefaultTemplate(professionalAccountId: string): Promise<ContractTemplate> {
-    const { data: existing, error: lookupError } = await supabaseAdmin
-      .from('contract_templates')
-      .select('*')
-      .eq('professional_account_id', professionalAccountId)
-      .eq('name', SEED_TEMPLATE_NAME)
-      .maybeSingle();
-    if (lookupError) throw new ServiceError('template_lookup_failed', lookupError.message, 500);
-    if (existing) return existing as ContractTemplate;
+    let defaultTemplate: ContractTemplate | null = null;
+    for (const seed of SEED_TEMPLATES) {
+      const { data: existing, error: lookupError } = await supabaseAdmin
+        .from('contract_templates')
+        .select('*')
+        .eq('professional_account_id', professionalAccountId)
+        .eq('name', seed.name)
+        .maybeSingle();
+      if (lookupError) throw new ServiceError('template_lookup_failed', lookupError.message, 500);
 
-    let body: string;
-    try {
-      body = fs.readFileSync(SEED_TEMPLATE_FILE, 'utf8');
-    } catch {
-      throw new ServiceError(
-        'seed_template_missing',
-        `Packaged template not found at ${SEED_TEMPLATE_FILE}.`,
-        500
-      );
+      let template = existing as ContractTemplate | null;
+      if (!template) {
+        let body: string;
+        try {
+          body = fs.readFileSync(seedTemplatePath(seed.file), 'utf8');
+        } catch {
+          throw new ServiceError(
+            'seed_template_missing',
+            `Packaged template not found at ${seedTemplatePath(seed.file)}.`,
+            500
+          );
+        }
+        template = await this.createTemplate(professionalAccountId, {
+          name: seed.name,
+          body_html: body,
+        });
+      }
+      defaultTemplate ??= template;
     }
-    return this.createTemplate(professionalAccountId, { name: SEED_TEMPLATE_NAME, body_html: body });
+    return defaultTemplate!;
   }
 
   // ---------------------------------------------------------- generation ----
@@ -450,10 +472,12 @@ export class ContractService {
   async listContracts(
     professionalAccountId: string,
     options: { clientId?: string; status?: ContractStatus } = {}
-  ): Promise<Contract[]> {
+  ): Promise<ContractWithTemplate[]> {
+    // Template name rides along so the UI can title each row — with two
+    // packaged agreements, "Dog Walking Service Agreement" can't be assumed.
     let builder = supabaseAdmin
       .from('contracts')
-      .select('*')
+      .select('*, contract_templates(name)')
       .eq('professional_account_id', professionalAccountId)
       .order('created_at', { ascending: false });
     if (options.clientId) builder = builder.eq('client_id', options.clientId);
@@ -461,7 +485,7 @@ export class ContractService {
 
     const { data, error } = await builder;
     if (error) throw new ServiceError('contract_list_failed', error.message, 500);
-    return (data ?? []) as Contract[];
+    return (data ?? []) as unknown as ContractWithTemplate[];
   }
 
   async getContract(professionalAccountId: string, contractId: string): Promise<Contract> {

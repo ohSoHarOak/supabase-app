@@ -671,7 +671,7 @@
     const contractRows = contracts.map((k) => `
       <div class="card contract-row">
         <div class="what">
-          <div class="title">Dog Walking Service Agreement</div>
+          <div class="title">${esc(k.contract_templates?.name ?? 'Service Agreement')}</div>
           <div class="meta">${k.status === 'signed'
             ? `Signed ${esc(fmtDate(k.signed_at))} by ${esc(k.signer_name ?? '')}`
             : `Generated ${esc(fmtDate(k.created_at))}`}</div>
@@ -1180,11 +1180,11 @@
     let client, templates;
     try {
       client = await api('GET', `/api/clients/${clientId}`);
+      // Seed is idempotent and copies every packaged template, so accounts
+      // that predate a newly packaged one (e.g. the Pet Services Agreement)
+      // pick it up here rather than being stuck with what they signed up with.
+      await api('POST', '/api/contract-templates/seed', {});
       templates = await api('GET', '/api/contract-templates');
-      if (templates.length === 0) {
-        // First use: copy the packaged CA agreement into this account.
-        templates = [await api('POST', '/api/contract-templates/seed', {})];
-      }
     } catch (err) {
       toast(err.message);
       location.hash = `#/client/${clientId}`;

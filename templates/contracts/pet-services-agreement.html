@@ -1,0 +1,106 @@
+<!--
+  Pet Services Agreement — converted 2026-07-17 from the founder-supplied
+  "Pet Services Agreement.docx" (added to this folder the same day).
+
+  ⚠️ PROVENANCE, worth being honest about: the source document is a generic
+  template (its .docx even carried an AI-chatbot preamble, stripped here) and
+  has NOT been through the counsel review that COUNSEL_REVIEW.md packages.
+  The legal-review notice below is therefore doing real work. The CA
+  agreement (v1) remains seeded alongside this one.
+
+  Conversion decisions (bracketed placeholders to app merge fields — named
+  WITHOUT braces here, because generation substitutes tokens everywhere in
+  the file, comments included):
+    - [Date] -> effective_date; parties -> provider_business_name /
+      client_name + client_address. The source's "[Your Address]" for the
+      provider has no app field and was dropped from the intro.
+    - Section 1's example bullet list -> the services table (the W-9 seam),
+      so this is a multi-service-capable template: the table lists each
+      service, its pets, fee, and notes. Fixed Pet 1/Pet 2 rows -> pet_list.
+    - Termination "[Number, e.g., 7] days" -> seven (7) days, matching the
+      mutual 7-day term already live in the CA agreement.
+    - Payment "[e.g., every Friday]" -> due upon receipt of invoice (what the
+      app actually does). The source's late-fee sentence was dropped: the app
+      has no late-fee mechanism, and a fee the system can't compute would be
+      an unfillable bracket in a binding document.
+    - Cancellation window -> cancellation_window_hours. NOTE: this source
+      charges the FULL service fee for late cancels, where the CA agreement
+      charges the client's no-show fee — kept faithful to the source; that
+      difference is a counsel/founder question, not a code one.
+    - Emergency care -> emergency_contact / preferred_vet. NOTE: the source
+      has no vet spending cap ("full financial responsibility"), so the
+      generate form's cap field does not apply to this template.
+-->
+<article class="contract">
+  <style>
+    .contract { font-family: Georgia, 'Times New Roman', serif; max-width: 52rem; margin: 0 auto; line-height: 1.45; color: #111; }
+    .contract h1 { text-align: center; font-size: 1.5rem; margin-bottom: 0.25rem; }
+    .contract h2 { font-size: 1rem; margin: 1rem 0 0.25rem; }
+    .contract .notice { border: 1px solid #b8860b; background: #fff3cd; padding: 0.6rem 0.8rem; font-style: italic; font-size: 0.9rem; margin: 0.75rem 0; }
+    .contract table.key-terms { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+    .contract table.key-terms th, .contract table.key-terms td { border: 1px solid #bbb; padding: 0.35rem 0.5rem; text-align: left; vertical-align: top; }
+    .contract table.key-terms th { background: #f2f2f2; width: 27%; font-weight: bold; }
+    .contract .fine-print { font-size: 0.85rem; font-style: italic; }
+    .contract .signatures { display: flex; gap: 2rem; margin-top: 1rem; }
+    .contract .signatures > div { flex: 1; }
+    .contract .sig-image img { max-height: 80px; }
+  </style>
+
+  <h1>Pet Services Agreement</h1>
+
+  <p>This Pet Services Agreement (the &ldquo;Agreement&rdquo;) is entered into and made effective as of {{effective_date}}, by and between:</p>
+  <p><strong>Service Provider:</strong> {{provider_business_name}} (the &ldquo;Provider&rdquo;), and<br />
+  <strong>Client:</strong> {{client_name}}, located at {{client_address}} (the &ldquo;Client&rdquo;).</p>
+
+  <p class="notice"><strong>NOTICE:</strong> This template is provided for convenience and is not legal advice. Both parties should have this Agreement reviewed by their own legal counsel before signing.</p>
+
+  <h2>1. Description of Services</h2>
+  <p>The Provider agrees to perform the following pet care services for the Client&rsquo;s pet(s) (the &ldquo;Services&rdquo;):</p>
+  {{services_table}}
+  <p class="fine-print">The Services table above is part of this Agreement. In case of conflict between the table and the sections below, the table controls.</p>
+
+  <h2>2. Pet Information</h2>
+  <p>This Agreement applies to the following pet(s) owned by the Client: {{pet_list}}. The Client certifies that all dietary, medical, and behavioral needs of each pet have been disclosed to the Provider.</p>
+
+  <h2>3. Schedule &amp; Term</h2>
+  <p><strong>Start Date:</strong> The Services will commence on {{start_date}}.</p>
+  <p><strong>Frequency:</strong> Services will be provided {{service_schedule}}.</p>
+  <p><strong>Termination:</strong> Either party may terminate this Agreement by providing seven (7) days&rsquo; written notice to the other party. Fees for completed Services remain due.</p>
+
+  <h2>4. Compensation &amp; Payment</h2>
+  <p><strong>Service Fees:</strong> The Client agrees to pay the Provider the fee listed for each service in the Services table above.</p>
+  <p><strong>Payment Terms:</strong> Payments are due upon receipt of invoice unless otherwise agreed in writing.</p>
+
+  <h2>5. Cancellation Policy</h2>
+  <p>If the Client cancels a scheduled visit with less than {{cancellation_window_hours}} hours&rsquo; notice, the Client is responsible for the full fee of the scheduled service.</p>
+
+  <h2>6. Emergency Medical Care</h2>
+  <p>In the event of a medical emergency concerning the pet(s), the Provider will first attempt to contact the Client, and then the Client&rsquo;s emergency contact ({{emergency_contact}}).</p>
+  <p>If the Client cannot be reached, the Provider is authorized to take the pet(s) to {{preferred_vet}} or the nearest available veterinary facility.</p>
+  <p>The Client agrees to assume full financial responsibility for all veterinary costs incurred during an emergency.</p>
+
+  <h2>7. Liability &amp; Indemnification</h2>
+  <p>The Provider agrees to provide services in a safe, reliable, and trustworthy manner.</p>
+  <p>The Provider shall not be held liable for any injury, illness, loss, or death of the pet(s), nor any damage to the Client&rsquo;s property, unless caused by the sole negligence or willful misconduct of the Provider.</p>
+  <p>The Client agrees to indemnify and hold harmless the Provider against any claims or liabilities arising from any injury or damage caused by the Client&rsquo;s pet(s) to the Provider or third parties.</p>
+
+  <h2>8. Entire Agreement</h2>
+  <p>This Agreement contains the entire understanding between the parties regarding the subject matter and supersedes all prior discussions or agreements. Any changes to this contract must be made in writing and signed by both parties.</p>
+
+  <h2>Signatures</h2>
+  <p>By signing below, the parties agree to all the terms and conditions outlined in this Agreement, including the Services table.</p>
+  <div class="signatures">
+    <div>
+      <p><strong>CLIENT</strong></p>
+      <p class="sig-image">Signature: {{client_signature_image}}</p>
+      <p>Name: {{client_name}}</p>
+      <p>Date: {{signed_date}}</p>
+    </div>
+    <div>
+      <p><strong>SERVICE PROVIDER</strong></p>
+      <p class="sig-image">Signature: {{provider_signature_image}}</p>
+      <p>Name: {{provider_name}}</p>
+      <p>Date: {{signed_date}}</p>
+    </div>
+  </div>
+</article>
