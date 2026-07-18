@@ -69,6 +69,36 @@
   function initials(name) {
     return name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('') || '?';
   }
+  // Tester feedback 2026-07-18: every client gets a stable color — avatar in
+  // the lists, stripe on the calendar — so a busy day reads at a glance.
+  // Colors go by client creation order, not a hash: hashing 8 colors collides
+  // between two clients far too easily (found immediately in testing), while
+  // creation order guarantees consecutive clients differ and never reshuffles
+  // existing clients when a new one is added.
+  const CLIENT_COLORS = ['#2B7192', '#6D9280', '#8A5A83', '#C06B3E', '#A98127', '#3E8E7E', '#5B6BAA', '#A85D75'];
+  let clientColorMap = null; // client id -> color, built once per page load
+  function assignClientColors(clients) {
+    const ordered = [...clients].sort(
+      (a, b) => String(a.created_at ?? '').localeCompare(String(b.created_at ?? '')) || String(a.id).localeCompare(String(b.id))
+    );
+    clientColorMap = new Map(ordered.map((c, i) => [c.id, CLIENT_COLORS[i % CLIENT_COLORS.length]]));
+  }
+  async function ensureClientColors() {
+    if (clientColorMap) return;
+    try {
+      assignClientColors(await api('GET', '/api/clients'));
+    } catch { /* fall back to the default below until a later screen loads it */ }
+  }
+  function clientColor(id) {
+    if (!clientColorMap) return 'var(--steel)';
+    let color = clientColorMap.get(id);
+    if (!color) {
+      // Client created after the map was built — append, same as a reload would.
+      color = CLIENT_COLORS[clientColorMap.size % CLIENT_COLORS.length];
+      clientColorMap.set(id, color);
+    }
+    return color;
+  }
   function petSummary(pets) {
     if (!pets?.length) return 'No pets yet';
     return pets.map((p) => (p.breed ? `${p.name} (${p.breed})` : p.name)).join(' · ');
@@ -392,6 +422,9 @@
       return;
     }
 
+    if (query) await ensureClientColors();
+    else assignClientColors(clients); // unfiltered list = the authoritative order
+
     const byId = Object.fromEntries(clients.map((c) => [c.id, c]));
     const unsigned = contracts.filter((k) => k.status === 'draft' || k.status === 'sent');
     const pending = clients.filter((c) => c.status === 'prospect');
@@ -427,7 +460,7 @@
     // Today's agenda: where do I need to be today? (canceled walks stay out of the way)
     const agenda = todaysAppts.filter((a) => a.status !== 'canceled');
     const agendaRows = agenda.map((a) => `
-      <div class="card contract-row" data-nav="#/schedule" tabindex="0" role="link">
+      <div class="card contract-row client-stripe" style="border-left-color:${clientColor(a.client_id)}" data-nav="#/schedule" tabindex="0" role="link">
         <div class="what">
           <div class="title">${esc(fmtTime(a.starts_at))} — ${esc(a.clients?.full_name ?? 'Client')}</div>
           <div class="meta">${esc(a.services?.name ?? 'Appointment')}${a.services?.duration_minutes ? ` · ${esc(a.services.duration_minutes)} min` : ''}${a.notes ? ` · ${esc(a.notes)}` : ''}</div>
@@ -442,7 +475,7 @@
       const hasUnsigned = unsigned.some((k) => k.client_id === c.id);
       return `
         <div class="card client-row" data-nav="#/client/${c.id}" tabindex="0" role="link">
-          <div class="avatar">${esc(initials(c.full_name))}</div>
+          <div class="avatar" style="background:${clientColor(c.id)}">${esc(initials(c.full_name))}</div>
           <div class="who">
             <div class="name">${esc(c.full_name)}</div>
             <div class="pets">Pending client · ${esc(petSummary(c.pets))}</div>
@@ -454,7 +487,7 @@
 
     const activeRows = active.map((c) => `
       <div class="card client-row" data-nav="#/client/${c.id}" tabindex="0" role="link">
-        <div class="avatar" style="background:${['#2B7192', '#6D9280', '#1C4C64'][c.full_name.length % 3]}">${esc(initials(c.full_name))}</div>
+        <div class="avatar" style="background:${clientColor(c.id)}">${esc(initials(c.full_name))}</div>
         <div class="who">
           <div class="name">${esc(c.full_name)}</div>
           <div class="pets">${esc(petSummary(c.pets))}</div>
@@ -515,6 +548,9 @@
       return;
     }
 
+    if (query) await ensureClientColors();
+    else assignClientColors(clients);
+
     const statusPill = {
       active: '<span class="pill pill-sage">active</span>',
       prospect: '<span class="pill pill-draft">pending</span>',
@@ -522,7 +558,7 @@
     };
     const row = (c) => `
       <div class="card client-row" data-nav="#/client/${c.id}" tabindex="0" role="link">
-        <div class="avatar" style="background:${['#2B7192', '#6D9280', '#1C4C64'][c.full_name.length % 3]}">${esc(initials(c.full_name))}</div>
+        <div class="avatar" style="background:${clientColor(c.id)}">${esc(initials(c.full_name))}</div>
         <div class="who">
           <div class="name">${esc(c.full_name)}</div>
           <div class="pets">${esc(petSummary(c.pets))}</div>
@@ -1440,7 +1476,17 @@
         ${signable ? `<p class="page-sub">Still a draft — every term can be edited until the moment it's signed. Hand the device to your client to review and sign.</p>` : ''}
 
         <div class="sign-layout">
-          <iframe class="doc-frame" id="doc-frame" title="Contract document" sandbox=""></iframe>
+          <div class="doc-pane">
+            <div class="doc-tools">
+              <span class="hint">Zoom</span>
+              <button class="btn btn-ghost" id="zoom-out" type="button" aria-label="Zoom out">−</button>
+              <span class="num" id="zoom-label" aria-live="polite">100%</span>
+              <button class="btn btn-ghost" id="zoom-in" type="button" aria-label="Zoom in">＋</button>
+            </div>
+            <div class="doc-shell">
+              <iframe class="doc-frame" id="doc-frame" title="Contract document" sandbox=""></iframe>
+            </div>
+          </div>
           ${signable ? `
           <div class="card sign-pad-card">
             <div>
@@ -1469,6 +1515,23 @@
     // Render the contract HTML in a sandboxed iframe so its styles can't
     // leak into the app (and app scripts can't touch the document).
     document.getElementById('doc-frame').srcdoc = contract.generated_html;
+
+    // Zoom (tester feedback 2026-07-18): scale the iframe itself — width is
+    // compensated so the document reflows to the visible width at every zoom
+    // level instead of growing a horizontal scrollbar.
+    let zoom = 1;
+    const applyZoom = () => {
+      const frame = document.getElementById('doc-frame');
+      frame.style.width = `${100 / zoom}%`;
+      frame.style.height = `${100 / zoom}%`;
+      frame.style.transform = `scale(${zoom})`;
+      document.getElementById('zoom-label').textContent = `${Math.round(zoom * 100)}%`;
+      document.getElementById('zoom-out').disabled = zoom <= 0.55;
+      document.getElementById('zoom-in').disabled = zoom >= 1.75;
+    };
+    document.getElementById('zoom-out').onclick = () => { zoom = Math.max(0.5, Math.round((zoom - 0.1) * 10) / 10); applyZoom(); };
+    document.getElementById('zoom-in').onclick = () => { zoom = Math.min(1.8, Math.round((zoom + 0.1) * 10) / 10); applyZoom(); };
+    applyZoom();
 
     // W-1: the copy the client keeps. The document endpoint needs the auth
     // header, so fetch it first, then print or download the result.
@@ -1605,7 +1668,10 @@
     const weekEnd = new Date(weekStart.getTime() + 7 * DAY_MS);
     let appts;
     try {
-      appts = await api('GET', `/api/appointments?from=${weekStart.toISOString()}&to=${weekEnd.toISOString()}`);
+      [appts] = await Promise.all([
+        api('GET', `/api/appointments?from=${weekStart.toISOString()}&to=${weekEnd.toISOString()}`),
+        ensureClientColors(),
+      ]);
     } catch (err) {
       toast(err.message);
       appEl.innerHTML = header('schedule') + `<div class="page"><div class="empty">Couldn't load the schedule. <a class="backlink" href="#/schedule">Retry</a></div></div>`;
@@ -1628,7 +1694,7 @@
         const inSeries = a.recurrence_rule || a.recurrence_parent_id;
         const done = a.status === 'completed';
         return `
-        <div class="card appt-row${a.status === 'cancelled' ? ' appt-cancelled' : ''}">
+        <div class="card appt-row client-stripe${a.status === 'cancelled' ? ' appt-cancelled' : ''}" style="border-left-color:${clientColor(a.client_id)}">
           <div class="appt-main">
             <div class="appt-time num">${esc(fmtTime(a.starts_at))}–${esc(fmtTime(a.ends_at))}</div>
             <div class="what">
@@ -2138,6 +2204,7 @@
     try {
       await syncDraftQueue();
       [threads, clients] = await Promise.all([api('GET', '/api/threads'), api('GET', '/api/clients')]);
+      assignClientColors(clients);
     } catch (err) {
       toast(err.message);
       appEl.innerHTML = header('messages') + `<div class="page"><div class="empty">Couldn't load messages. <a class="backlink" href="#/messages">Retry</a></div></div>`;
@@ -2150,7 +2217,7 @@
         : 'No messages yet';
       return `
         <div class="card client-row" data-nav="#/messages/${t.id}" tabindex="0" role="link">
-          <div class="avatar">${esc(initials(t.client.full_name))}</div>
+          <div class="avatar" style="background:${clientColor(t.client.id)}">${esc(initials(t.client.full_name))}</div>
           <div class="who">
             <div class="name">${esc(t.client.full_name)}</div>
             <div class="pets msg-preview">${esc(preview.slice(0, 80))}${preview.length > 80 ? '…' : ''}</div>
@@ -2203,6 +2270,7 @@
       [threads, messages] = await Promise.all([
         api('GET', '/api/threads'),
         api('GET', `/api/threads/${threadId}/messages`),
+        ensureClientColors(),
       ]);
     } catch (err) {
       toast(err.message);
@@ -2230,7 +2298,7 @@
         <a class="backlink" href="#/messages">‹ All messages</a>
         <div class="detail-head" style="margin-bottom:6px">
           <div class="who" style="display:flex; align-items:center; gap:12px">
-            <div class="avatar">${esc(initials(thread.client.full_name))}</div>
+            <div class="avatar" style="background:${clientColor(thread.client.id)}">${esc(initials(thread.client.full_name))}</div>
             <h1 class="page-title">${esc(thread.client.full_name)}</h1>
           </div>
           <button class="btn btn-quiet" data-nav="#/client/${thread.client.id}">View client</button>

@@ -244,6 +244,14 @@ label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 5px; }
 .detail-head { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 16px; margin-top: 8px; }
 .detail-head .who { flex: 1 1 300px; }
 .contact-line { color: var(--ink-soft); font-size: 13.5px; }
+/* Phone/email links read as text, not browser-default blue (tester
+   feedback 2026-07-18) — the underline alone marks them tappable. */
+.contact-line a {
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--ink) 40%, transparent);
+  text-underline-offset: 2px;
+}
 
 .policy-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
 .policy { padding: 12px 14px; }
@@ -298,12 +306,25 @@ label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 5px; }
 /* ------------------------------------------------------------ signing */
 .sign-layout { display: grid; grid-template-columns: 1.2fr 1fr; gap: 18px; align-items: start; margin-top: 18px; }
 @media (max-width: 760px) { .sign-layout { grid-template-columns: 1fr; } }
+.doc-pane { display: grid; gap: 6px; }
+.doc-tools { display: flex; align-items: center; gap: 4px; justify-content: flex-end; }
+.doc-tools .btn { padding: 2px 12px; font-size: 17px; line-height: 1.4; }
+.doc-tools #zoom-label { font-size: 12.5px; color: var(--ink-soft); min-width: 42px; text-align: center; }
+/* The document fills the window height so reading means scrolling the
+   contract, not the page around it. */
+.doc-shell {
+  height: clamp(420px, calc(100vh - 310px), 900px);
+  border-radius: 10px;
+  border: 1px solid var(--hairline);
+  overflow: hidden;
+  background: #fff;
+}
 .doc-frame {
   width: 100%;
-  height: 440px;
+  height: 100%;
   border: none;
-  border-radius: 10px;
   background: #fff;
+  transform-origin: 0 0;
 }
 .sign-pad-card { padding: 20px; display: grid; gap: 14px; }
 #sigpad {
@@ -317,7 +338,7 @@ label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 5px; }
   display: block;
 }
 #sigpad.err { border-color: var(--alert); }
-.sig-hint { font-size: 12px; color: var(--ink-soft); text-align: center; margin: -6px 0 0; }
+.sig-hint { font-size: 12px; color: var(--ink-soft); text-align: center; margin: 6px 0 0; }
 .lock-note { display: flex; gap: 8px; font-size: 12.5px; color: var(--ink-soft); align-items: flex-start; }
 .lock-note svg { flex: none; margin-top: 2px; }
 
@@ -351,6 +372,9 @@ label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 5px; }
 .day-head .day-date { font-weight: 400; color: var(--ink-soft); font-size: 12.5px; }
 .day-empty { color: var(--ink-soft); font-size: 12.5px; padding: 2px 2px 6px; }
 .appt-row { padding: 13px 16px; }
+/* Per-client calendar color (tester feedback 2026-07-18) — the color
+   itself is set inline from the client's stable hash. */
+.client-stripe { border-left: 4px solid var(--hairline); }
 .appt-main { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 .appt-main .what { flex: 1 1 200px; }
 .appt-main .title { font-weight: 650; font-size: 14px; }
