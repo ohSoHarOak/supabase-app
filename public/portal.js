@@ -296,8 +296,8 @@
               <span class="num" id="zoom-label" aria-live="polite">100%</span>
               <button class="btn btn-ghost" id="zoom-in" type="button" aria-label="Zoom in">＋</button>
             </div>
-            <div class="doc-shell">
-              <iframe class="doc-frame" id="doc-frame" title="Agreement document" sandbox=""></iframe>
+            <div class="doc-shell" data-doc-shell>
+              <iframe class="doc-frame" id="doc-frame" data-doc-frame title="Agreement document" sandbox=""></iframe>
             </div>
           </div>
           ${signable ? `
@@ -309,7 +309,7 @@
             </div>
             <div>
               <label for="sigpad">Signature</label>
-              <canvas id="sigpad" aria-label="Signature area — draw with mouse or finger"></canvas>
+              <canvas id="sigpad" data-sigpad aria-label="Signature area — draw with mouse or finger"></canvas>
               <p class="sig-hint">Sign above with a finger or mouse</p>
               <div class="field-error" id="sig-err" hidden>A signature is required — sign in the box above.</div>
             </div>

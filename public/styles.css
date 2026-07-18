@@ -2,6 +2,58 @@
    steel blue = structure, orange = the ONE primary action per screen,
    sage = success/active, warm neutrals, dark-brown text on orange fills. */
 
+/* ===========================================================================
+   STRUCTURAL CONTRACT — DO NOT DELETE OR RESTYLE THESE DECLARATIONS
+   ===========================================================================
+   Everything in this block is load-bearing: the app breaks silently without
+   it — no error, no console warning, nothing visibly wrong until someone
+   tries to use the screen. Selectors here are `[data-*]` attribute hooks
+   precisely so they stand out from ordinary cosmetic classes.
+
+   RESTYLE FREELY: every class-based rule below this block. Colors, spacing,
+   type, borders, radii, shadows, layout of everything else — all yours.
+
+   IF YOU NEED TO CHANGE SOMETHING IN HERE: talk to engineering first, and
+   run `npm run check:structure` (also part of `npm test`) — it fails loudly
+   if a contract is broken.
+
+   This block exists because it already went wrong once: F-8 (2026-07-18)
+   moved the contract pane's height onto a new wrapper, updated only one of
+   the two frontends, and the pet-owner portal's contract viewer silently
+   collapsed from 440px to 150px. It shipped and reached real testers.
+   --------------------------------------------------------------------- */
+
+/* The contract viewer's scroll container. The iframe inside is sized
+   `height: 100%`, so this element MUST have a definite height — without one
+   the iframe falls back to its ~150px intrinsic default and the contract
+   becomes unreadable. Change the values if you like; keep a real height. */
+[data-doc-shell] {
+  height: clamp(420px, calc(100vh - 310px), 900px);
+  overflow: hidden;
+}
+
+/* The contract document itself. `transform-origin: 0 0` is required by the
+   zoom controls — without it the document scales from its centre and drifts
+   out of the frame. Width/height are overwritten inline by the zoom handler
+   (app.js / portal.js) to make text reflow instead of scrolling sideways. */
+[data-doc-frame] {
+  width: 100%;
+  height: 100%;
+  transform-origin: 0 0;
+}
+
+/* The signature canvas. `touch-action: none` is what lets a finger draw:
+   without it the browser treats the drag as a page scroll and signing is
+   impossible on every phone and tablet — the exact devices clients sign on.
+   `display: block` keeps the canvas box from inheriting inline layout,
+   which would skew the pointer-to-canvas coordinate mapping. */
+[data-sigpad] {
+  touch-action: none;
+  display: block;
+}
+
+/* ===================== END STRUCTURAL CONTRACT ========================== */
+
 :root {
   --steel: #2B7192;
   --steel-deep: #1C4C64;
@@ -310,32 +362,27 @@ label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 5px; }
 .doc-tools { display: flex; align-items: center; gap: 4px; justify-content: flex-end; }
 .doc-tools .btn { padding: 2px 12px; font-size: 17px; line-height: 1.4; }
 .doc-tools #zoom-label { font-size: 12.5px; color: var(--ink-soft); min-width: 42px; text-align: center; }
-/* The document fills the window height so reading means scrolling the
-   contract, not the page around it. */
+/* Cosmetic only — the load-bearing height/overflow lives in the structural
+   contract at the top of this file, keyed on [data-doc-shell]. */
 .doc-shell {
-  height: clamp(420px, calc(100vh - 310px), 900px);
   border-radius: 10px;
   border: 1px solid var(--hairline);
-  overflow: hidden;
   background: #fff;
 }
+/* Cosmetic only — sizing and transform-origin are in the contract block. */
 .doc-frame {
-  width: 100%;
-  height: 100%;
   border: none;
   background: #fff;
-  transform-origin: 0 0;
 }
 .sign-pad-card { padding: 20px; display: grid; gap: 14px; }
+/* Cosmetic only — touch-action and display are in the contract block. */
 #sigpad {
   width: 100%;
   height: 150px;
   border: 1.5px dashed var(--steel);
   border-radius: 8px;
   background: #fff;
-  touch-action: none;
   cursor: crosshair;
-  display: block;
 }
 #sigpad.err { border-color: var(--alert); }
 .sig-hint { font-size: 12px; color: var(--ink-soft); text-align: center; margin: 6px 0 0; }

@@ -10,7 +10,8 @@
     "start": "node dist/index.js",
     "migrate": "tsx src/db/migrate.ts",
     "typecheck": "tsc --noEmit",
-    "test": "tsx scripts/test-e2e.ts"
+    "check:structure": "node scripts/check-structure.mjs",
+    "test": "node scripts/check-structure.mjs && tsx scripts/test-e2e.ts"
   },
   "engines": {
     "node": ">=20"
