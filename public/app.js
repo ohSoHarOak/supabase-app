@@ -45,27 +45,12 @@
   }
 
   // ------------------------------------------------------------- toast ----
-  let toastTimer;
-  function toast(message, kind = 'error') {
-    toastEl.textContent = '';
-    toastEl.className = `toast${kind === 'ok' ? ' ok' : ''}`;
-    toastEl.append(message);
-    const x = document.createElement('button');
-    x.className = 'toast-x';
-    x.setAttribute('aria-label', 'Dismiss');
-    x.textContent = '✕';
-    x.onclick = () => { toastEl.hidden = true; };
-    toastEl.append(x);
-    toastEl.hidden = false;
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => { toastEl.hidden = true; }, kind === 'ok' ? 4000 : 8000);
-  }
+  const toast = PetPro.createToast(toastEl);
 
   // ------------------------------------------------------------ helpers ----
-  function esc(value) {
-    return String(value ?? '')
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  }
+  // Formatters, withBusy and the sign-screen pieces live in shared.js so the
+  // owner portal uses the same code — see T-3 in ROADMAP.md.
+  const { esc, fmtDate, fmtTime, fmtMoney, fmtPhone, withBusy } = PetPro;
   function initials(name) {
     return name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('') || '?';
   }
@@ -103,19 +88,10 @@
     if (!pets?.length) return 'No pets yet';
     return pets.map((p) => (p.breed ? `${p.name} (${p.breed})` : p.name)).join(' · ');
   }
-  function fmtDate(iso) {
-    return new Date(iso).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-  }
-  function fmtMoney(cents) {
-    return `$${(cents / 100).toFixed(2)}`;
-  }
   // "$30", "30.00", "$30.50" -> integer cents (or null if unparseable)
   function parseMoney(text) {
     const n = parseFloat(String(text).replace(/[^0-9.]/g, ''));
     return Number.isFinite(n) && n > 0 ? Math.round(n * 100) : null;
-  }
-  function fmtTime(iso) {
-    return new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
   }
   // Date-only strings (YYYY-MM-DD) must not go through new Date(iso) — that
   // parses as UTC midnight and shifts a day west of Greenwich.
@@ -123,26 +99,7 @@
     const [y, m, d] = String(ymd).split('-').map(Number);
     return new Date(y, m - 1, d).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
   }
-  // W-11: US 10-digit numbers (optionally with a leading 1) display as
-  // (555)010-1234; anything else — international, extensions, letters — is
-  // left exactly as typed. Stored values only change when a form saves them.
-  function fmtPhone(raw) {
-    const text = String(raw ?? '').trim();
-    if (!text || !/^[\d\s\-().+]+$/.test(text)) return text;
-    const digits = text.replace(/\D/g, '');
-    const us =
-      digits.length === 10 ? digits
-      : digits.length === 11 && digits[0] === '1' ? digits.slice(1)
-      : null;
-    return us ? `(${us.slice(0, 3)})${us.slice(3, 6)}-${us.slice(6)}` : text;
-  }
-  // Format phone fields when the user leaves them (delegated — forms are
-  // re-rendered constantly, a per-input listener would need re-wiring).
-  document.addEventListener('focusout', (e) => {
-    if (e.target instanceof HTMLInputElement && 'phone' in e.target.dataset) {
-      e.target.value = fmtPhone(e.target.value);
-    }
-  });
+  PetPro.installPhoneFormatting();
   // ISO <-> the value format of <input type="datetime-local"> (local time)
   function toLocalInput(iso) {
     const d = new Date(iso);
@@ -214,22 +171,6 @@
   }
   const PAW = `<svg width="26" height="26" viewBox="0 0 44 44" aria-hidden="true"><circle cx="22" cy="22" r="22" fill="#1C4C64"/><g fill="#F7F2EB"><ellipse cx="15" cy="16" rx="3.4" ry="4.4" transform="rotate(-18 15 16)"/><ellipse cx="29" cy="16" rx="3.4" ry="4.4" transform="rotate(18 29 16)"/><ellipse cx="9.5" cy="23.5" rx="2.8" ry="3.6" transform="rotate(-38 9.5 23.5)"/><ellipse cx="34.5" cy="23.5" rx="2.8" ry="3.6" transform="rotate(38 34.5 23.5)"/><path d="M22 21c4.4 0 8.4 3.5 8.4 7.6 0 2.9-2.2 4.6-4.7 4.6-1.5 0-2.6-0.6-3.7-0.6s-2.2 0.6-3.7 0.6c-2.5 0-4.7-1.7-4.7-4.6C13.6 24.5 17.6 21 22 21z"/></g></svg>`;
   const PAW_LOGIN = PAW.replace('width="26" height="26"', 'width="44" height="44"').replace('#1C4C64', '#2B7192');
-
-  // busy-state wrapper: disables the button, restores it after
-  async function withBusy(btn, fn) {
-    if (btn.disabled) return;
-    const label = btn.textContent;
-    btn.disabled = true;
-    btn.classList.add('busy');
-    btn.textContent = 'Working…';
-    try {
-      await fn();
-    } finally {
-      btn.disabled = false;
-      btn.classList.remove('busy');
-      btn.textContent = label;
-    }
-  }
 
   function logout(navigate = true) {
     token = null; account = null; profile = null;
@@ -1480,65 +1421,18 @@
         ${signable ? `<p class="page-sub">Still a draft — every term can be edited until the moment it's signed. Hand the device to your client to review and sign.</p>` : ''}
 
         <div class="sign-layout">
-          <div class="doc-pane">
-            <div class="doc-tools">
-              <span class="hint">Zoom</span>
-              <button class="btn btn-ghost" id="zoom-out" type="button" aria-label="Zoom out">−</button>
-              <span class="num" id="zoom-label" aria-live="polite">100%</span>
-              <button class="btn btn-ghost" id="zoom-in" type="button" aria-label="Zoom in">＋</button>
-            </div>
-            <div class="doc-shell" data-doc-shell>
-              <iframe class="doc-frame" id="doc-frame" data-doc-frame title="Contract document" sandbox=""></iframe>
-            </div>
-          </div>
-          ${signable ? `
-          <div class="card sign-pad-card">
-            <div>
-              <label for="sig-name">Signer's full name</label>
-              <input id="sig-name" value="${esc(client.full_name)}" />
-              <div class="field-error" id="name-err" hidden>Please enter the signer's name.</div>
-            </div>
-            <div>
-              <label for="sigpad">Signature</label>
-              <canvas id="sigpad" data-sigpad aria-label="Signature area — draw with mouse or finger"></canvas>
-              <p class="sig-hint">Sign above with a finger or mouse</p>
-              <div class="field-error" id="sig-err" hidden>A signature is required — sign in the box above.</div>
-            </div>
-            <div class="lock-note">
-              <svg width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><rect x="4" y="9" width="12" height="8" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M7 9V6.5a3 3 0 0 1 6 0V9" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
-              Signing locks this contract permanently. The signed copy can never be altered — by anyone.
-            </div>
-            <div style="display:flex; gap:10px">
-              <button class="btn btn-ghost" id="sig-clear" type="button">Clear</button>
-              <button class="btn btn-primary" style="flex:1" id="sig-submit" type="button">Sign &amp; lock contract</button>
-            </div>
-          </div>` : ''}
+          ${PetPro.contractPane({ frameTitle: 'Contract document' })}
+          ${signable ? PetPro.signPadCard({
+            nameLabel: "Signer's full name",
+            nameValue: client.full_name,
+            nameError: "Please enter the signer's name.",
+            lockNote: 'Signing locks this contract permanently. The signed copy can never be altered — by anyone.',
+            submitLabel: 'Sign & lock contract',
+          }) : ''}
         </div>
       </div>`;
 
-    // Render the contract HTML in a sandboxed iframe so its styles can't
-    // leak into the app (and app scripts can't touch the document).
-    document.getElementById('doc-frame').srcdoc = contract.generated_html;
-
-    // Zoom (tester feedback 2026-07-18): scale the iframe itself — width is
-    // compensated so the document reflows to the visible width at every zoom
-    // level instead of growing a horizontal scrollbar.
-    const zoomFrame = document.getElementById('doc-frame');
-    const zoomLabel = document.getElementById('zoom-label');
-    const zoomOut = document.getElementById('zoom-out');
-    const zoomIn = document.getElementById('zoom-in');
-    let zoom = 1;
-    const applyZoom = () => {
-      zoomFrame.style.width = `${100 / zoom}%`;
-      zoomFrame.style.height = `${100 / zoom}%`;
-      zoomFrame.style.transform = `scale(${zoom})`;
-      zoomLabel.textContent = `${Math.round(zoom * 100)}%`;
-      zoomOut.disabled = zoom <= 0.55;
-      zoomIn.disabled = zoom >= 1.75;
-    };
-    zoomOut.onclick = () => { zoom = Math.max(0.5, Math.round((zoom - 0.1) * 10) / 10); applyZoom(); };
-    zoomIn.onclick = () => { zoom = Math.min(1.8, Math.round((zoom + 0.1) * 10) / 10); applyZoom(); };
-    applyZoom();
+    PetPro.wireContractPane(contract.generated_html);
 
     // W-1: the copy the client keeps. The document endpoint needs the auth
     // header, so fetch it first, then print or download the result.
@@ -1585,58 +1479,17 @@
     if (!signable) { wireNav(); return; }
 
     // ------------------------------------------------- signature canvas --
-    const pad = document.getElementById('sigpad');
-    const ctx = pad.getContext('2d');
-    let drawing = false;
-    let drew = false;
-    function sizePad() {
-      const r = pad.getBoundingClientRect();
-      if (r.width === 0) return;
-      const scale = window.devicePixelRatio || 1;
-      pad.width = r.width * scale;
-      pad.height = r.height * scale;
-      ctx.scale(scale, scale);
-      ctx.lineWidth = 2.2;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-      ctx.strokeStyle = '#1E2B33';
-    }
-    new ResizeObserver(sizePad).observe(pad);
-    const pos = (e) => {
-      const r = pad.getBoundingClientRect();
-      return [e.clientX - r.left, e.clientY - r.top];
-    };
-    pad.addEventListener('pointerdown', (e) => {
-      drawing = true; drew = true;
-      pad.classList.remove('err');
-      pad.setPointerCapture(e.pointerId);
-      const [x, y] = pos(e);
-      ctx.beginPath(); ctx.moveTo(x, y);
-    });
-    pad.addEventListener('pointermove', (e) => {
-      if (!drawing) return;
-      const [x, y] = pos(e);
-      ctx.lineTo(x, y); ctx.stroke();
-    });
-    pad.addEventListener('pointerup', () => { drawing = false; });
-    document.getElementById('sig-clear').onclick = () => {
-      ctx.clearRect(0, 0, pad.width, pad.height);
-      drew = false;
-    };
+    const sigPad = PetPro.createSignaturePad();
 
     document.getElementById('sig-submit').onclick = async (e) => {
-      const nameEl = document.getElementById('sig-name');
-      const name = nameEl.value.trim();
-      document.getElementById('name-err').hidden = Boolean(name);
-      document.getElementById('sig-err').hidden = drew;
-      pad.classList.toggle('err', !drew);
-      if (!name || !drew) return;
+      const name = sigPad.validate();
+      if (!name) return;
 
       await withBusy(e.target, async () => {
         try {
           await api('POST', `/api/contracts/${contractId}/sign`, {
             signer_name: name,
-            signature_image: pad.toDataURL('image/png'),
+            signature_image: sigPad.dataUrl(),
           });
           // First signed contract makes a pending client active.
           if (client.status === 'prospect') {

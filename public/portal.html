@@ -11,6 +11,9 @@
 <body>
   <div id="app" aria-live="polite"></div>
   <div id="toast" class="toast" role="alert" hidden></div>
+  <!-- shared.js must load first — portal.js reads window.PetPro at startup.
+       Both are deferred, so they execute in document order. -->
+  <script src="/shared.js" defer></script>
   <script src="/portal.js" defer></script>
 </body>
 </html>

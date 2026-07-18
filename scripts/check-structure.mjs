@@ -31,6 +31,7 @@ const read = (rel) => readFileSync(path.join(root, rel), 'utf8');
 const CSS = 'public/styles.css';
 const APP = 'public/app.js';
 const PORTAL = 'public/portal.js';
+const SHARED = 'public/shared.js';
 
 /**
  * hook      — the data-* attribute, in both the CSS selector and the markup
@@ -42,21 +43,32 @@ const CONTRACTS = [
   {
     hook: 'data-doc-shell',
     props: ['height'],
-    markup: [APP, PORTAL],
+    markup: [SHARED],
     why: 'The contract viewer needs a definite height. Without one the iframe inside falls back to its ~150px intrinsic default and the contract becomes unreadable. (This is the exact bug that shipped to testers in d8259b9.)',
   },
   {
     hook: 'data-doc-frame',
     props: ['transform-origin', 'height'],
-    markup: [APP, PORTAL],
+    markup: [SHARED],
     why: 'The zoom controls scale this element. Without transform-origin: 0 0 the document scales from its centre and drifts out of the frame.',
   },
   {
     hook: 'data-sigpad',
     props: ['touch-action', 'display'],
-    markup: [APP, PORTAL],
+    markup: [SHARED],
     why: 'touch-action: none is what lets a finger draw. Without it the browser treats the drag as a page scroll and signing is impossible on phones and tablets — the devices clients actually sign on.',
   },
+];
+
+/* T-3 moved the sign screen into shared.js, so the two frontends can no
+   longer disagree about it — the divergence check below has nothing left to
+   compare. What replaces it is a load-order check: shared.js defines
+   window.PetPro, and both pages read it at startup, so a page that loads its
+   own script first (or drops shared.js entirely) throws on first render.
+   Cheap to verify statically, and the failure is otherwise a blank screen. */
+const LOAD_ORDER = [
+  { page: 'public/index.html', script: 'app.js' },
+  { page: 'public/portal.html', script: 'portal.js' },
 ];
 
 /** Pull the declaration body for `[hook] { ... }` out of the stylesheet. */
@@ -74,7 +86,7 @@ function hasProp(body, prop) {
 }
 
 const css = read(CSS);
-const sources = new Map([APP, PORTAL].map((f) => [f, read(f)]));
+const sources = new Map([APP, PORTAL, SHARED].map((f) => [f, read(f)]));
 const failures = [];
 
 for (const c of CONTRACTS) {
@@ -104,8 +116,28 @@ for (const c of CONTRACTS) {
   }
 }
 
-// Divergence check: these screens exist in both frontends, so a hook present
-// in one and absent from the other is the exact F-8 failure shape.
+// Load order: shared.js defines window.PetPro and both frontends read it at
+// startup, so it must be the first of the two script tags on each page.
+for (const { page, script } of LOAD_ORDER) {
+  const html = read(page);
+  const sharedAt = html.indexOf('/shared.js');
+  const ownAt = html.indexOf(`/${script}`);
+  if (sharedAt === -1) {
+    failures.push({
+      contract: { why: `${script} calls window.PetPro at startup; without shared.js the page throws on first render and shows a blank screen.` },
+      problem: `${page} does not load /shared.js.`,
+    });
+  } else if (ownAt !== -1 && sharedAt > ownAt) {
+    failures.push({
+      contract: { why: `${script} reads window.PetPro at startup, so shared.js must execute first. Both tags are deferred, which preserves document order.` },
+      problem: `${page} loads /${script} before /shared.js.`,
+    });
+  }
+}
+
+// Divergence check: kept for any contract still rendered per-frontend. After
+// T-3 the sign screen lives in shared.js, so this has nothing to compare —
+// it stays because the next shared contract may not start out shared.
 for (const c of CONTRACTS) {
   const present = c.markup.filter((f) => sources.get(f).includes(c.hook));
   if (present.length > 0 && present.length < c.markup.length) {

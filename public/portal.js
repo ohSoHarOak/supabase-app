@@ -59,49 +59,19 @@
   }
 
   // ------------------------------------------------------------- toast ----
-  let toastTimer;
-  function toast(message, kind = 'error') {
-    toastEl.textContent = '';
-    toastEl.className = `toast${kind === 'ok' ? ' ok' : ''}`;
-    toastEl.append(message);
-    const x = document.createElement('button');
-    x.className = 'toast-x';
-    x.setAttribute('aria-label', 'Dismiss');
-    x.textContent = '✕';
-    x.onclick = () => { toastEl.hidden = true; };
-    toastEl.append(x);
-    toastEl.hidden = false;
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => { toastEl.hidden = true; }, kind === 'ok' ? 4000 : 8000);
-  }
+  const toast = PetPro.createToast(toastEl);
 
   // ------------------------------------------------------------ helpers ----
-  function esc(value) {
-    return String(value ?? '')
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  }
-  function fmtDate(iso) {
-    return new Date(iso).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-  }
+  // Formatters, withBusy and the sign-screen pieces come from shared.js so
+  // this portal and the professional app cannot drift — see T-3 in ROADMAP.md.
+  const { esc, fmtDate, fmtTime, fmtMoney, fmtPhone, withBusy } = PetPro;
+
   function fmtDay(iso) {
     return new Date(iso).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-  }
-  function fmtTime(iso) {
-    return new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-  }
-  function fmtMoney(cents) {
-    return `$${(cents / 100).toFixed(2)}`;
   }
   function petSummary(pets) {
     if (!pets?.length) return '';
     return pets.map((p) => (p.breed ? `${p.name} (${p.breed})` : p.name)).join(' · ');
-  }
-  async function withBusy(btn, fn) {
-    if (!btn) return fn();
-    const original = btn.textContent;
-    btn.disabled = true;
-    btn.textContent = '…';
-    try { await fn(); } finally { btn.disabled = false; btn.textContent = original; }
   }
 
   const PAW_LOGIN = `<svg width="64" height="64" viewBox="0 0 44 44" aria-hidden="true"><circle cx="22" cy="22" r="22" fill="#6D9280"/><g fill="#F7F2EB"><ellipse cx="15" cy="16" rx="3.4" ry="4.4" transform="rotate(-18 15 16)"/><ellipse cx="29" cy="16" rx="3.4" ry="4.4" transform="rotate(18 29 16)"/><ellipse cx="9.5" cy="23.5" rx="2.8" ry="3.6" transform="rotate(-38 9.5 23.5)"/><ellipse cx="34.5" cy="23.5" rx="2.8" ry="3.6" transform="rotate(38 34.5 23.5)"/><path d="M22 21c4.4 0 8.4 3.5 8.4 7.6 0 2.9-2.2 4.6-4.7 4.6-1.5 0-2.6-0.6-3.7-0.6s-2.2 0.6-3.7 0.6c-2.5 0-4.7-1.7-4.7-4.6C13.6 24.5 17.6 21 22 21z"/></g></svg>`;
@@ -289,63 +259,17 @@
         ${signable ? `<p class="page-sub">Read the agreement, then sign below. Questions? <a href="#/messages">Message your professional</a> before signing.</p>` : ''}
 
         <div class="sign-layout">
-          <div class="doc-pane">
-            <div class="doc-tools">
-              <span class="hint">Zoom</span>
-              <button class="btn btn-ghost" id="zoom-out" type="button" aria-label="Zoom out">−</button>
-              <span class="num" id="zoom-label" aria-live="polite">100%</span>
-              <button class="btn btn-ghost" id="zoom-in" type="button" aria-label="Zoom in">＋</button>
-            </div>
-            <div class="doc-shell" data-doc-shell>
-              <iframe class="doc-frame" id="doc-frame" data-doc-frame title="Agreement document" sandbox=""></iframe>
-            </div>
-          </div>
-          ${signable ? `
-          <div class="card sign-pad-card">
-            <div>
-              <label for="sig-name">Your full name</label>
-              <input id="sig-name" value="" />
-              <div class="field-error" id="name-err" hidden>Please enter your name.</div>
-            </div>
-            <div>
-              <label for="sigpad">Signature</label>
-              <canvas id="sigpad" data-sigpad aria-label="Signature area — draw with mouse or finger"></canvas>
-              <p class="sig-hint">Sign above with a finger or mouse</p>
-              <div class="field-error" id="sig-err" hidden>A signature is required — sign in the box above.</div>
-            </div>
-            <div class="lock-note">
-              <svg width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><rect x="4" y="9" width="12" height="8" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M7 9V6.5a3 3 0 0 1 6 0V9" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
-              Signing locks this agreement permanently — neither side can alter it afterwards.
-            </div>
-            <div style="display:flex; gap:10px">
-              <button class="btn btn-ghost" id="sig-clear" type="button">Clear</button>
-              <button class="btn btn-primary" style="flex:1" id="sig-submit" type="button">Sign agreement</button>
-            </div>
-          </div>` : ''}
+          ${PetPro.contractPane({ frameTitle: 'Agreement document' })}
+          ${signable ? PetPro.signPadCard({
+            nameLabel: 'Your full name',
+            nameError: 'Please enter your name.',
+            lockNote: 'Signing locks this agreement permanently — neither side can alter it afterwards.',
+            submitLabel: 'Sign agreement',
+          }) : ''}
         </div>
       </div>`;
 
-    document.getElementById('doc-frame').srcdoc = docHtml;
-
-    // Zoom — same approach as the professional side: scale the iframe and
-    // compensate its width so the document reflows to the visible width at
-    // every level instead of growing a horizontal scrollbar.
-    const zoomFrame = document.getElementById('doc-frame');
-    const zoomLabel = document.getElementById('zoom-label');
-    const zoomOut = document.getElementById('zoom-out');
-    const zoomIn = document.getElementById('zoom-in');
-    let zoom = 1;
-    const applyZoom = () => {
-      zoomFrame.style.width = `${100 / zoom}%`;
-      zoomFrame.style.height = `${100 / zoom}%`;
-      zoomFrame.style.transform = `scale(${zoom})`;
-      zoomLabel.textContent = `${Math.round(zoom * 100)}%`;
-      zoomOut.disabled = zoom <= 0.55;
-      zoomIn.disabled = zoom >= 1.75;
-    };
-    zoomOut.onclick = () => { zoom = Math.max(0.5, Math.round((zoom - 0.1) * 10) / 10); applyZoom(); };
-    zoomIn.onclick = () => { zoom = Math.min(1.8, Math.round((zoom + 0.1) * 10) / 10); applyZoom(); };
-    applyZoom();
+    PetPro.wireContractPane(docHtml);
 
     if (signed) {
       document.getElementById('doc-print').onclick = (e) =>
@@ -374,58 +298,17 @@
     if (!signable) { wireNav(); return; }
 
     // Signature canvas — same pad as the professional app's in-person flow.
-    const pad = document.getElementById('sigpad');
-    const ctx = pad.getContext('2d');
-    let drawing = false;
-    let drew = false;
-    function sizePad() {
-      const r = pad.getBoundingClientRect();
-      if (r.width === 0) return;
-      const scale = window.devicePixelRatio || 1;
-      pad.width = r.width * scale;
-      pad.height = r.height * scale;
-      ctx.scale(scale, scale);
-      ctx.lineWidth = 2.2;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-      ctx.strokeStyle = '#1E2B33';
-    }
-    new ResizeObserver(sizePad).observe(pad);
-    const pos = (e) => {
-      const r = pad.getBoundingClientRect();
-      return [e.clientX - r.left, e.clientY - r.top];
-    };
-    pad.addEventListener('pointerdown', (e) => {
-      drawing = true; drew = true;
-      pad.classList.remove('err');
-      pad.setPointerCapture(e.pointerId);
-      const [x, y] = pos(e);
-      ctx.beginPath(); ctx.moveTo(x, y);
-    });
-    pad.addEventListener('pointermove', (e) => {
-      if (!drawing) return;
-      const [x, y] = pos(e);
-      ctx.lineTo(x, y); ctx.stroke();
-    });
-    pad.addEventListener('pointerup', () => { drawing = false; });
-    document.getElementById('sig-clear').onclick = () => {
-      ctx.clearRect(0, 0, pad.width, pad.height);
-      drew = false;
-    };
+    const sigPad = PetPro.createSignaturePad();
 
     document.getElementById('sig-submit').onclick = async (e) => {
-      const nameEl = document.getElementById('sig-name');
-      const name = nameEl.value.trim();
-      document.getElementById('name-err').hidden = Boolean(name);
-      document.getElementById('sig-err').hidden = drew;
-      pad.classList.toggle('err', !drew);
-      if (!name || !drew) return;
+      const name = sigPad.validate();
+      if (!name) return;
 
       await withBusy(e.target, async () => {
         try {
           await api('POST', `/api/portal/contracts/${contractId}/sign`, {
             signer_name: name,
-            signature_image: pad.toDataURL('image/png'),
+            signature_image: sigPad.dataUrl(),
           });
           toast('Agreement signed — a copy is yours to keep.', 'ok');
           renderContract(contractId);
@@ -456,7 +339,11 @@
           <h1 class="page-title" style="margin-top:10px">${paid ? 'Payment received' : canceled ? 'Payment canceled' : 'Payment processing'}</h1>
           <p class="page-sub" style="margin-top:6px">
             ${paid
-              ? `${esc(fmtMoney(invoice.amount_cents))} — ${esc(invoice.description || 'Services')}. A receipt is on its way to your email.`
+              // No email promise here: receipts depend on the Resend domain
+              // being verified and on Stripe's customer-receipt setting, and
+              // a cold tester was told a receipt was coming that never came
+              // (C-5). Point at payment history instead — that is always true.
+              ? `${esc(fmtMoney(invoice.amount_cents))} — ${esc(invoice.description || 'Services')}. This payment now appears under Payment history on your portal home.`
               : canceled
                 ? 'No charge was made. You can pay any time from your portal home.'
                 : 'Stripe is still confirming this payment — it usually lands within a minute. Refresh, or check back shortly.'}
