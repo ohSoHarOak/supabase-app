@@ -3,9 +3,9 @@
 # Usage (local):    .\scripts\week3-test.ps1
 # Usage (Render):   .\scripts\week3-test.ps1 -BaseUrl "https://YOUR-SERVICE.onrender.com"
 #
-# Creates a fresh professional account + client with pets, seeds the CA
-# dog-walking template, generates a contract from live CRM data, signs it
-# in person, then PROVES the signed contract cannot be edited.
+# Creates a fresh professional account + client with pets, seeds the packaged
+# Pet Services Agreement template, generates a contract from live CRM data,
+# signs it in person, then PROVES the signed contract cannot be edited.
 
 param(
   [string]$BaseUrl = "http://localhost:3000"
@@ -66,7 +66,7 @@ try {
   Write-Host "[PASS] 1. Setup - professional + client with 2 pets created" -ForegroundColor Green
 } catch { Fail "Setup" $_ }
 
-# --- Step 2: seed the CA dog-walking template --------------------------------
+# --- Step 2: seed the packaged Pet Services Agreement template ---------------
 try {
   $template = Post "/api/contract-templates/seed" @{} $token
   if (-not $template.ok) { Fail "Seed template" ($template | ConvertTo-Json -Depth 5) }
@@ -76,7 +76,7 @@ try {
   # Idempotent: seeding again returns the same template, not a duplicate.
   $again = Post "/api/contract-templates/seed" @{} $token
   if ($again.data.id -ne $templateId) { Fail "Seed template" "Re-seeding created a duplicate template" }
-  Write-Host "[PASS] 2. CA template seeded (idempotent)" -ForegroundColor Green
+  Write-Host "[PASS] 2. Pet Services Agreement template seeded (idempotent)" -ForegroundColor Green
 } catch { Fail "Seed template" $_ }
 
 # --- Step 3: generate a contract from live CRM data --------------------------
@@ -102,7 +102,9 @@ try {
   if ($html -notmatch "Dana Whitfield") { Fail "Generate" "Client name not substituted" }
   if ($html -notmatch "Peanut \(Beagle\), Olive \(Border Collie\)") { Fail "Generate" "Pet list not substituted" }
   if ($html -notmatch "48 hours") { Fail "Generate" "Client's 48-hour cancellation window not used" }
-  if ($html -notmatch "\`$25\.00") { Fail "Generate" "No-show fee (`$25.00 from 2500 cents) not substituted" }
+  # Pet Services Agreement (seeded default since 2026-07-17): late cancels owe
+  # the full service fee; the CA template's no_show_fee field isn't used here.
+  if ($html -notmatch "full fee of the scheduled service") { Fail "Generate" "Cancellation clause missing" }
   if ($html -notmatch "San Diego Pet ER") { Fail "Generate" "Preferred vet not pulled from pet record" }
   if ($html -notmatch "\{\{client_signature_image\}\}") { Fail "Generate" "Signature placeholder must survive generation" }
   Write-Host "[PASS] 3. Contract generated from real client/pet data, no unresolved placeholders" -ForegroundColor Green
@@ -163,7 +165,7 @@ try {
 try {
   $page = Invoke-WebRequest -Uri "$BaseUrl/api/contracts/$contractId/html" -Headers @{ Authorization = "Bearer $token" } -UseBasicParsing
   if ($page.Headers["Content-Type"] -notmatch "text/html") { Fail "Render" "Expected text/html, got $($page.Headers['Content-Type'])" }
-  if ($page.Content -notmatch "Dog Walking Service Agreement") { Fail "Render" "Rendered page missing contract title" }
+  if ($page.Content -notmatch "Pet Services Agreement") { Fail "Render" "Rendered page missing contract title" }
   Write-Host "[PASS] 8. Contract renders as HTML page (for viewing/printing)" -ForegroundColor Green
 } catch { Fail "Render" $_ }
 

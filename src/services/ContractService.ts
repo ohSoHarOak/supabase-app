@@ -75,11 +75,11 @@ const SIGNING_PLACEHOLDERS = ['client_signature_image', 'provider_signature_imag
 
 /** Packaged templates copied into each professional's account by /seed.
  *  First entry is the default (and what the seed endpoint returns, so
- *  existing callers keep their shape). The Pet Services Agreement carries
- *  {{services_table}}, making it the multi-service-capable option; the CA
- *  agreement stays single-service until counsel returns the W-9 v2. */
+ *  existing callers keep their shape). Founder decision 2026-07-17: the
+ *  Pet Services Agreement is the only seeded template — the CA agreement
+ *  file is retained unseeded for history (accounts that copied it keep
+ *  their copy, and signed contracts are immutable snapshots regardless). */
 const SEED_TEMPLATES = [
-  { name: 'Dog Walking Service Agreement (California)', file: 'dog-walking-agreement-ca.html' },
   { name: 'Pet Services Agreement', file: 'pet-services-agreement.html' },
 ];
 const seedTemplatePath = (file: string) =>
@@ -356,7 +356,7 @@ export class ContractService {
     if (services.length > 1 && !supportsServicesTable) {
       throw new ServiceError(
         'template_single_service_only',
-        'This contract template can only describe one service. The multi-service template is pending legal review (W-9) — add the services to separate contracts until it lands.',
+        'This contract template can only describe one service. Generate with the Pet Services Agreement template to put multiple services on one contract.',
         422
       );
     }

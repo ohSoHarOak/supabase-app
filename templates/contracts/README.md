@@ -1,26 +1,16 @@
 # Contract Templates
 
-Seed templates for Week 3 contract generation. `ContractService.generateContract()` substitutes `{{snake_case}}` placeholders with real account/client/pet data and stores the result as the contract's `generated_html`.
+Seed templates for contract generation. `ContractService.generateContract()` substitutes `{{snake_case}}` placeholders with real account/client/pet data and stores the result as the contract's `generated_html`.
 
-Two files per template — keep them in sync:
+## Live
 
-- `dog-walking-agreement-ca.html` — what the app actually loads and substitutes
-- `Dog_Walking_Agreement_CA_TEMPLATE.docx` — founder/legal review copy (2 pages)
+**`pet-services-agreement.html` — the Pet Services Agreement — is the only template the app seeds** (founder decision 2026-07-17; the CA v2 + addendum counsel packet was removed the same day). It carries `{{services_table}}`, so one contract can describe multiple services with different pets, prices, and cadences. Source: `Pet Services Agreement.docx` (founder-supplied; conversion decisions are documented in the HTML file's header comment).
 
-## Live vs draft
+⚠️ The source was a generic template, not counsel-reviewed language. The in-document legal-review notice is load-bearing: both parties are told to have their own counsel review before signing.
 
-**Live:** `dog-walking-agreement-ca.html` (v1). This is the only template the app seeds and the only one a real contract can be generated from.
+## Retained, not seeded
 
-**Drafts awaiting counsel (W-9)** — not seeded, not usable until approved. See `COUNSEL_REVIEW.md` for what counsel is being asked:
-
-| HTML (app) | .docx (review copy) | What it is |
-|---|---|---|
-| `dog-walking-agreement-ca-v2.html` | `Dog_Walking_Agreement_CA_v2_DRAFT.docx` | Multi-service variant. Identical to v1 except the Services table and §1/§3/§5, which referenced the deleted Key Terms rows. |
-| `dog-walking-addendum-ca.html` | `Dog_Walking_Addendum_CA_DRAFT.docx` | Adds services to an already-signed agreement instead of replacing it. |
-
-The `.docx` copies are generated, not hand-edited — regenerate them rather than editing, or they drift from the HTML the software actually renders. Every substantive sentence is checked word-for-word against its HTML counterpart; the first build silently genericized the mandatory legal-review notice to "this document" and the check caught it.
-
-The addendum needs two placeholders that **do not exist yet** — `{{original_agreement_date}}` and `{{original_pet_list}}` — which require linking an addendum to its parent contract. Deliberately unbuilt: `COUNSEL_REVIEW.md` question 4 (do addenda stack or supersede?) could change the data model.
+- `dog-walking-agreement-ca.html` (+ `Dog_Walking_Agreement_CA_TEMPLATE.docx`) — the v1 CA dog-walking agreement, live from Week 3 until 2026-07-17. Kept for history: accounts that seeded it still hold their own copy in `contract_templates`, and signed contracts generated from it remain valid immutable snapshots. It has no `{{services_table}}`, so multi-service generation against it is refused (422 `template_single_service_only`).
 
 ## Placeholder reference
 
@@ -30,26 +20,21 @@ The addendum needs two placeholders that **do not exist yet** — `{{original_ag
 | `{{provider_business_name}}` | professional account | business name shown as "Service Provider" |
 | `{{provider_name}}` | professional account | printed name in signature block |
 | `{{client_name}}` `{{client_address}}` `{{client_phone}}` `{{client_email}}` | `clients` | |
-| `{{pet_list}}` | `pets` | e.g. "Biscuit (Golden Retriever), Mochi (Corgi)" |
-| `{{walk_type}}` | chosen at generation | "Private Walk" or "Group Walk" — resolved, not left as an option |
-| `{{service_schedule}}` | manual until Week 6 | e.g. "Mon/Wed/Fri, 30-minute midday walk" |
-| `{{service_price}}` | manual until Week 5 | e.g. "$30 per 30-minute walk" |
-| `{{cancellation_window_hours}}` | `clients.cancellation_window_hours` | used in Key Terms + Sections 2–3 |
-| `{{no_show_fee}}` | `clients.no_show_fee_cents` | formatted as dollars |
-| `{{key_handling}}` | chosen at generation | e.g. "One key held by Service Provider" — no codes/lockbox details (those stay in `clients.entry_instructions`) |
-| `{{emergency_vet_cap}}` | chosen at generation | e.g. "$500" |
-| `{{preferred_vet}}` `{{emergency_contact}}` | chosen at generation | candidate future client/pet fields — flag before adding to `src/types` |
-| `{{photo_consent}}` | chosen at generation | "Yes" or "No" — resolved at generation |
+| `{{pet_list}}` | the contract's services (W-6) | union of the services' pets; falls back to every pet when a contract has no services |
+| `{{services_table}}` | the contract's services (W-6) | **The one trusted-markup placeholder.** Every other value is HTML-escaped; this renders a `<table>` built by `servicesTableHtml()`, where the markup is ours and each cell is still escaped. |
+| `{{service_schedule}}` | chosen at generation | e.g. "Mon/Wed/Fri, 30-minute midday walk" |
 | `{{start_date}}` | chosen at generation | first day of service |
-| `{{client_signature_image}}` `{{provider_signature_image}}` | signing flow | replaced with `<img>` of captured signature at signing, not generation |
+| `{{cancellation_window_hours}}` | `clients.cancellation_window_hours` | |
+| `{{emergency_contact}}` | `clients` | name + phone of the emergency contact |
+| `{{preferred_vet}}` | `pets.emergency_vet` | first pet with a vet on file |
+| `{{client_signature_image}}` `{{provider_signature_image}}` | signing flow | replaced with `<img>` of the captured signature at signing, not generation |
 | `{{signed_date}}` | signing flow | filled when signed |
-| `{{services_table}}` | the contract's services (W-6) | **The one trusted-markup placeholder.** Every other value is HTML-escaped; this renders a `<table>` built by `servicesTableHtml()`, where the markup is ours and each cell is still escaped. Draft templates only until W-9 clears. |
-| `{{original_agreement_date}}` `{{original_pet_list}}` | **not implemented** | Addendum draft only. Needs a parent-contract link before the addendum can render. |
+| `{{walk_type}}` `{{service_price}}` `{{no_show_fee}}` `{{key_handling}}` `{{emergency_vet_cap}}` `{{photo_consent}}` | legacy / CA v1 only | still resolved when present (derived from the structured service or the generate form), but the Pet Services Agreement doesn't use them |
 
-`{{walk_type}}` and `{{service_price}}` are **derived from the structured services since W-5** — the walker no longer types them. They persist in v1 only; the v2 draft replaces both with `{{services_table}}`.
+Write template comments **without** literal `{{...}}` tokens — substitution runs on the whole file, comments included; a braces token in a comment gets replaced with real client data into the frozen document.
 
 ## Rules
 
 - Once a contract's status is `signed`, its `generated_html` is immutable (DB trigger enforces this).
-- Signature placeholders survive generation and are only filled by the in-person signing flow.
+- Signature placeholders survive generation and are only filled by the signing flow.
 - Every template must include the legal-review notice near the top.
