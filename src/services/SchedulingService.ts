@@ -44,8 +44,12 @@ export interface AppointmentInput {
   /** Defaults to starts_at + the service's duration (or 30 minutes). */
   ends_at?: string | null;
   notes?: string | null;
-  /** 1 = one-off (default). N > 1 = weekly, N occurrences total. */
+  /** 1 = one-off (default). N > 1 = weekly, N weeks of occurrences. */
   repeat_weeks?: number;
+  /** Additional weekly slots in the same series — the Wed and Fri of a
+   *  Mon/Wed/Fri walk. Each repeats weekly for repeat_weeks, same duration
+   *  and notes as starts_at, and the whole set books (or 409s) as one. */
+  extra_starts?: string[];
 }
 
 export interface CompletionInput {
@@ -355,10 +359,34 @@ export class SchedulingService {
     }
 
     const repeat = Math.min(Math.max(input.repeat_weeks ?? 1, 1), MAX_REPEAT_WEEKS);
-    const occurrences = Array.from({ length: repeat }, (_, i) => ({
-      starts_at: new Date(startMs + i * WEEK_MS).toISOString(),
-      ends_at: new Date(startMs + i * WEEK_MS + durationMs).toISOString(),
-    }));
+
+    // Multi-day series: each slot (the base + every extra) repeats weekly.
+    // Deduped so a stray extra equal to the base can't double-book itself.
+    const slotStarts = [...new Set([startMs, ...(input.extra_starts ?? []).map((s) => Date.parse(s))])];
+    if (slotStarts.some((ms) => !Number.isFinite(ms))) {
+      throw new ServiceError('invalid_time', 'extra_starts must be valid ISO timestamps.', 422);
+    }
+    const occurrences = slotStarts
+      .flatMap((slotMs) =>
+        Array.from({ length: repeat }, (_, i) => ({
+          starts_at: new Date(slotMs + i * WEEK_MS).toISOString(),
+          ends_at: new Date(slotMs + i * WEEK_MS + durationMs).toISOString(),
+        }))
+      )
+      .sort((a, b) => a.starts_at.localeCompare(b.starts_at));
+
+    // The slots must not overlap each other either (two 3pm walks on the
+    // same day arrive as one deduped slot, but a 2-hour session at 3pm and
+    // another at 4pm the same day would collide).
+    for (let i = 1; i < occurrences.length; i++) {
+      if (occurrences[i].starts_at < occurrences[i - 1].ends_at) {
+        throw new ServiceError(
+          'appointment_conflict',
+          `These slots overlap each other: ${fmtSlot(occurrences[i - 1].starts_at)} and ${fmtSlot(occurrences[i].starts_at)}. Pick different times.`,
+          409
+        );
+      }
+    }
 
     // Boarding is not exclusive time (founder decision 2026-07-15): a boarder
     // doesn't stop the professional from walking other dogs, and multiple
@@ -385,14 +413,15 @@ export class SchedulingService {
         starts_at: occurrences[0].starts_at,
         ends_at: occurrences[0].ends_at,
         notes: input.notes ?? null,
-        recurrence_rule: repeat > 1 ? `FREQ=WEEKLY;COUNT=${repeat}` : null,
+        // COUNT is weeks; a multi-day series just has more children per week.
+        recurrence_rule: occurrences.length > 1 ? `FREQ=WEEKLY;COUNT=${repeat}` : null,
       })
       .select()
       .single();
     if (parentError) throw new ServiceError('appointment_create_failed', parentError.message, 500);
 
     let created: Appointment[] = [parent as Appointment];
-    if (repeat > 1) {
+    if (occurrences.length > 1) {
       const { data: children, error: childError } = await supabaseAdmin
         .from('appointments')
         .insert(

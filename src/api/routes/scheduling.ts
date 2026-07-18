@@ -42,6 +42,8 @@ const appointmentSchema = z.object({
   ends_at: isoDateTime.nullish(),
   notes: z.string().trim().max(1000).nullish(),
   repeat_weeks: z.number().int().min(1).max(26).optional(),
+  // Extra weekly slots for a multi-day series (Mon/Wed/Fri = 2 extras).
+  extra_starts: z.array(isoDateTime).max(6).optional(),
 });
 
 const appointmentUpdateSchema = z.object({

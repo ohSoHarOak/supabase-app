@@ -222,7 +222,38 @@ async function main(): Promise<void> {
     });
     assert(clash.status === 409, '5. Conflict', `Overlapping slot returned ${clash.status}, expected 409 — double-booking possible!`);
     assert(/double-book/i.test(clash.errorMessage), '5. Conflict', `409 message doesn't explain the clash: "${clash.errorMessage}"`);
-    pass('5. Service + 4-week series booked; double-booking blocked with readable 409');
+
+    // Multi-day series (tester feedback 2026-07-18): base day + extra_starts
+    // book as one series — 2 days a week for 2 weeks = 4 rows, one parent.
+    const multiBase = new Date(tomorrow10.getTime() + 2 * 24 * 3600 * 1000 + 4 * 3600 * 1000); // +2 days, 14:00
+    const multiExtra = new Date(multiBase.getTime() + 2 * 24 * 3600 * 1000);
+    const multi = (
+      await ok('POST', '/api/appointments', {
+        service_id: service.id,
+        starts_at: multiBase.toISOString(),
+        repeat_weeks: 2,
+        extra_starts: [multiExtra.toISOString()],
+      }, '5. Multi-day')
+    ).data as typeof series;
+    assert(multi.length === 4, '5. Multi-day', `2 days × 2 weeks should be 4 walks, got ${multi.length}`);
+    const parent = multi.find((a) => a.recurrence_rule);
+    assert(parent, '5. Multi-day', 'No occurrence carries the recurrence rule');
+    assert(
+      multi.filter((a) => a.recurrence_parent_id === parent.id).length === 3,
+      '5. Multi-day',
+      'Children not linked to the series parent'
+    );
+    // Compare as epoch ms — the DB serializes timestamps as +00:00, not Z.
+    const expectedStarts = [0, 2, 7, 9].map((d) => multiBase.getTime() + d * 24 * 3600 * 1000);
+    const actualStarts = multi.map((a) => Date.parse(a.starts_at)).sort((a, b) => a - b);
+    assert(
+      JSON.stringify(actualStarts) === JSON.stringify(expectedStarts),
+      '5. Multi-day',
+      `Occurrence dates wrong: ${multi.map((a) => a.starts_at).join(', ')}`
+    );
+    const multiEnded = (await ok('POST', `/api/appointments/${parent.id}/cancel`, { scope: 'following' }, '5. Multi-day cancel')).data;
+    assert(multiEnded.length === 4, '5. Multi-day cancel', `End series should cancel all 4, got ${multiEnded.length}`);
+    pass('5. Service + 4-week series booked; double-booking blocked (409); multi-day series (2 days/week × 2 weeks) booked and ended as one');
   }
 
   // --- 6. Complete → walk report + auto-invoice, exactly once ----------------

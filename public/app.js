@@ -734,6 +734,12 @@
         </div>
       </div>`);
 
+    // Tester feedback 2026-07-18: once a client has pets (or invoices), the
+    // add-forms collapse behind a ＋ button so the profile reads as a record,
+    // not a wall of empty forms.
+    const petFormOpen = client.pets.length === 0 || Boolean(opts.addpet);
+    const invFormOpen = invoices.length === 0;
+
     appEl.innerHTML = header('clients') + `
       <div class="page">
         <a class="backlink" href="#/clients">‹ All clients</a>
@@ -750,6 +756,7 @@
           <div style="display:flex; gap:10px; flex-wrap:wrap">
             ${opts.edit ? '' : `<button class="btn btn-ghost" data-nav="#/client/${client.id}?edit=1">✎ Edit</button>`}
             <button class="btn btn-quiet" id="msg-client-btn">✉ Message</button>
+            <button class="btn btn-quiet" data-nav="#/appointment-new?client=${client.id}">📅 Schedule</button>
             <button class="btn btn-primary" data-nav="#/client/${client.id}/new-contract">Generate contract</button>
           </div>
         </div>
@@ -789,7 +796,12 @@
         <div class="pet-grid">${petCards.join('')}</div>
         ${client.pets.length === 0 ? '<div class="card empty">No pets yet — add the first one below.</div>' : ''}
 
-        <div class="card fieldset" style="margin-top:12px" id="addpet-card">
+        ${petFormOpen ? '' : `
+        <div class="row-actions" style="margin-top:10px" id="addpet-toggle-row">
+          <div class="spacer"></div>
+          <button class="btn btn-ghost" id="addpet-toggle">＋ Add another pet</button>
+        </div>`}
+        <div class="card fieldset" style="margin-top:12px" id="addpet-card" ${petFormOpen ? '' : 'hidden'}>
           <strong style="font-size:14px">Add a pet</strong>
           <form id="pet-form"><div class="form-grid">
             <div><label for="p-name">Name</label><input id="p-name" required placeholder="e.g. Peanut" /></div>
@@ -817,7 +829,12 @@
         <div class="eyebrow">Billing</div>
         <div class="stack">${invoiceRows.join('') || '<div class="card empty">No invoices yet — create the first one below.</div>'}</div>
 
-        <div class="card fieldset" style="margin-top:12px">
+        ${invFormOpen ? '' : `
+        <div class="row-actions" style="margin-top:10px" id="newinv-toggle-row">
+          <div class="spacer"></div>
+          <button class="btn btn-ghost" id="newinv-toggle">＋ New invoice</button>
+        </div>`}
+        <div class="card fieldset" style="margin-top:12px" id="newinv-card" ${invFormOpen ? '' : 'hidden'}>
           <strong style="font-size:14px">New invoice</strong>
           <form id="inv-form"><div class="form-grid">
             <div><label for="inv-item">Bill for</label>
@@ -869,6 +886,21 @@
         });
       };
     }
+
+    // ------------------------------------------- collapsed add-forms --
+    // Opening reveals the form and removes the button — the button's whole
+    // job was standing in for the form.
+    const wireToggle = (btnId, cardId, focusId) => {
+      const btn = document.getElementById(btnId);
+      if (!btn) return;
+      btn.onclick = () => {
+        document.getElementById(cardId).hidden = false;
+        btn.closest('.row-actions').remove();
+        document.getElementById(focusId).focus();
+      };
+    };
+    wireToggle('addpet-toggle', 'addpet-card', 'p-name');
+    wireToggle('newinv-toggle', 'newinv-card', 'inv-item');
 
     // --------------------------------------------------------- pet edit --
     const petsById = Object.fromEntries(client.pets.map((p) => [p.id, p]));
@@ -1401,7 +1433,8 @@
           ${signable ? `<button class="btn btn-ghost" data-nav="#/client/${client.id}/new-contract?replace=${contract.id}">✎ Edit terms</button>` : ''}
           ${signed ? `
             <button class="btn btn-ghost" id="doc-download">⬇ Download</button>
-            <button class="btn btn-quiet" id="doc-print">🖨 Print / save as PDF</button>` : ''}
+            <button class="btn btn-quiet" id="doc-print">🖨 Print / save as PDF</button>
+            <button class="btn btn-primary" data-nav="#/appointment-new?client=${client.id}">📅 Schedule walks</button>` : ''}
         </div>
         <h1 class="page-title" style="margin-top:8px">${signed ? 'Signed contract' : 'Sign contract'}</h1>
         ${signable ? `<p class="page-sub">Still a draft — every term can be edited until the moment it's signed. Hand the device to your client to review and sign.</p>` : ''}
@@ -1770,16 +1803,11 @@
             <div><label for="ap-service">Service</label>
               <select id="ap-service" required></select></div>
           </div>
-          <div class="form-grid" id="ap-newsvc" hidden>
-            <div class="full preview-note" style="padding:8px 0 0 12px">New service for this client — saved when you book.</div>
-            <div><label for="ap-svc-name">Service name</label><input id="ap-svc-name" placeholder="e.g. Private walk (30 min)" /></div>
-            <div><label for="ap-svc-type">Type</label>
-              <select id="ap-svc-type">${typeOptionsHtml()}</select></div>
-            <div><label for="ap-svc-price">Price</label><input id="ap-svc-price" class="money" placeholder="$30.00" /></div>
-            <div><label for="ap-svc-sessions"># of sessions <span class="hint">— for packages, optional</span></label>
-              <input id="ap-svc-sessions" type="number" min="1" max="500" class="num" placeholder="e.g. 10" /></div>
-            <div><label for="ap-svc-cadence">Billed</label>
-              <select id="ap-svc-cadence">${cadenceOptionsHtml(offeredTypes()[0])}</select></div>
+          <div class="preview-note" id="ap-nosvc" hidden style="padding:8px 0 0 12px">
+            No active services for this client yet. Services are created by a signed
+            contract — once it's signed, they appear here with the name and price
+            pre-filled from what the client agreed to.
+            <button class="btn btn-quiet" type="button" id="ap-gen-contract" style="margin-left:8px">Generate contract</button>
           </div>
           <div class="form-grid">
             <div><label for="ap-start">Date &amp; time</label>
@@ -1792,7 +1820,14 @@
                 <button type="button" aria-pressed="false" data-value="weekly">Weekly</button>
               </div></div>
             <div id="ap-weeks-wrap" hidden><label for="ap-weeks">For how many weeks?</label>
-              <input id="ap-weeks" type="number" min="2" max="26" value="8" class="num" /></div>
+              <input id="ap-weeks" type="number" min="1" max="26" value="8" class="num" /></div>
+            <div class="full" id="ap-days-wrap" hidden>
+              <label>On which days? <span class="hint">— same time each day; the first walk's day is always included</span></label>
+              <div class="appt-flags" id="ap-days" style="margin-top:6px">
+                ${['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((label, i) => `
+                  <label class="flag"><input type="checkbox" data-day="${(i + 1) % 7}" /> ${label}</label>`).join('')}
+              </div>
+            </div>
             <div class="full"><label for="ap-notes">Notes <span class="hint">optional</span></label>
               <input id="ap-notes" placeholder="e.g. Use the side gate" /></div>
           </div>
@@ -1807,7 +1842,11 @@
 
     const clientSel = document.getElementById('ap-client');
     const serviceSel = document.getElementById('ap-service');
-    const newSvcBlock = document.getElementById('ap-newsvc');
+    // Tester feedback 2026-07-18: no more typing a service name here. The
+    // dropdown is pre-filled from the client's active services (born from
+    // their signed contract, W-5…W-7); a client without one gets pointed at
+    // contract generation instead of a blank form.
+    const submitBtn = document.querySelector('#ap-form button[type=submit]');
     let clientServices = [];
 
     async function loadServices() {
@@ -1818,28 +1857,53 @@
         toast(err.message);
         clientServices = [];
       }
-      serviceSel.innerHTML =
-        clientServices.map((s) => `<option value="${s.id}" ${s.id === preService ? 'selected' : ''}>${esc(s.name)} — ${fmtMoney(s.price_cents)} ${esc(CADENCES[s.billing_cadence] ?? '')}</option>`).join('') +
-        '<option value="__new">＋ New service…</option>';
+      serviceSel.innerHTML = clientServices.length
+        ? clientServices.map((s) => `<option value="${s.id}" ${s.id === preService ? 'selected' : ''}>${esc(s.name)} — ${fmtMoney(s.price_cents)} ${esc(CADENCES[s.billing_cadence] ?? '')}</option>`).join('')
+        : '<option value="">No active services yet</option>';
+      document.getElementById('ap-nosvc').hidden = clientServices.length > 0;
+      submitBtn.disabled = clientServices.length === 0;
       syncService();
     }
     function syncService() {
-      const isNew = serviceSel.value === '__new';
-      newSvcBlock.hidden = !isNew;
       const svc = clientServices.find((s) => s.id === serviceSel.value);
       if (svc?.duration_minutes) document.getElementById('ap-duration').value = svc.duration_minutes;
     }
     clientSel.onchange = loadServices;
     serviceSel.onchange = syncService;
-    wireTypeToCadence('ap-svc-type', 'ap-svc-cadence');
+    document.getElementById('ap-gen-contract').onclick = () => {
+      location.hash = `#/client/${clientSel.value}/new-contract`;
+    };
     await loadServices();
+
+    // Multi-day weekly series: the first walk's weekday is locked in (it IS
+    // the series start); extra checked days repeat weekly at the same time.
+    const dayBoxes = [...document.querySelectorAll('#ap-days input')];
+    function syncBaseDay() {
+      const v = document.getElementById('ap-start').value;
+      if (!v) return;
+      const base = new Date(v).getDay();
+      dayBoxes.forEach((cb) => {
+        if (Number(cb.dataset.day) === base) {
+          cb.checked = true;
+          cb.disabled = true;
+        } else if (cb.disabled) {
+          // Was only checked because it used to be the base day.
+          cb.disabled = false;
+          cb.checked = false;
+        }
+      });
+    }
+    document.getElementById('ap-start').onchange = syncBaseDay;
+    syncBaseDay();
 
     const repeatSeg = document.getElementById('ap-repeat');
     repeatSeg.querySelectorAll('button').forEach((b) => {
       b.onclick = () => {
         repeatSeg.querySelectorAll('button').forEach((o) => o.setAttribute('aria-pressed', 'false'));
         b.setAttribute('aria-pressed', 'true');
-        document.getElementById('ap-weeks-wrap').hidden = b.dataset.value !== 'weekly';
+        const oneTime = b.dataset.value !== 'weekly';
+        document.getElementById('ap-weeks-wrap').hidden = oneTime;
+        document.getElementById('ap-days-wrap').hidden = oneTime;
       };
     });
 
@@ -1848,38 +1912,43 @@
       const btn = e.target.querySelector('button[type=submit]');
       await withBusy(btn, async () => {
         try {
-          let serviceId = serviceSel.value;
-          if (serviceId === '__new') {
-            const name = document.getElementById('ap-svc-name').value.trim();
-            const price = parseMoney(document.getElementById('ap-svc-price').value);
-            if (!name) { toast('Name the new service, e.g. "Private walk (30 min)".'); return; }
-            if (!price) { toast('Enter a price for the new service, e.g. $30.00'); return; }
-            const svc = await api('POST', '/api/services', {
-              client_id: clientSel.value,
-              name,
-              service_type: document.getElementById('ap-svc-type').value,
-              price_cents: price,
-              billing_cadence: document.getElementById('ap-svc-cadence').value,
-              session_count: Number(document.getElementById('ap-svc-sessions').value) || null,
-              duration_minutes: Number(document.getElementById('ap-duration').value) || null,
-            });
-            serviceId = svc.id;
+          const serviceId = serviceSel.value;
+          if (!serviceId) {
+            toast('This client needs an active service first — generate a contract to create one.');
+            return;
           }
-          if (!serviceId) { toast('Pick a service, or create a new one.'); return; }
 
-          const startsAt = fromLocalInput(document.getElementById('ap-start').value);
+          const startLocal = document.getElementById('ap-start').value;
+          const startsAt = fromLocalInput(startLocal);
           const durationMin = Number(document.getElementById('ap-duration').value) || 30;
           const weekly = repeatSeg.querySelector('button[aria-pressed="true"]').dataset.value === 'weekly';
+
+          // Extra weekdays → the next date on/after the first walk with that
+          // weekday, same local wall-clock time (setDate keeps it across DST).
+          let extraStarts = [];
+          if (weekly) {
+            const base = new Date(startLocal);
+            extraStarts = dayBoxes
+              .filter((cb) => cb.checked && !cb.disabled)
+              .map((cb) => {
+                const d = new Date(base);
+                d.setDate(d.getDate() + ((Number(cb.dataset.day) - base.getDay() + 7) % 7));
+                return d.toISOString();
+              });
+          }
+
           const created = await api('POST', '/api/appointments', {
             service_id: serviceId,
             starts_at: startsAt,
             ends_at: new Date(Date.parse(startsAt) + durationMin * 60 * 1000).toISOString(),
             notes: document.getElementById('ap-notes').value.trim() || null,
             repeat_weeks: weekly ? Number(document.getElementById('ap-weeks').value) || 8 : 1,
+            ...(extraStarts.length ? { extra_starts: extraStarts } : {}),
           });
+          const daysPerWeek = 1 + extraStarts.length;
           toast(created.length === 1
             ? 'Appointment booked.'
-            : `Weekly series booked — ${created.length} walks scheduled.`, 'ok');
+            : `Weekly series booked — ${created.length} walks scheduled${daysPerWeek > 1 ? ` (${daysPerWeek} days a week)` : ''}.`, 'ok');
           location.hash = '#/schedule';
         } catch (err) {
           toast(err.message);
