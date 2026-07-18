@@ -192,6 +192,12 @@
     const me = await api('GET', '/api/auth/me');
     profile = me.profile;
     localStorage.setItem('petpro_profile', JSON.stringify(profile));
+    // PH-1: phone lives on the account, not the profile, so refresh both —
+    // otherwise a saved phone number re-renders from a stale cached account.
+    if (me.account) {
+      account = me.account;
+      localStorage.setItem('petpro_account', JSON.stringify(account));
+    }
   }
 
   // ------------------------------------------------------------ header ----
@@ -1927,6 +1933,9 @@
               <input id="pf-name" required value="${esc(profile?.full_name ?? '')}" /></div>
             <div><label for="pf-biz">Business name</label>
               <input id="pf-biz" value="${esc(profile?.business_name ?? '')}" placeholder="e.g. Sunny Trails Walking Co." /></div>
+            <div><label for="pf-phone">Your phone</label>
+              <input id="pf-phone" data-phone value="${esc(fmtPhone(account?.phone ?? ''))}" placeholder="(555)000-0000" />
+              <p class="preview-note" style="margin-top:6px">Shown to your clients in their portal so they can reach you.</p></div>
           </div>
           <div>
             <label>Services you offer</label>
@@ -1971,6 +1980,7 @@
           await api('PATCH', '/api/auth/profile', {
             full_name: document.getElementById('pf-name').value.trim(),
             business_name: document.getElementById('pf-biz').value.trim() || null,
+            phone: fmtPhone(document.getElementById('pf-phone').value) || null,
             offered_service_types: offeredNow,
           });
           await loadProfile();

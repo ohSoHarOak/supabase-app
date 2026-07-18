@@ -115,6 +115,9 @@ authRouter.post('/change-password', requireAuth, async (req, res, next) => {
 const profileUpdateSchema = z.object({
   full_name: z.string().trim().min(1).max(120).optional(),
   business_name: z.string().trim().max(120).nullish(),
+  // PH-1: phone lives on `accounts`, not `professional_profiles` — the route
+  // below splits this field off and updates the account row separately.
+  phone: z.string().trim().max(40).nullish(),
   bio: z.string().trim().max(2000).nullish(),
   years_experience: z.number().int().min(0).max(80).nullish(),
   offered_service_types: z
@@ -143,7 +146,13 @@ authRouter.patch('/profile', requireAuth, async (req, res, next) => {
       });
       return;
     }
-    const profile = await accountService.updateProfessionalProfile(req.account!.id, parsed.data);
+    // PH-1: `phone` is an accounts column; everything else belongs to
+    // professional_profiles. Split rather than duplicating the column.
+    const { phone, ...profileFields } = parsed.data;
+    if (phone !== undefined) {
+      await accountService.updateAccountPhone(req.account!.id, phone ?? null);
+    }
+    const profile = await accountService.updateProfessionalProfile(req.account!.id, profileFields);
     res.json({ ok: true, data: profile });
   } catch (err) {
     next(err);

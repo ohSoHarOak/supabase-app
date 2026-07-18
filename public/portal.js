@@ -193,6 +193,29 @@
         <span class="pill pill-sage">paid</span>
       </div>`);
 
+    // C-3: the walker's contact details. Read-only per D2 — the owner can
+    // call, email, or message, but can't edit anything here. De-duplicated by
+    // account id because one owner may have several clients with one walker.
+    const proCards = [...new Map(
+      ov.clients
+        .filter((c) => c.professional)
+        .map((c) => [c.professional_account_id, c.professional])
+    ).values()].map((pro) => {
+      const lines = [
+        pro.phone ? `<a href="tel:${esc(String(pro.phone).replace(/[^+\d]/g, ''))}">${esc(fmtPhone(pro.phone))}</a>` : null,
+        pro.email ? `<a href="mailto:${esc(pro.email)}">${esc(pro.email)}</a>` : null,
+      ].filter(Boolean);
+      return `
+      <div class="card contract-row">
+        <div class="what">
+          <div class="title">${esc(pro.business_name || pro.full_name)}</div>
+          ${pro.business_name ? `<div class="meta">${esc(pro.full_name)}</div>` : ''}
+          ${lines.length ? `<div class="contact-line">${lines.join(' · ')}</div>` : ''}
+        </div>
+        <button class="btn btn-quiet" data-nav="#/messages">Message</button>
+      </div>`;
+    });
+
     appEl.innerHTML = header('home') + `
       <div class="page">
         <h1 class="page-title">${firstName ? `Welcome, ${esc(firstName)}` : 'Welcome'}</h1>
@@ -207,6 +230,8 @@
         <div class="stack">${signedRows.join('') || '<div class="card empty">No signed agreements yet.</div>'}</div>
 
         ${paidRows.length ? `<div class="eyebrow">Payment history</div><div class="stack">${paidRows.join('')}</div>` : ''}
+
+        ${proCards.length ? `<div class="eyebrow">Your pet care professional</div><div class="stack">${proCards.join('')}</div>` : ''}
       </div>`;
 
     document.querySelectorAll('[data-pay-invoice]').forEach((btn) => {

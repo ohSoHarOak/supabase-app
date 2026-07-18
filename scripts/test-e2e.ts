@@ -301,6 +301,9 @@ async function main(): Promise<void> {
     const updated = (
       await ok('PATCH', '/api/auth/profile', {
         business_name: 'E2E Boarding Co.',
+        // PH-1: phone is an accounts column, not a professional_profiles one —
+        // the route splits it out, so this also proves the split works.
+        phone: '(555)010-7788',
         offered_service_types: ['private_walk', 'boarding'],
       }, '8. Profile update')
     ).data;
@@ -314,6 +317,11 @@ async function main(): Promise<void> {
       me.data.profile.offered_service_types.includes('boarding'),
       '8. Profile readback',
       'auth/me does not return the saved offered_service_types'
+    );
+    assert(
+      me.data.account.phone === '(555)010-7788',
+      '8. Profile readback',
+      `PH-1: account phone not saved or not returned by auth/me (got ${JSON.stringify(me.data.account.phone)})`
     );
 
     // Day-priced boarding: a 44-hour stay bills as 2 days.
@@ -499,6 +507,17 @@ async function main(): Promise<void> {
       overview.clients[0].professional?.business_name === 'E2E Boarding Co.',
       '11. Overview',
       'Overview missing the professional\'s business name'
+    );
+    // C-3: the owner must be able to see how to reach their walker.
+    assert(
+      overview.clients[0].professional?.phone === '(555)010-7788',
+      '11. Overview',
+      `C-3: walker phone missing from the portal overview (got ${JSON.stringify(overview.clients[0].professional?.phone)})`
+    );
+    assert(
+      typeof overview.clients[0].professional?.email === 'string' && overview.clients[0].professional.email.includes('@'),
+      '11. Overview',
+      'C-3: walker email missing from the portal overview'
     );
     assert(
       overview.appointments.some((a: { client_id: string }) => a.client_id === client.id),

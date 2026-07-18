@@ -238,6 +238,19 @@ export class AccountService {
 
   /** Update the professional's own profile — name, business, and which
    *  service types they offer (drives the UI's service-type choices). */
+  /**
+   * PH-1: update the account's own phone number. Lives on `accounts` rather
+   * than `professional_profiles` because every account type has one — the
+   * owner portal reads it to show a client their walker's contact details.
+   */
+  async updateAccountPhone(accountId: string, phone: string | null): Promise<void> {
+    const { error } = await supabaseAdmin
+      .from('accounts')
+      .update({ phone })
+      .eq('id', accountId);
+    if (error) throw new ServiceError('account_update_failed', error.message, 500);
+  }
+
   async updateProfessionalProfile(
     accountId: string,
     input: ProfessionalProfileUpdate

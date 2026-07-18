@@ -184,7 +184,11 @@ export class PortalService {
    * invoices.
    */
   async overview(ownerAccountId: string): Promise<{
-    clients: (Client & { professional: { business_name: string | null; full_name: string } | null })[];
+    clients: (Client & {
+      professional:
+        | { business_name: string | null; full_name: string; phone: string | null; email: string }
+        | null;
+    })[];
     appointments: (Appointment & { services: { name: string } | null })[];
     contracts: Contract[];
     invoices: Invoice[];
@@ -194,11 +198,17 @@ export class PortalService {
     if (ids.length === 0) return { clients: [], appointments: [], contracts: [], invoices: [] };
 
     const professionalIds = [...new Set(clients.map((c) => c.professional_account_id))];
-    const [profilesRes, apptsRes, contractsRes, invoicesRes] = await Promise.all([
+    const [profilesRes, accountsRes, apptsRes, contractsRes, invoicesRes] = await Promise.all([
       supabaseAdmin
         .from('professional_profiles')
         .select('account_id, business_name, full_name')
         .in('account_id', professionalIds),
+      // C-3/PH-1: the walker's phone and email live on `accounts`, not on
+      // professional_profiles — the owner portal shows them as a contact card.
+      supabaseAdmin
+        .from('accounts')
+        .select('id, phone, email')
+        .in('id', professionalIds),
       supabaseAdmin
         .from('appointments')
         .select('*, services(name, duration_minutes)')
@@ -218,11 +228,22 @@ export class PortalService {
         .in('client_id', ids)
         .order('created_at', { ascending: false }),
     ]);
-    for (const r of [profilesRes, apptsRes, contractsRes, invoicesRes]) {
+    for (const r of [profilesRes, accountsRes, apptsRes, contractsRes, invoicesRes]) {
       if (r.error) throw new ServiceError('portal_overview_failed', r.error.message, 500);
     }
+    const contactByAccount = new Map(
+      (accountsRes.data ?? []).map((a) => [a.id, { phone: a.phone as string | null, email: a.email as string }])
+    );
     const profileByAccount = new Map(
-      (profilesRes.data ?? []).map((p) => [p.account_id, { business_name: p.business_name, full_name: p.full_name }])
+      (profilesRes.data ?? []).map((p) => [
+        p.account_id,
+        {
+          business_name: p.business_name,
+          full_name: p.full_name,
+          phone: contactByAccount.get(p.account_id)?.phone ?? null,
+          email: contactByAccount.get(p.account_id)?.email ?? '',
+        },
+      ])
     );
     return {
       clients: clients.map((c) => ({
