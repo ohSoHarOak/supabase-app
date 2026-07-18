@@ -483,6 +483,24 @@ The only way to get a magic link is for the owner to visit `/portal` and request
 - ⚠️ The link in it should be a plain link to `/portal`, **not** a magic link — Supabase's built-in mailer allows only a couple of link emails per hour, so auto-sending one on client creation would burn the rate limit on people who aren't ready to log in.
 - Fold in the service summary the founder asked for (2026-07-18): what they signed up for, price, cadence — the data is already on the contract.
 
+### P2-15: Delete / deactivate an account
+Requested 2026-07-18. Nothing can currently remove an account — throwaway accounts from testing (the e2e suite, the founder's trial signups, and one `emailcheck.*` account created while verifying the sender) accumulate in production with no way to clear them, and a real professional or pet owner has no way to leave.
+
+**⚠️ A hard row delete is architecturally impossible, and that's by design — don't try to force it.** Four foreign keys reference `accounts(id)` with **no `ON DELETE` rule**, so Postgres defaults to `NO ACTION` and the delete is refused:
+- `events.actor_account_id` and `event_visibility.visible_to_account_id` (`008`)
+- `messages.sender_account_id` (`009`)
+- `clients.owner_account_id` (`003`)
+
+`events` cannot cascade even in principle: migration `008` installs a trigger that raises on any UPDATE or DELETE, and the append-only event log is **Marketplace Seam 2** and a `CLAUDE.md` hard constraint. Any design that deletes event rows to free the account is wrong.
+
+**Build it as deactivation + PII scrub, not deletion.** The mechanism already exists and is unused: `account_status_enum` has had `'deactivated'` since migration `001` (`AccountStatus` in `types/index.ts:12`), and nothing reads it yet.
+- Set `status = 'deactivated'`; block login and reject the session in `requireAuth`.
+- Scrub the identifying columns on `accounts` (`email`, `phone`) — satisfies a "delete my data" request while the immutable history keeps referring to a row that still exists. Keep `id` so events, messages, and signed contracts stay intact.
+- ⚠️ **Also delete or disable the Supabase Auth user** (`auth.users`), or they can still authenticate. `AccountService.ts:61` already notes the reverse case — a requested-but-never-clicked magic link leaves an orphan auth user — so this seam is already known to be fiddly.
+- ⚠️ **Signed contracts, invoices, and transactions must survive.** `contracts.generated_html` is immutable once signed (hard constraint), and payment records have retention value. Deactivation must not touch them.
+- Decide at pickup: what happens to a professional's **clients**? Their client rows are real people with signed agreements. Probably orphan-but-retain, with the clients' portal access unaffected — but that's a product call, not a technical one.
+- Useful side effect: gives the e2e suite a cleanup path, so test runs stop leaving residue in production.
+
 ### P2-14: Default price + duration per service type
 Split out of O-1 step 2 (2026-07-18) because nothing stores it. `services` rows are **contract-born by design** (F-4), so a per-type default is a genuinely new concept: a `service_type_defaults` table (or a jsonb column on `professional_profiles`) keyed by account + service type, holding `price_cents`, `duration_minutes`, and `billing_cadence`.
 - Value: contract generation pre-fills instead of asking for a price every time — the founder sets "private walk = $30, 45 min" once.
