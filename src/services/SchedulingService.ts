@@ -375,24 +375,24 @@ export class SchedulingService {
       )
       .sort((a, b) => a.starts_at.localeCompare(b.starts_at));
 
-    // The slots must not overlap each other either (two 3pm walks on the
-    // same day arrive as one deduped slot, but a 2-hour session at 3pm and
-    // another at 4pm the same day would collide).
-    for (let i = 1; i < occurrences.length; i++) {
-      if (occurrences[i].starts_at < occurrences[i - 1].ends_at) {
-        throw new ServiceError(
-          'appointment_conflict',
-          `These slots overlap each other: ${fmtSlot(occurrences[i - 1].starts_at)} and ${fmtSlot(occurrences[i].starts_at)}. Pick different times.`,
-          409
-        );
-      }
-    }
-
     // Boarding is not exclusive time (founder decision 2026-07-15): a boarder
     // doesn't stop the professional from walking other dogs, and multiple
     // dogs can board at once — so boarding stays neither get conflict-checked
-    // nor block other bookings (see findConflicts).
+    // nor block other bookings (see findConflicts). That includes the series'
+    // own slots overlapping each other: two multi-day stays may well overlap.
     if (service.service_type !== 'boarding') {
+      // The slots must not overlap each other either (two 3pm walks on the
+      // same day arrive as one deduped slot, but a 2-hour session at 3pm and
+      // another at 4pm the same day would collide).
+      for (let i = 1; i < occurrences.length; i++) {
+        if (occurrences[i].starts_at < occurrences[i - 1].ends_at) {
+          throw new ServiceError(
+            'appointment_conflict',
+            `These slots overlap each other: ${fmtSlot(occurrences[i - 1].starts_at)} and ${fmtSlot(occurrences[i].starts_at)}. Pick different times.`,
+            409
+          );
+        }
+      }
       const conflicts = await this.findConflicts(professionalAccountId, occurrences);
       if (conflicts.length > 0) {
         throw new ServiceError(

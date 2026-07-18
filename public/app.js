@@ -415,6 +415,9 @@
         api('GET', '/api/contracts'),
         api('GET', `/api/appointments?from=${dayStart.toISOString()}&to=${dayEnd.toISOString()}`),
         api('GET', '/api/invoices?status=open'),
+        // A filtered fetch can't drive color assignment — top up the map in
+        // parallel rather than serially after the data lands.
+        query ? ensureClientColors() : Promise.resolve(),
       ]);
     } catch (err) {
       toast(err.message);
@@ -422,8 +425,7 @@
       return;
     }
 
-    if (query) await ensureClientColors();
-    else assignClientColors(clients); // unfiltered list = the authoritative order
+    if (!query) assignClientColors(clients); // unfiltered list = the authoritative order
 
     const byId = Object.fromEntries(clients.map((c) => [c.id, c]));
     const unsigned = contracts.filter((k) => k.status === 'draft' || k.status === 'sent');
@@ -457,8 +459,8 @@
         </div>`;
     });
 
-    // Today's agenda: where do I need to be today? (canceled walks stay out of the way)
-    const agenda = todaysAppts.filter((a) => a.status !== 'canceled');
+    // Today's agenda: where do I need to be today? (cancelled walks stay out of the way)
+    const agenda = todaysAppts.filter((a) => a.status !== 'cancelled');
     const agendaRows = agenda.map((a) => `
       <div class="card contract-row client-stripe" style="border-left-color:${clientColor(a.client_id)}" data-nav="#/schedule" tabindex="0" role="link">
         <div class="what">
@@ -541,15 +543,17 @@
     appEl.innerHTML = header('clients') + `<div class="page loading">Loading clients…</div>`;
     let clients;
     try {
-      clients = await api('GET', `/api/clients${query ? `?q=${encodeURIComponent(query)}` : ''}`);
+      [clients] = await Promise.all([
+        api('GET', `/api/clients${query ? `?q=${encodeURIComponent(query)}` : ''}`),
+        query ? ensureClientColors() : Promise.resolve(),
+      ]);
     } catch (err) {
       toast(err.message);
       appEl.innerHTML = header('clients') + `<div class="page"><div class="empty">Couldn't load your clients. <a class="backlink" href="#/clients">Retry</a></div></div>`;
       return;
     }
 
-    if (query) await ensureClientColors();
-    else assignClientColors(clients);
+    if (!query) assignClientColors(clients);
 
     const statusPill = {
       active: '<span class="pill pill-sage">active</span>',
@@ -1519,18 +1523,21 @@
     // Zoom (tester feedback 2026-07-18): scale the iframe itself — width is
     // compensated so the document reflows to the visible width at every zoom
     // level instead of growing a horizontal scrollbar.
+    const zoomFrame = document.getElementById('doc-frame');
+    const zoomLabel = document.getElementById('zoom-label');
+    const zoomOut = document.getElementById('zoom-out');
+    const zoomIn = document.getElementById('zoom-in');
     let zoom = 1;
     const applyZoom = () => {
-      const frame = document.getElementById('doc-frame');
-      frame.style.width = `${100 / zoom}%`;
-      frame.style.height = `${100 / zoom}%`;
-      frame.style.transform = `scale(${zoom})`;
-      document.getElementById('zoom-label').textContent = `${Math.round(zoom * 100)}%`;
-      document.getElementById('zoom-out').disabled = zoom <= 0.55;
-      document.getElementById('zoom-in').disabled = zoom >= 1.75;
+      zoomFrame.style.width = `${100 / zoom}%`;
+      zoomFrame.style.height = `${100 / zoom}%`;
+      zoomFrame.style.transform = `scale(${zoom})`;
+      zoomLabel.textContent = `${Math.round(zoom * 100)}%`;
+      zoomOut.disabled = zoom <= 0.55;
+      zoomIn.disabled = zoom >= 1.75;
     };
-    document.getElementById('zoom-out').onclick = () => { zoom = Math.max(0.5, Math.round((zoom - 0.1) * 10) / 10); applyZoom(); };
-    document.getElementById('zoom-in').onclick = () => { zoom = Math.min(1.8, Math.round((zoom + 0.1) * 10) / 10); applyZoom(); };
+    zoomOut.onclick = () => { zoom = Math.max(0.5, Math.round((zoom - 0.1) * 10) / 10); applyZoom(); };
+    zoomIn.onclick = () => { zoom = Math.min(1.8, Math.round((zoom + 0.1) * 10) / 10); applyZoom(); };
     applyZoom();
 
     // W-1: the copy the client keeps. The document endpoint needs the auth
