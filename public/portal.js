@@ -289,7 +289,17 @@
         ${signable ? `<p class="page-sub">Read the agreement, then sign below. Questions? <a href="#/messages">Message your professional</a> before signing.</p>` : ''}
 
         <div class="sign-layout">
-          <iframe class="doc-frame" id="doc-frame" title="Agreement document" sandbox=""></iframe>
+          <div class="doc-pane">
+            <div class="doc-tools">
+              <span class="hint">Zoom</span>
+              <button class="btn btn-ghost" id="zoom-out" type="button" aria-label="Zoom out">−</button>
+              <span class="num" id="zoom-label" aria-live="polite">100%</span>
+              <button class="btn btn-ghost" id="zoom-in" type="button" aria-label="Zoom in">＋</button>
+            </div>
+            <div class="doc-shell">
+              <iframe class="doc-frame" id="doc-frame" title="Agreement document" sandbox=""></iframe>
+            </div>
+          </div>
           ${signable ? `
           <div class="card sign-pad-card">
             <div>
@@ -316,6 +326,26 @@
       </div>`;
 
     document.getElementById('doc-frame').srcdoc = docHtml;
+
+    // Zoom — same approach as the professional side: scale the iframe and
+    // compensate its width so the document reflows to the visible width at
+    // every level instead of growing a horizontal scrollbar.
+    const zoomFrame = document.getElementById('doc-frame');
+    const zoomLabel = document.getElementById('zoom-label');
+    const zoomOut = document.getElementById('zoom-out');
+    const zoomIn = document.getElementById('zoom-in');
+    let zoom = 1;
+    const applyZoom = () => {
+      zoomFrame.style.width = `${100 / zoom}%`;
+      zoomFrame.style.height = `${100 / zoom}%`;
+      zoomFrame.style.transform = `scale(${zoom})`;
+      zoomLabel.textContent = `${Math.round(zoom * 100)}%`;
+      zoomOut.disabled = zoom <= 0.55;
+      zoomIn.disabled = zoom >= 1.75;
+    };
+    zoomOut.onclick = () => { zoom = Math.max(0.5, Math.round((zoom - 0.1) * 10) / 10); applyZoom(); };
+    zoomIn.onclick = () => { zoom = Math.min(1.8, Math.round((zoom + 0.1) * 10) / 10); applyZoom(); };
+    applyZoom();
 
     if (signed) {
       document.getElementById('doc-print').onclick = (e) =>
