@@ -24,12 +24,20 @@ const createInvoiceSchema = z
     amount_cents: z.number().int().positive().max(100_000_000).nullish(),
     description: z.string().trim().min(1).max(500).nullish(),
     due_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'due_date must be YYYY-MM-DD.').nullish(),
+    // R-2/R-3: an invoice can prepay N visits of a service. Week 6's
+    // auto-invoice always set service_id service-side; the route never
+    // accepted it, so until now the UI could not create a linked invoice.
+    service_id: z.string().uuid().nullish(),
+    sessions_purchased: z.number().int().min(1).max(1000).nullish(),
   })
   .refine((v) => v.billable_item_id || v.amount_cents, {
     message: 'Provide either billable_item_id or amount_cents.',
   })
   .refine((v) => v.billable_item_id || v.description, {
     message: 'A custom amount needs a description.',
+  })
+  .refine((v) => !v.sessions_purchased || v.service_id, {
+    message: 'Prepaid visits need the service they apply to.',
   });
 
 function validationError(res: import('express').Response, issues: z.ZodIssue[]): void {

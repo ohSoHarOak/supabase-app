@@ -8,6 +8,7 @@ import {
   Service,
   SERVICE_TYPE_LABELS,
   ServiceStatus,
+  ServiceWithBalance,
   ServiceType,
 } from '../types';
 import { clientService } from './ClientService';
@@ -270,10 +271,12 @@ export class SchedulingService {
     return activated;
   }
 
+  /** Services, each carrying its prepaid balance (R-2/R-3) so the UI can say
+   *  "7 of 10 left" without a request per service. */
   async listServices(
     professionalAccountId: string,
     options: { clientId?: string; status?: ServiceStatus } = {}
-  ): Promise<Service[]> {
+  ): Promise<ServiceWithBalance[]> {
     let builder = supabaseAdmin
       .from('services')
       .select('*')
@@ -284,7 +287,13 @@ export class SchedulingService {
 
     const { data, error } = await builder;
     if (error) throw new ServiceError('service_list_failed', error.message, 500);
-    return (data ?? []) as Service[];
+    const services = (data ?? []) as Service[];
+
+    const balances = await paymentService.sessionBalances(
+      professionalAccountId,
+      services.map((s) => s.id)
+    );
+    return services.map((s) => ({ ...s, session_balance: balances.get(s.id) ?? null }));
   }
 
   async getService(professionalAccountId: string, serviceId: string): Promise<Service> {
@@ -673,7 +682,12 @@ export class SchedulingService {
     professionalAccountId: string,
     appointmentId: string,
     input: CompletionInput = {}
-  ): Promise<{ appointment: Appointment; invoice: Invoice | null }> {
+  ): Promise<{
+    appointment: Appointment;
+    invoice: Invoice | null;
+    /** Prepaid visits left after this one, or null if it wasn't prepaid. */
+    prepaid_remaining: number | null;
+  }> {
     const appt = await this.getAppointment(professionalAccountId, appointmentId);
     if (appt.status !== 'scheduled') {
       throw new ServiceError(
@@ -683,6 +697,17 @@ export class SchedulingService {
       );
     }
     const service = await this.getService(professionalAccountId, appt.service_id);
+
+    // R-2/R-3: is this walk already paid for? Measured BEFORE the status flip,
+    // so this appointment isn't counted as consumed against its own balance.
+    //
+    // Race note: two different appointments completing at the same instant can
+    // both see the last remaining visit and both skip invoicing. That errs by
+    // one visit in the CLIENT's favour, which is the right way to be wrong —
+    // the alternative is billing someone for a walk they prepaid. A repeated
+    // tap on the same appointment is still exact, guarded by the UPDATE below.
+    const balancesBefore = await paymentService.sessionBalances(professionalAccountId, [service.id]);
+    const prepaidRemaining = balancesBefore.get(service.id)?.remaining ?? 0;
 
     // scheduled → completed exactly once, even under a double-submit race.
     const { data: updated, error } = await supabaseAdmin
@@ -723,8 +748,15 @@ export class SchedulingService {
     // no manual step. per_day bills price × days of the stay (a 2-night
     // boarding spanning 44 hours is 2 days). Other cadences (weekly/monthly/
     // package) stay manual until the founder decides their timing (ROADMAP).
+    //
+    // R-2/R-3: a prepaid visit bills nothing — it draws down the package the
+    // client already paid for. This is the whole point: "walks are pre-paid
+    // unless otherwise noted", and completing one used to bill them twice.
     let invoice: Invoice | null = null;
-    if (service.billing_cadence === 'per_visit' || service.billing_cadence === 'per_day') {
+    if (prepaidRemaining > 0) {
+      // Nothing to do. The drawdown is implicit: this appointment is now
+      // `completed`, so the next balance read counts it as used.
+    } else if (service.billing_cadence === 'per_visit' || service.billing_cadence === 'per_day') {
       let amountCents = service.price_cents;
       let description = `${service.name} — ${fmtSlot(appointment.starts_at)}`;
       if (service.billing_cadence === 'per_day') {
@@ -760,13 +792,21 @@ export class SchedulingService {
         got_a_treat: appointment.got_a_treat,
         next_appointment_starts_at: nextStartsAt,
         invoice_id: invoice?.id ?? null,
+        // R-2/R-3: how the walk was paid for, and what's left on the package.
+        // P2-2's walk-report message wants to say "3 walks left on your plan".
+        prepaid: prepaidRemaining > 0,
+        prepaid_remaining: prepaidRemaining > 0 ? prepaidRemaining - 1 : null,
       },
     });
 
     // A completed walk needs no reminder (covers early completes).
     await notificationService.cancelAppointmentReminders([appointment.id]);
 
-    return { appointment, invoice };
+    return {
+      appointment,
+      invoice,
+      prepaid_remaining: prepaidRemaining > 0 ? prepaidRemaining - 1 : null,
+    };
   }
 }
 

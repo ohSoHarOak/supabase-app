@@ -8,6 +8,7 @@ import {
   InvoiceStatus,
   PaymentTransaction,
   Service,
+  SessionBalance,
   StripeProduct,
 } from '../types';
 import { clientService } from './ClientService';
@@ -78,6 +79,9 @@ export interface CreateInvoiceInput {
   due_date?: string | null;
   /** The service this invoice bills for (set by Week 6's auto-invoice). */
   service_id?: string | null;
+  /** R-2/R-3: visits this invoice prepays for `service_id`. Once the invoice
+   *  is paid, completions draw down against it instead of billing again. */
+  sessions_purchased?: number | null;
 }
 
 interface RecordPaymentInput {
@@ -189,6 +193,68 @@ export class PaymentService {
     return data as StripeProduct;
   }
 
+  // ---------------------------------------------------- prepaid balances ----
+
+  /**
+   * R-2/R-3: how many prepaid visits each service has left.
+   *
+   *   remaining = SUM(sessions_purchased over PAID invoices) - COUNT(completed
+   *               appointments)
+   *
+   * The used side is **derived, never stored**, so it cannot drift away from
+   * the schedule the way a counter column would (same reasoning as O-1's
+   * derived "setup complete"). Only `paid` invoices count — an unpaid package
+   * is a quote, and crediting visits against it would let a client walk for
+   * free by never paying.
+   *
+   * Two grouped queries for the whole set, not one per service.
+   */
+  async sessionBalances(
+    professionalAccountId: string,
+    serviceIds: string[]
+  ): Promise<Map<string, SessionBalance>> {
+    const balances = new Map<string, SessionBalance>();
+    const ids = [...new Set(serviceIds)].filter(Boolean);
+    if (ids.length === 0) return balances;
+
+    const [invoicesRes, apptsRes] = await Promise.all([
+      supabaseAdmin
+        .from('invoices')
+        .select('service_id, sessions_purchased')
+        .eq('professional_account_id', professionalAccountId)
+        .in('service_id', ids)
+        .eq('status', 'paid')
+        .not('sessions_purchased', 'is', null),
+      supabaseAdmin
+        .from('appointments')
+        .select('service_id')
+        .eq('professional_account_id', professionalAccountId)
+        .in('service_id', ids)
+        .eq('status', 'completed'),
+    ]);
+    if (invoicesRes.error) throw new ServiceError('session_balance_failed', invoicesRes.error.message, 500);
+    if (apptsRes.error) throw new ServiceError('session_balance_failed', apptsRes.error.message, 500);
+
+    for (const row of invoicesRes.data ?? []) {
+      const id = row.service_id as string;
+      const current = balances.get(id) ?? { purchased: 0, used: 0, remaining: 0 };
+      current.purchased += (row.sessions_purchased as number) ?? 0;
+      balances.set(id, current);
+    }
+    // Services with completed walks but no prepaid invoice never enter the
+    // map — "no package" and "a package with nothing left" must stay
+    // distinguishable, or every ordinary service would look exhausted.
+    for (const row of apptsRes.data ?? []) {
+      const id = row.service_id as string;
+      const current = balances.get(id);
+      if (current) current.used += 1;
+    }
+    for (const balance of balances.values()) {
+      balance.remaining = Math.max(0, balance.purchased - balance.used);
+    }
+    return balances;
+  }
+
   // ------------------------------------------------------------ invoices ----
 
   async createInvoice(professionalAccountId: string, input: CreateInvoiceInput): Promise<Invoice> {
@@ -222,6 +288,9 @@ export class PaymentService {
         amount_cents: amountCents,
         description,
         due_date: input.due_date ?? null,
+        // R-2/R-3: only meaningful alongside a service — a package with
+        // nothing to draw down against is a number with no home.
+        sessions_purchased: input.service_id ? input.sessions_purchased ?? null : null,
         status: 'open',
       })
       .select()

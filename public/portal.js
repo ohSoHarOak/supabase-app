@@ -220,7 +220,18 @@
     // R-15: what they actually signed up for — service, price, cadence — so
     // the home screen answers "what am I paying for?" without opening the
     // agreement. Sessions are shown when the service is a package.
-    const planRows = (ov.services ?? []).map((s) => `
+    const planRows = (ov.services ?? []).map((s) => {
+      // R-2/R-3 + R-15: "how many walks have I paid for and got left?" is the
+      // question the founder's tester actually asked. A used-up package still
+      // shows, so a client can see they need to buy more rather than being
+      // surprised by an invoice after the next walk.
+      const b = s.session_balance;
+      const prepaid = b
+        ? b.remaining > 0
+          ? `<span class="pill pill-sage">${esc(b.remaining)} of ${esc(b.purchased)} visits left</span>`
+          : `<span class="pill pill-alert">all ${esc(b.purchased)} prepaid visits used</span>`
+        : '';
+      return `
       <div class="card contract-row">
         <div class="what">
           <div class="title">${esc(s.name)}</div>
@@ -230,7 +241,9 @@
             s.end_date ? ` · until ${esc(fmtDateOnly(s.end_date))}` : ''
           }</div>
         </div>
-      </div>`);
+        ${prepaid}
+      </div>`;
+    });
 
     const paidTotal = ov.invoices
       .filter((inv) => inv.status === 'paid')

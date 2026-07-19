@@ -296,9 +296,25 @@ export interface Invoice {
   status: InvoiceStatus;
   due_date: string | null;
   paid_at: string | null;
+  /** Visits this invoice prepays for `service_id` (019). NULL = not a
+   *  prepaid package — which is every ordinary one-off invoice. */
+  sessions_purchased: number | null;
   created_at: string;
   updated_at: string;
 }
+
+/** R-2/R-3 prepaid drawdown. `used` is derived from completed appointments,
+ *  never stored, so it can't drift from the schedule. */
+export interface SessionBalance {
+  purchased: number;
+  used: number;
+  remaining: number;
+}
+
+/** A service plus its prepaid balance. `session_balance` is null when the
+ *  service has no prepaid package at all — distinct from a package that has
+ *  run out, which is `remaining: 0`. */
+export type ServiceWithBalance = Service & { session_balance: SessionBalance | null };
 
 export interface PaymentTransaction {
   id: string;

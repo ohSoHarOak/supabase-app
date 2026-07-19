@@ -633,6 +633,94 @@ async function main(): Promise<void> {
     pass('11. Owner portal: magic-link session linked the client; overview complete; remote sign queued the email; Stripe checkout created (stays open unpaid); owner↔professional messaging idempotent; cross-role access 403 both ways');
   }
 
+  // --- 12. Prepaid visits draw down instead of re-invoicing (R-2/R-3) -------
+  // The founder's report: completing a walk the client had already paid for
+  // still prompted to invoice them. This asserts the money behaviour in both
+  // directions — a prepaid walk bills NOTHING, and the walk past the end of
+  // the package bills again — because getting either half wrong is a
+  // charge to a real client.
+  {
+    const prepaidClient = (
+      await ok('POST', '/api/clients', { full_name: `Prepaid ${stamp}` }, '12. Client')
+    ).data;
+    const prepaidService = (
+      await ok('POST', '/api/services', {
+        client_id: prepaidClient.id,
+        service_type: 'private_walk',
+        price_cents: 3000,
+        billing_cadence: 'per_visit',
+        duration_minutes: 30,
+        status: 'active',
+      }, '12. Service')
+    ).data;
+
+    const pkg = (
+      await ok('POST', '/api/invoices', {
+        client_id: prepaidClient.id,
+        amount_cents: 6000,
+        description: '2-walk package',
+        service_id: prepaidService.id,
+        sessions_purchased: 2,
+      }, '12. Package invoice')
+    ).data;
+
+    // An UNPAID package must credit nothing, or a client could walk for free
+    // simply by never paying.
+    const unpaid = (await ok('GET', `/api/services?client_id=${prepaidClient.id}`, undefined, '12. Unpaid balance')).data;
+    assert(
+      unpaid[0].session_balance === null,
+      '12. Unpaid package',
+      `An unpaid package must credit no visits; got ${JSON.stringify(unpaid[0].session_balance)}`
+    );
+
+    const { supabaseAdmin } = await import('../src/config/supabase');
+    await supabaseAdmin
+      .from('invoices')
+      .update({ status: 'paid', paid_at: new Date().toISOString() })
+      .eq('id', pkg.id);
+
+    const paidBalance = (await ok('GET', `/api/services?client_id=${prepaidClient.id}`, undefined, '12. Paid balance')).data;
+    assert(
+      paidBalance[0].session_balance?.remaining === 2,
+      '12. Paid package',
+      `Paid package should leave 2 visits; got ${JSON.stringify(paidBalance[0].session_balance)}`
+    );
+
+    const billed: (number | null)[] = [];
+    for (let i = 0; i < 3; i++) {
+      const booked = (
+        await ok('POST', '/api/appointments', {
+          client_id: prepaidClient.id,
+          service_id: prepaidService.id,
+          starts_at: new Date(Date.now() + (i + 1) * 26 * 3600e3).toISOString(),
+          duration_minutes: 30,
+        }, `12. Book ${i + 1}`)
+      ).data;
+      const appt = Array.isArray(booked) ? booked[0] : booked;
+      const done = (await ok('POST', `/api/appointments/${appt.id}/complete`, {}, `12. Complete ${i + 1}`)).data;
+      billed.push(done.invoice ? done.invoice.amount_cents : null);
+    }
+    assert(
+      billed[0] === null && billed[1] === null,
+      '12. Prepaid drawdown',
+      `The two prepaid walks must bill nothing; billed ${JSON.stringify(billed)}`
+    );
+    assert(
+      billed[2] === 3000,
+      '12. Post-package billing',
+      `The walk after the package runs out must bill $30 again; billed ${JSON.stringify(billed)}`
+    );
+
+    const finalInvoices = (await ok('GET', `/api/invoices?client_id=${prepaidClient.id}`, undefined, '12. Invoices')).data;
+    assert(
+      finalInvoices.length === 2,
+      '12. Invoice count',
+      `Expected exactly 2 invoices (the package + the one walk past it); got ${finalInvoices.length}`
+    );
+
+    pass('12. Prepaid visits: unpaid package credits nothing, paid package draws down (2 walks billed $0), the walk past it bills $30 again — exactly 2 invoices');
+  }
+
   console.log(`\n\x1b[32m${passed} steps passed — E2E TEST PASSED against ${baseUrl}\x1b[0m`);
 }
 

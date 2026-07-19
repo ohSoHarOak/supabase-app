@@ -181,6 +181,23 @@
     per_visit: 'per visit', per_day: 'per day', weekly: 'weekly', biweekly: 'every 2 weeks',
     monthly: 'monthly', per_package: 'per package', one_time: 'one-time',
   };
+  // R-2/R-3 prepaid packages. `session_balance` is null when the service has
+  // no package at all — deliberately distinct from a package that has run
+  // out (remaining: 0), which still deserves to be shown so the walker knows
+  // to sell another one rather than wondering why walks started billing.
+  function prepaidText(service) {
+    const b = service?.session_balance;
+    if (!b) return null;
+    return b.remaining > 0
+      ? `${b.remaining} of ${b.purchased} prepaid left`
+      : `prepaid package used up (${b.purchased} of ${b.purchased})`;
+  }
+  function prepaidPill(service) {
+    const text = prepaidText(service);
+    if (!text) return '';
+    const spent = service.session_balance.remaining === 0;
+    return `<span class="pill ${spent ? 'pill-alert' : 'pill-sage'}">${esc(text)}</span>`;
+  }
   // Long labels for the "Billed" select.
   const CADENCE_OPTIONS = {
     per_visit: 'Per visit — invoice auto-created after each visit',
@@ -865,6 +882,7 @@
           <div class="title">${esc(s.name)}</div>
           <div class="meta">${esc(SERVICE_TYPES[s.service_type] ?? s.service_type)} · ${esc(fmtMoney(s.price_cents))} ${esc(CADENCES[s.billing_cadence] ?? s.billing_cadence)}${s.session_count ? ` · ${esc(s.session_count)} sessions` : ''}${s.duration_minutes ? ` · ${esc(s.duration_minutes)} min` : ''}${s.end_date ? ` · until ${esc(fmtDateOnly(s.end_date))}` : ''}${s.status === 'active' && s.next_invoice_date ? ` · next invoice ${esc(fmtDateOnly(s.next_invoice_date))}` : ''}</div>
         </div>
+        ${prepaidPill(s)}
         ${servicePill[s.status] ?? ''}
         <div class="row-actions">
           ${s.status === 'active'
@@ -1021,6 +1039,17 @@
               <input id="inv-desc" placeholder="e.g. Week of July 14 — 3 private walks" /></div>
             <div class="full" id="inv-save-wrap" hidden><label style="display:flex; gap:8px; align-items:center; text-transform:none; letter-spacing:0">
               <input type="checkbox" id="inv-save" style="width:auto" /> Save as a reusable billable item</label></div>
+            <!-- R-2/R-3: prepay a package of visits. Once this invoice is
+                 paid, completing a walk on that service draws one down and
+                 bills nothing, instead of invoicing all over again. -->
+            <div><label for="inv-service">Prepays which service? <span class="hint">optional</span></label>
+              <select id="inv-service">
+                <option value="">Not a prepaid package</option>
+                ${services.filter((s) => s.status === 'active').map((s) =>
+                  `<option value="${s.id}">${esc(s.name)} — ${fmtMoney(s.price_cents)} ${esc(CADENCES[s.billing_cadence] ?? '')}</option>`).join('')}
+              </select></div>
+            <div id="inv-sessions-wrap" hidden><label for="inv-sessions">Visits this prepays</label>
+              <input id="inv-sessions" type="number" min="1" max="1000" value="10" class="num" /></div>
           </div>
           <div class="form-foot" style="margin-top:0">
             <div class="spacer"></div>
@@ -1272,6 +1301,15 @@
     invItem.onchange = syncInvoiceFields;
     syncInvoiceFields();
 
+    // R-2/R-3: "visits this prepays" only means anything once a service is
+    // picked — the server refuses the pair otherwise, so don't offer it.
+    const invService = document.getElementById('inv-service');
+    function syncPrepaidFields() {
+      document.getElementById('inv-sessions-wrap').hidden = !invService.value;
+    }
+    invService.onchange = syncPrepaidFields;
+    syncPrepaidFields();
+
     document.getElementById('inv-form').onsubmit = async (e) => {
       e.preventDefault();
       const btn = e.target.querySelector('button[type=submit]');
@@ -1302,8 +1340,16 @@
               body = { client_id: clientId, amount_cents: amount, description };
             }
           }
+          // R-2/R-3: attach the prepaid package, whichever branch built body.
+          if (invService.value) {
+            body.service_id = invService.value;
+            const sessions = Number(document.getElementById('inv-sessions').value);
+            if (sessions > 0) body.sessions_purchased = sessions;
+          }
           await api('POST', '/api/invoices', body);
-          toast('Invoice created.', 'ok');
+          toast(invService.value
+            ? 'Invoice created — visits draw down once it\'s paid.'
+            : 'Invoice created.', 'ok');
           renderClient(clientId);
         } catch (err) {
           toast(err.message);
@@ -1721,10 +1767,14 @@
     appEl.innerHTML = header('schedule') + `<div class="page loading">Loading schedule…</div>`;
     const weekStart = new Date(startOfWeek(new Date()).getTime() + weekOffset * 7 * DAY_MS);
     const weekEnd = new Date(weekStart.getTime() + 7 * DAY_MS);
-    let appts;
+    let appts, activeServices;
     try {
-      [appts] = await Promise.all([
+      // R-2/R-3: services carry their prepaid balance, so the complete button
+      // can say "7 of 10 left" instead of offering to bill an already-paid
+      // walk. One request for the whole week rather than one per appointment.
+      [appts, activeServices] = await Promise.all([
         api('GET', `/api/appointments?from=${weekStart.toISOString()}&to=${weekEnd.toISOString()}`),
+        api('GET', '/api/services?status=active'),
         ensureClientColors(),
       ]);
     } catch (err) {
@@ -1740,6 +1790,9 @@
       no_show: '<span class="pill pill-alert">no-show</span>',
     };
     const todayKey = new Date().toDateString();
+    const balanceByService = Object.fromEntries(
+      (activeServices ?? []).map((s) => [s.id, s.session_balance])
+    );
 
     const daySections = Array.from({ length: 7 }, (_, i) => {
       const day = new Date(weekStart.getTime() + i * DAY_MS);
@@ -1782,11 +1835,23 @@
             <div class="form-foot" style="margin-top:12px">
               <button class="btn btn-ghost" type="button" data-close-complete="${a.id}">Back</button>
               <div class="spacer"></div>
-              <button class="btn btn-primary" type="submit">Complete${a.services?.billing_cadence === 'per_visit'
-                ? ` & invoice ${esc(fmtMoney(a.services.price_cents))}`
-                : a.services?.billing_cadence === 'per_day'
-                  ? ` & invoice ${esc(fmtMoney(a.services.price_cents))}/day`
-                  : ''}</button>
+              <!-- R-2/R-3: a prepaid walk offers ONLY "mark complete" — it
+                   is already paid for, so billing again is the bug. The
+                   remaining count comes along so the walker can see the
+                   package running down. -->
+              <button class="btn btn-primary" type="submit">${(() => {
+                const bal = balanceByService[a.service_id];
+                if (bal && bal.remaining > 0) {
+                  return `Mark complete · ${esc(bal.remaining)} of ${esc(bal.purchased)} left`;
+                }
+                if (a.services?.billing_cadence === 'per_visit') {
+                  return `Complete &amp; invoice ${esc(fmtMoney(a.services.price_cents))}`;
+                }
+                if (a.services?.billing_cadence === 'per_day') {
+                  return `Complete &amp; invoice ${esc(fmtMoney(a.services.price_cents))}/day`;
+                }
+                return 'Complete';
+              })()}</button>
             </div>
           </form>` : ''}
         </div>`;
@@ -1835,7 +1900,7 @@
         const btn = form.querySelector('button[type=submit]');
         await withBusy(btn, async () => {
           try {
-            const { invoice } = await api('POST', `/api/appointments/${id}/complete`, {
+            const { invoice, prepaid_remaining } = await api('POST', `/api/appointments/${id}/complete`, {
               actual_start_at: fromLocalInput(document.getElementById(`cf-start-${id}`).value),
               actual_end_at: fromLocalInput(document.getElementById(`cf-end-${id}`).value),
               completion_notes: document.getElementById(`cf-notes-${id}`).value.trim() || null,
@@ -1844,7 +1909,9 @@
             });
             toast(invoice
               ? `Walk completed — ${fmtMoney(invoice.amount_cents)} invoice created automatically.`
-              : 'Walk completed.', 'ok');
+              : prepaid_remaining !== null && prepaid_remaining !== undefined
+                ? `Walk completed — drawn from the prepaid package, ${prepaid_remaining} left. Nothing billed.`
+                : 'Walk completed.', 'ok');
             renderSchedule(weekOffset);
           } catch (err) {
             toast(err.message);

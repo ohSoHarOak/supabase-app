@@ -7,6 +7,7 @@ import {
   Invoice,
   MessageThread,
   Service,
+  ServiceWithBalance,
 } from '../types';
 import { eventService } from './EventService';
 import { messagingService } from './MessagingService';
@@ -195,7 +196,7 @@ export class PortalService {
     invoices: Invoice[];
     /** Active services — what the owner actually signed up for, with the
      *  price and cadence, so the portal home can say so (R-15). */
-    services: Service[];
+    services: ServiceWithBalance[];
     /** Messages the professional sent that this owner hasn't read (O-2). */
     unread_messages: number;
   }> {
@@ -257,6 +258,21 @@ export class PortalService {
     for (const r of [profilesRes, accountsRes, apptsRes, contractsRes, invoicesRes, servicesRes, unreadRes]) {
       if (r.error) throw new ServiceError('portal_overview_failed', r.error.message, 500);
     }
+    // R-15: the owner's plan carries its prepaid balance, so the portal can
+    // answer "how many walks have I got left?" — the half of R-15 that had to
+    // wait for the R-2/R-3 drawdown to exist. Balances are computed per
+    // professional, since sessionBalances is scoped to one.
+    const rawServices = (servicesRes.data ?? []) as Service[];
+    const activeServices: ServiceWithBalance[] = [];
+    for (const proId of professionalIds) {
+      const mine = rawServices.filter((s) => s.professional_account_id === proId);
+      if (mine.length === 0) continue;
+      const balances = await paymentService.sessionBalances(proId, mine.map((s) => s.id));
+      for (const s of mine) {
+        activeServices.push({ ...s, session_balance: balances.get(s.id) ?? null });
+      }
+    }
+
     const contactByAccount = new Map(
       (accountsRes.data ?? []).map((a) => [a.id, { phone: a.phone as string | null, email: a.email as string }])
     );
@@ -279,7 +295,7 @@ export class PortalService {
       appointments: (apptsRes.data ?? []) as (Appointment & { services: { name: string } | null })[],
       contracts: (contractsRes.data ?? []) as Contract[],
       invoices: (invoicesRes.data ?? []) as Invoice[],
-      services: (servicesRes.data ?? []) as Service[],
+      services: activeServices,
       unread_messages: unreadRes.count ?? 0,
     };
   }
