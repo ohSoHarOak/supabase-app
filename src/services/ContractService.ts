@@ -42,7 +42,6 @@ export interface ContractServiceInput {
 export interface GenerateContractInput {
   template_id: string;
   client_id: string;
-  service_id?: string | null;
   /** The services this contract sells (W-5/W-6). Created as drafts and only
    *  activated when the client signs (W-7). */
   services?: ContractServiceInput[];
@@ -435,7 +434,12 @@ export class ContractService {
       .insert({
         professional_account_id: professionalAccountId,
         client_id: client.id,
-        service_id: input.service_id ?? null,
+        // NOTE: contracts.service_id is deliberately NOT written. It is the
+        // pre-W-6 one-contract-one-service link, superseded by
+        // services.contract_id (migration 016) once a contract could carry
+        // several services. The column stays for historical rows (W-5a chose
+        // not to drop it); writing it would resurrect a second, conflicting
+        // answer to "which services does this contract cover?".
         template_id: template.id,
         generated_html: generatedHtml,
         // R-10: the term. Null stays open-ended, which is what every

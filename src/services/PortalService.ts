@@ -171,15 +171,6 @@ export class PortalService {
     return (data ?? []) as Client[];
   }
 
-  private async clientIds(ownerAccountId: string): Promise<string[]> {
-    const { data, error } = await supabaseAdmin
-      .from('clients')
-      .select('id')
-      .eq('owner_account_id', ownerAccountId);
-    if (error) throw new ServiceError('portal_clients_failed', error.message, 500);
-    return (data ?? []).map((c) => c.id as string);
-  }
-
   /**
    * Everything the portal home screen needs in one call: linked clients (with
    * pets and the professional's name), upcoming appointments, contracts, and

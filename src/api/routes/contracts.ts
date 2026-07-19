@@ -36,7 +36,9 @@ const contractServiceSchema = z.object({
 const generateSchema = z.object({
   template_id: z.string().uuid('template_id must be a UUID.'),
   client_id: z.string().uuid('client_id must be a UUID.'),
-  service_id: z.string().uuid().nullish(),
+  // `service_id` deliberately absent: the pre-W-6 single-service link is
+  // superseded by `services` below (one contract, many services). See the
+  // note in ContractService.generateContract.
   services: z.array(contractServiceSchema).max(20).optional(),
   variables: z.record(z.string(), z.string()).optional(),
   // R-10/R-11: the term, and how far ahead to warn about its end.

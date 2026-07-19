@@ -181,8 +181,6 @@ Each week has two lists:
   - Verified by test steps 7–8: exactly one succeeded transaction, exactly one `payment_received` event.
 - [x] Confirm status: mark this week done, or note what broke
   - Confirmed 2026-07-14. Week 5 done. Founder also logged 3 new feature requests (own payment processor, branded invoices, in-app tap-to-pay) — captured as P2-6…P2-8 below — plus a pre-demo QA pass, added to Week 8.
-cd C:\Users\itchy\OneDrive\Desktop\PetPro
-powershell -ExecutionPolicy Bypass -File .\scripts\week7-test.ps1 -BaseUrl "https://petpro-app.onrender.com"
 ---
 
 ## Week 6 — Scheduling
