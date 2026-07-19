@@ -43,16 +43,65 @@ Phase 2 is organized into **workstreams** instead of fixed weeks, because scope 
 - [ ] **Security review #2 — after Workstream X + the owner portal are live:** re-run the tenant audit with two account types (owner vs. professional) reading shared tables; verify magic-link auth can't reach professional-only surfaces; re-check webhook signature verification and idempotency under the expanded event set
 - [ ] Device/browser QA matrix (used by checkpoints M and U): iPhone Safari, Android Chrome, desktop Chrome/Edge/Firefox — light + dark mode
 
-## Workstream M — Mobile-Ready
+## Workstream M — Mobile: Android-first native app
 
-*Walkers run their business from a phone in one hand with a leash in the other. Phase 2's bet: a genuinely good **mobile web app (PWA)** first; a native app only when a feature that truly requires it (P2-8 tap-to-pay, P2-2 GPS tracking) is prioritized.*
+> **Founder direction 2026-07-19: build a real native app, Android first.** This supersedes the earlier PWA-first stance (a good mobile web app was going to come first, native only when a feature demanded it). The founder's original goal was an app for iOS **and** Android; the plan below gets there in phases. Phase 1 (the web app) is unchanged and remains the demo surface for now. iOS follows in **Phase 3** (below).
 
-- [ ] Responsive audit of every screen at phone width (375px): navigation, tables/cards, forms, the schedule week view (7 columns won't fit — needs a mobile day/agenda layout), modals and toasts
-- [ ] Touch-first interaction pass: tap-target sizes, the signature pad under touch input (test on a real phone — pointer events behave differently than mouse), date/time pickers on mobile keyboards
-- [ ] PWA baseline: web manifest + icons ("Add to Home Screen" so it opens like an app), service worker with a safe cache strategy (never cache API responses that would show stale schedules), graceful offline message
-  - Week 7's offline draft sync endpoint is the seam for real offline support later — don't rebuild it here, just don't break it
-- [ ] One-handed field workflow review: the three things done standing on a sidewalk — check today's schedule, mark a walk complete, collect a payment — should each take ≤ 2 taps from the home screen (builds on Phase 1 finding W-4)
-- [ ] **QA checkpoint M:** full E2E flow (signup → client → contract → sign → book → complete → invoice) executed **on a real phone**, plus the device matrix from Workstream Q
+**Approach:** Capacitor wraps the existing web app (`public/`) into an Android shell — still one deployable, same backend. Native device features are Capacitor plugins called from the existing UI, pulled forward from the backlog.
+
+**Why Android-first:**
+- Android builds on the founder's **Windows** machine — no Mac needed. That constraint moves to Phase 3 with iOS.
+- Google Play does **not** apply Apple's 4.2 "not just a website" wrapper rejection, so native features here are driven by walker value, not review-clearing. (Apple's 4.2 gauntlet re-enters in Phase 3.)
+
+### Native features pulled forward (Phase 2, Android)
+- [ ] **QR / barcode check-in — with manual fallback** (P2-2, decided 2026-07-19): scan the dog's tag to start/end a visit; a "Start walk" button **always** works with no tag. QR is a convenience the walker *may* use, never a dependency (candidate for a paid tier — see gating). App generates a per-pet QR to print/attach.
+- [ ] **GPS walk tracking — starts on walk start** (P2-2, founder note 2026-07-19): live route + distance, running **only** from "Start walk" to "Complete walk" — no always-on/background location. Implemented as an Android **foreground service** with an ongoing "Walk in progress" notification during the walk only (permission-friendly and battery-friendly vs. always-on).
+- [ ] **Tap-to-Pay (Android)** (P2-8, pulled into Phase 2 for testing 2026-07-19): Stripe Terminal SDK, connection-token endpoint, in-person card flow. Needs an **NFC + Android 11+** device Stripe supports. Routes to the walker's connected account once **M-Connect** is done; on the platform account for founder-only testing before then. Independent of QR/GPS — can be resequenced ahead of M1 if testing payments early matters, provided the security gate (M0.5) is done first.
+- [ ] **Push notifications**: native channel extending Week 7's `notification_queue` (reminders, walk-done, new message, payment).
+- [ ] **Camera / photos** (P2-3, P2-7, P2-11): dog photo on the walk report; pet photos; profile/logo.
+- [ ] **Calendar integration** (P2-4): push walks to the phone's calendar.
+- [ ] **Local notifications + "walk in progress" home-screen widget.**
+
+### M-Connect — Payment setup: "Get paid" (Stripe Connect / P2-6)
+*Gap found 2026-07-19: the simplified onboarding has **no way for a professional to set up getting paid** — today all money routes to the platform (founder) Stripe account. Real walkers can't receive money until this exists, and Tap-to-Pay to a real walker's account depends on it.*
+- [ ] **Stripe Connect Express** (founder decision 2026-07-19) — Stripe-hosted KYC/onboarding.
+  - ⚠️ **Do not hardwire the connected account.** It must be disconnectable/changeable later — e.g. if the professional relationship is terminated — so build it behind the same seam as **P2-15** account deactivation, not as a permanent one-time link. Storing the `account_id` is a nullable, replaceable link on the account, never an assumption baked into the payment path.
+- [ ] Generate onboarding link, store connected `account_id`, handle the incomplete-onboarding (not-payout-ready) state.
+- [ ] Route charges (Checkout **and** Tap-to-Pay) to the walker's connected account. `PaymentService` was built so Connect slots in without changing callers.
+- [ ] "Set up payments" step in the onboarding wizard (skippable) **plus** a persistent Profile card until complete.
+- [ ] **Not mobile-specific** — build on web, the Android app inherits it. Slots **before** Tap-to-Pay (M2). Founder-only testing can defer it (platform-account fallback); real-walker payment testing needs it first.
+
+### Foundation & polish (folded in from the original Workstream M)
+- [ ] Responsive audit at 375px: navigation, tables/cards, forms, the schedule week view (7 columns won't fit → mobile day/agenda layout), modals and toasts.
+- [ ] Touch-first pass: tap-target sizes, the signature pad under touch (test on a real phone — pointer events differ from mouse), mobile date/time pickers.
+- [ ] PWA baseline: manifest + icons, service worker with a safe cache strategy (never cache API responses that would show stale schedules), graceful offline message. (Week 7's offline draft-sync endpoint is the seam — don't rebuild it, just don't break it.)
+- [ ] **Vite + TypeScript build step** (still the Workstream U modernization decision below — *recommended*, not yet founder-approved): Capacitor expects a web build pipeline; bolting plugins onto the single 2,742-line `app.js` is fragile.
+- [ ] One-handed field workflow: check schedule / mark complete / collect payment each ≤ 2 taps from home (builds on Phase 1 finding W-4).
+- [ ] **Security gate before payments face public installs** (pairs with Security review #1): `helmet`, rate-limiting on auth + webhook endpoints, on-device auth-token storage review.
+
+### Feature gating (forward reference — not built in Phase 2)
+Pricing tiers (**Workstream S**) will later decide free vs. paid. Build every Phase 2 feature behind a **clean entitlement check** from the start so gating is a config change, not a refactor — same discipline already written into Workstream S. Premium-tier candidates to flag now: **QR check-in, GPS tracking, Tap-to-Pay, photo walk reports, calendar sync**.
+
+### Phase estimates & time-to-test (Android)
+| Phase | Scope | Build (wks) | Testable on Android at the end |
+|---|---|---|---|
+| **M0** Foundation | responsive + touch + PWA + Vite + Capacitor Android shell + dev signing | 2–2.5 | existing app in the native shell on a real device |
+| **M0.5** Security gate | helmet, rate-limiting, token-storage review | ~1 | same app, safe on real devices |
+| **M-Connect** Get-paid | Stripe Connect Express onboarding + charge routing | 2–3 | connect a payout account (web + Android) |
+| **M1** Core natives | QR + manual fallback, GPS-on-walk-start, push, camera/photos | 3–3.5 | scan a tag → track a real walk → photo → push |
+| **M2** Tap-to-Pay | Stripe Terminal in-person card flow | 2–3 | a real in-person card tap on the phone |
+| **M3** Depth & polish | calendar, local notifications, widget, one-handed | 2–2.5 | feels native, not wrapped |
+| **M-Play** Submission | Play Console listing, data-safety, signing, internal → closed test | ~1 + Google gate | live in Play internal/closed testing |
+
+- **First testable on a phone:** ~2–2.5 wks (M0).
+- **QR + GPS + push + photos:** ~6–7 wks in (later if M-Connect precedes M1).
+- **Everything submission-ready:** ~**13–16 wks** with Connect in the first cycle; ~11–13.5 if Connect is deferred to founder-only testing.
+- **Uncertainty drivers:** GPS foreground service, Tap-to-Pay device eligibility, and Google's ~14-day / ~20-tester **new-account gate** — create the Play account **early** so its clock runs in parallel with the M-phases.
+
+- [ ] **QA checkpoint M:** full E2E (signup → client → contract → sign → book → complete → invoice → pay) executed **on a real Android phone**, plus the device matrix from Workstream Q.
+
+### Phase 3 — iOS port + Biometric Login *(deferred, scoped when Phase 2 is testing)*
+The **iOS port** is the main Phase 3 driver — it's what needs a **Mac or cloud build environment** and re-entry into **Apple's review** (where Phase 2's native-feature depth pays off against guideline 4.2). **Biometric Login** rides here too (it's small and also works on Android — cheap to pull into the Android build later if wanted; kept in Phase 3 per founder call 2026-07-19). Rough size when picked up: **~5–8 weeks**.
 
 ## Workstream U — UI/UX Polish & Modernization
 
@@ -135,8 +184,12 @@ Phase 2 is organized into **workstreams** instead of fixed weeks, because scope 
 *Decisions Phase 2 needs from you, none blocking today. Each gets logged with a date when made, same habit as Phase 1.*
 
 - [ ] **Test-data strategy** (blocks CI in Workstream 0): separate Supabase project for tests vs. a cleanup script against the live one
-- [ ] **Front-end modernization** (Workstream U): approve/decline the Vite + TypeScript recommendation
-- [ ] **PWA vs. native timing** (Workstreams M / F Tier 3): PWA-first is the plan; revisit when tap-to-pay or GPS tracking gets prioritized
+- [ ] **Front-end modernization** (Workstream U): approve/decline the Vite + TypeScript recommendation — now also the front-end pipeline Workstream M's Capacitor wrap wants, so this decision is on the mobile critical path
+- [x] **PWA vs. native timing** — **DECIDED 2026-07-19: native app, Android-first** (Capacitor wrap + native features), iOS in Phase 3. Supersedes the PWA-first plan. See Workstream M.
+- [x] **QR check-in mechanism** (P2-2) — **DECIDED 2026-07-19: QR with a manual "Start walk" fallback.** QR is an option the walker can use, never a dependency; candidate for a paid tier.
+- [x] **Payout account type** (Workstream M / P2-6) — **DECIDED 2026-07-19: Stripe Connect Express.** Requirement: the connected account must be changeable/disconnectable if the professional relationship is terminated — not hardwired (build behind the P2-15 deactivation seam).
+- [ ] **Payment setup: block vs. fall back** (Workstream M / M-Connect): until a walker completes Connect onboarding, is collecting payment **blocked**, or does it **fall back to the platform account**? — OPEN
+- [ ] **Platform fee** (Workstream M / M-Connect): does PetPro take a percentage of each transaction, or pass 100% to the walker? — OPEN
 - [ ] **RLS as a second isolation net** (Security review #1): recommended once the owner portal is live — approve the migration work
 - [ ] **eSign timing**: when does Nitro Sign (Phase 1.5) actually start — before or after mobile?
 - [ ] **Tier matrix** (blocks Workstream S): which features land in Just Me vs. Essential vs. Business, monthly prices, annual discount yes/no, free trial vs. card-up-front
@@ -151,7 +204,7 @@ Phase 2 is organized into **workstreams** instead of fixed weeks, because scope 
 |---|---|
 | 0 — Closeout & cleanup | Not started (baseline verified clean 2026-07-15) |
 | Q — QA & security reviews | Not started (review #1 scheduled with Workstream 0) |
-| M — Mobile-ready | Not started |
+| M — Mobile (Android-first native) | Planned & spec'd 2026-07-19 (Android-first; Tap-to-Pay + Stripe Connect Express in scope; iOS → Phase 3). Not started |
 | U — UI/UX polish | Not started |
 | X — Multi-profession | Not started |
 | S — Subscription tiers | Not started (blocked on tier-matrix decision) |
@@ -159,5 +212,6 @@ Phase 2 is organized into **workstreams** instead of fixed weeks, because scope 
 
 ## Changelog
 
+- **2026-07-19** — **Workstream M rewritten as an Android-first native app** at founder direction, superseding the PWA-first plan. Capacitor wrap + native features pulled forward from the backlog: QR check-in with manual fallback (P2-2), GPS walk tracking that starts only on walk start (P2-2), Tap-to-Pay on Android for testing (P2-8), push, camera/photos (P2-3/7/11), calendar (P2-4), local notifications + widget. New **M-Connect** item closes a gap found in onboarding — no way for a professional to set up getting paid (all money currently routes to the platform account); **Stripe Connect Express** chosen, with a requirement that the connected account be changeable/disconnectable on relationship termination (P2-15 seam). **iOS + Biometric Login moved to Phase 3** (Mac/cloud build env + Apple review). Estimates: first testable on a phone ~2–2.5 wks; submission-ready ~13–16 wks with Connect in the first cycle. Decisions logged: native/Android-first, QR-with-fallback, Stripe Express (all decided); **block-vs-fall-back** and **platform fee** left OPEN. Feature-gating note added so Phase 2 features sit behind clean entitlement checks for the Workstream S tiers.
 - **2026-07-15 (later)** — **Workstream S added at founder direction: paid signup with three account tiers — Just Me, Essential, Business** — built on the generic-billing seam via Stripe Billing subscriptions, with central entitlement checks, never-delete-data lockout policy, and its own QA checkpoint. Three new items in the Founder Decisions Queue (tier matrix; whether Business means multi-staff; when tiers switch on) and a sequencing row (proposed step 5, after polish + mobile). Entitlement enforcement added to Security review #2's scope.
 - **2026-07-15** — Document created at founder direction: workstreams 0/Q/M/U/X/F defined; Phase 1 backlog P2-1…P2-11 tiered into Workstream F; security posture baselined (no RLS, no helmet/rate-limiting — scheduled into review #1); code baseline verified (typecheck clean, zero audit vulnerabilities, all work committed). Phase 1 Weeks 7–8 still run under `ROADMAP.md` first.

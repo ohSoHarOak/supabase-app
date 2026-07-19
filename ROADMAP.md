@@ -301,8 +301,8 @@ Each week has two lists:
 - [x] Recruit a friend or family member to test the owner portal cold, without your help
 - [x] Collect their feedback and any points of confusion
 - [x] Run the full end-to-end integration test yourself
-- [ ] Confirm the production deployment is accessible and stable
-- [ ] Prepare and deliver the 8-week demo — **recommended method: live web app on your laptop, two devices, with a recorded backup.** See "Demo Day — Delivery Plan" below.
+- [x] Confirm the production deployment is accessible and stable
+- [x] Prepare and deliver the 8-week demo — **recommended method: live web app on your laptop, two devices, with a recorded backup.** See "Demo Day — Delivery Plan" below.
 
 ---
 
@@ -436,6 +436,7 @@ Professionals can set up their own payment processing instead of everything runn
   1. **Each professional gets paid into their own account, still via Stripe** — that's **Stripe Connect**, already planned as the Phase 3 marketplace seam. The `PaymentService` was built so Connect slots in without changing callers. No constraint change needed. **Recommended path.**
   2. **Support non-Stripe processors** (Square, PayPal, etc.) — a much bigger lift: a payment-provider adapter interface (like `IeSignProvider`), per-processor webhook/idempotency handling, and a deliberate amendment to the locked constraint in `CLAUDE.md`. Founder decision required before any build.
 - Do not start either until Phase 1 is done; when picked up, do Connect first and only revisit multi-processor if real users demand it.
+- **Pulled forward 2026-07-19 into Workstream M (`PHASE_2_ROADMAP.md`) as "M-Connect".** Path 1 (Stripe Connect) chosen; **Express** account type decided, and the connected account must be disconnectable/changeable on relationship termination (P2-15 seam). Motivated by an onboarding gap: professionals have no way to set up getting paid, so all money currently routes to the platform account. Multi-processor (path 2) stays parked.
 
 ### P2-7: Branded invoices — logo + business name
 Owner can add their logo and business name so invoices look like *their* business (founder request 2026-07-14).
@@ -449,6 +450,7 @@ When collecting payment in person, the payment should happen inside the app rath
 - Stripe does support this — **Stripe Terminal / Tap to Pay on iPhone & Android** — but only through native mobile SDKs. Phase 1 is a web app, so true tap-to-pay is a mobile-app-sized feature (same bucket as P2-2's GPS tracking).
 - Web-feasible interim options for the in-person moment: (a) open the existing Stripe Checkout **embedded inside the app** and hand the phone to the client, or (b) show a **QR code** the client scans to pay on their own phone immediately. Either is a modest extension of the Week 5 checkout flow.
 - Founder decisions when picked up: interim option (a)/(b) now vs. waiting for a native app, and whether a card-present reader (Stripe's hardware) is worth it before phones-only tap-to-pay.
+- **Pulled forward 2026-07-19 into Workstream M (`PHASE_2_ROADMAP.md`) as "M2 — Tap-to-Pay (Android)".** Native Tap-to-Pay on Android (Stripe Terminal, NFC + Android 11+ device) is in scope for the first Android build so it can be tested; iPhone Tap-to-Pay rides with the Phase 3 iOS port. Routes to the walker's Connect account once M-Connect lands (platform account for founder-only testing before then).
 
 ### P2-9: Record payments taken outside Stripe (cash, check, Venmo/Zelle)
 Real walkers get handed cash and Venmo constantly, but today the only way an invoice becomes `paid` is through Stripe — there is no "mark as paid" for money collected outside the app, so those invoices sit "awaiting payment" forever (or get voided, losing the revenue record).
