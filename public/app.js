@@ -309,8 +309,8 @@
         <a class="brand" href="#/today">${PAW} PetPro Connect</a>
         <nav class="app-nav">
           ${tab('today', 'Today')}
-          ${tab('clients', 'Clients')}
           ${tab('schedule', 'Schedule')}
+          ${tab('clients', 'Clients')}
           ${tab('messages', 'Messages')}
           ${tab('profile', 'Profile')}
           <a href="#/login" onclick="window.petproLogout(); return false;">Log out</a>
@@ -804,14 +804,14 @@
         <div class="card fieldset" style="margin-top:14px">
           <div class="form-grid">
             <div><label for="c-name">Full name</label><input id="c-name" required placeholder="e.g. Dana Whitfield" /></div>
-            <div><label for="c-phone">Phone</label><input id="c-phone" data-phone placeholder="(555)000-0000" /></div>
-            <div><label for="c-email">Email</label><input id="c-email" type="email" placeholder="name@example.com" /></div>
+            <div><label for="c-phone">Phone</label><input id="c-phone" data-phone required placeholder="(555)000-0000" /></div>
+            <div><label for="c-email">Email</label><input id="c-email" type="email" required placeholder="name@example.com" /></div>
             <div><label for="c-status">Status</label>
-              <select id="c-status">
+              <select id="c-status" required>
                 <option value="prospect">Pending (until first contract is signed)</option>
                 <option value="active">Active</option>
               </select></div>
-            <div class="full"><label for="c-address">Address</label><input id="c-address" placeholder="Street, city, state" /></div>
+            <div class="full"><label for="c-address">Address</label><input id="c-address" required placeholder="Street, city, state" /></div>
             <div><label for="c-ecname">Emergency contact</label><input id="c-ecname" placeholder="Name" /></div>
             <div><label for="c-ecphone">Emergency phone</label><input id="c-ecphone" data-phone placeholder="(555)000-0000" /></div>
             <div><label for="c-window">Cancellation notice <span class="hint">hours</span></label><input id="c-window" type="number" min="0" value="24" class="num" /></div>
@@ -981,7 +981,9 @@
     // Tester feedback 2026-07-18: once a client has pets (or invoices), the
     // add-forms collapse behind a ＋ button so the profile reads as a record,
     // not a wall of empty forms.
-    const petFormOpen = client.pets.length === 0 || Boolean(opts.addpet);
+    // Stays collapsed even with no pets yet — it only opens when the walker
+    // asks for it, or during step 2 of new-client setup (?addpet=1).
+    const petFormOpen = Boolean(opts.addpet);
     const invFormOpen = invoices.length === 0;
 
     appEl.innerHTML = header('clients') + `
@@ -1038,24 +1040,24 @@
 
         <div class="eyebrow">Pets</div>
         <div class="pet-grid">${petCards.join('')}</div>
-        ${client.pets.length === 0 ? '<div class="card empty">No pets yet — add the first one below.</div>' : ''}
+        ${client.pets.length === 0 ? `<div class="card empty">No pets yet — add the first one ${petFormOpen ? 'below' : 'with the button below'}.</div>` : ''}
 
         ${petFormOpen ? '' : `
         <div class="row-actions" style="margin-top:10px" id="addpet-toggle-row">
           <div class="spacer"></div>
-          <button class="btn btn-ghost" id="addpet-toggle">＋ Add another pet</button>
+          <button class="btn btn-ghost" id="addpet-toggle">＋ Add ${client.pets.length === 0 ? 'a' : 'another'} pet</button>
         </div>`}
         <div class="card fieldset" style="margin-top:12px" id="addpet-card" ${petFormOpen ? '' : 'hidden'}>
           <strong style="font-size:14px">Add a pet</strong>
           <form id="pet-form"><div class="form-grid">
             <div><label for="p-name">Name</label><input id="p-name" required placeholder="e.g. Peanut" /></div>
-            <div><label for="p-species">Species</label><select id="p-species">
+            <div><label for="p-species">Species</label><select id="p-species" required>
               ${Object.entries(SPECIES).map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}
             </select></div>
-            <div><label for="p-breed">Breed</label><input id="p-breed" placeholder="e.g. Beagle" /></div>
-            <div><label for="p-weight">Weight <span class="hint">lb</span></label><input id="p-weight" type="number" min="1" max="500" step="0.1" class="num" /></div>
+            <div><label for="p-breed">Breed</label><input id="p-breed" required placeholder="e.g. Beagle" /></div>
+            <div><label for="p-weight">Weight <span class="hint">lb</span></label><input id="p-weight" type="number" required min="1" max="500" step="0.1" class="num" /></div>
             <div><label for="p-vet">Emergency vet</label><input id="p-vet" placeholder="Clinic, phone" /></div>
-            <div class="full"><label for="p-behavior">Behavior notes</label><input id="p-behavior" placeholder="e.g. pulls on leash, reactive to bikes" /></div>
+            <div class="full"><label for="p-behavior">Behavior notes</label><textarea id="p-behavior" rows="3" required placeholder="e.g. pulls on leash, reactive to bikes"></textarea></div>
           </div>
           <div class="form-foot" style="margin-top:0">
             <div class="spacer"></div>
@@ -1234,7 +1236,7 @@
             <div><label for="pe-breed-${p.id}">Breed</label><input id="pe-breed-${p.id}" value="${esc(p.breed ?? '')}" placeholder="e.g. Beagle" /></div>
             <div><label for="pe-weight-${p.id}">Weight <span class="hint">lb</span></label><input id="pe-weight-${p.id}" type="number" min="1" max="500" step="0.1" class="num" value="${esc(p.weight_lb ?? '')}" /></div>
             <div><label for="pe-vet-${p.id}">Emergency vet</label><input id="pe-vet-${p.id}" value="${esc(p.emergency_vet ?? '')}" placeholder="Clinic, phone" /></div>
-            <div class="full"><label for="pe-behavior-${p.id}">Behavior notes</label><input id="pe-behavior-${p.id}" value="${esc(p.behavior_notes ?? '')}" placeholder="e.g. pulls on leash, reactive to bikes" /></div>
+            <div class="full"><label for="pe-behavior-${p.id}">Behavior notes</label><textarea id="pe-behavior-${p.id}" rows="3" placeholder="e.g. pulls on leash, reactive to bikes">${esc(p.behavior_notes ?? '')}</textarea></div>
           </div>
           <div class="form-foot" style="margin-top:0">
             <button class="btn btn-ghost" type="button" data-cancel-pet-edit>Cancel</button>
@@ -1676,17 +1678,17 @@
                 </label>`).join('')}
             </div></div>
           <div><label for="ks-type-${n}">Type</label>
-            <select id="ks-type-${n}" data-f="type">${typeOptionsHtml()}</select></div>
+            <select id="ks-type-${n}" data-f="type" required>${typeOptionsHtml()}</select></div>
           <div><label for="ks-price-${n}">Price</label>
             <input id="ks-price-${n}" data-f="price" required class="money" placeholder="$30.00" /></div>
-          <div><label for="ks-sessions-${n}"># of sessions <span class="hint">— for packages, optional</span></label>
-            <input id="ks-sessions-${n}" data-f="sessions" type="number" min="1" max="500" class="num" placeholder="e.g. 10" /></div>
+          <div><label for="ks-sessions-${n}"># of sessions</label>
+            <input id="ks-sessions-${n}" data-f="sessions" type="number" required min="1" max="500" class="num" placeholder="e.g. 10" /></div>
           <div><label for="ks-cadence-${n}">Billed</label>
-            <select id="ks-cadence-${n}" data-f="cadence">${cadenceOptionsHtml(offeredTypes()[0])}</select></div>
+            <select id="ks-cadence-${n}" data-f="cadence" required>${cadenceOptionsHtml(offeredTypes()[0])}</select></div>
           <div><label for="ks-duration-${n}">Duration <span class="hint">minutes</span></label>
-            <input id="ks-duration-${n}" data-f="duration" type="number" min="5" max="1440" value="30" class="num" /></div>
+            <input id="ks-duration-${n}" data-f="duration" type="number" required min="5" max="1440" value="30" class="num" /></div>
           <div class="full"><label for="ks-notes-${n}">Notes</label>
-            <textarea id="ks-notes-${n}" data-f="notes" rows="2" placeholder="Anything specific about this service…"></textarea></div>
+            <textarea id="ks-notes-${n}" data-f="notes" rows="2" required placeholder="Anything specific about this service…"></textarea></div>
         </div>`;
       servicesEl.appendChild(block);
       wireTypeToCadence(`ks-type-${n}`, `ks-cadence-${n}`);
@@ -2331,9 +2333,9 @@
             <div><label for="pf-name">Your full name</label>
               <input id="pf-name" required value="${esc(profile?.full_name ?? '')}" /></div>
             <div><label for="pf-biz">Business name</label>
-              <input id="pf-biz" value="${esc(profile?.business_name ?? '')}" placeholder="e.g. Sunny Trails Walking Co." /></div>
+              <input id="pf-biz" required value="${esc(profile?.business_name ?? '')}" placeholder="e.g. Sunny Trails Walking Co." /></div>
             <div><label for="pf-phone">Your phone</label>
-              <input id="pf-phone" data-phone value="${esc(fmtPhone(account?.phone ?? ''))}" placeholder="(555)000-0000" />
+              <input id="pf-phone" data-phone required value="${esc(fmtPhone(account?.phone ?? ''))}" placeholder="(555)000-0000" />
               <p class="preview-note" style="margin-top:6px">Shown to your clients in their portal so they can reach you.</p></div>
           </div>
           <div>
@@ -2343,6 +2345,14 @@
                 <label class="flag"><input type="checkbox" data-offer="${v}" ${offered.has(v) ? 'checked' : ''} /> ${l}</label>`).join('')}
             </div>
             <p class="preview-note" style="margin-top:10px">Only the types you check appear when adding a service, so a dog walker never wades through Grooming or Boarding. Leave everything unchecked to keep all types available.</p>
+          </div>
+          <!-- About me: stored in professional_profiles.bio, which the API
+               already accepted — no schema or route change needed. -->
+          <div>
+            <label for="pf-bio">About me</label>
+            <textarea id="pf-bio" rows="5" maxlength="2000"
+              placeholder="How long you've been walking dogs, what you specialise in, anything a new client would want to know…">${esc(profile?.bio ?? '')}</textarea>
+            <p class="preview-note" style="margin-top:6px">Shown to your clients in their portal.</p>
           </div>
           <!-- R-11: the general default D5 asked for; each agreement can
                override it when it's generated. -->
@@ -2389,6 +2399,7 @@
             full_name: document.getElementById('pf-name').value.trim(),
             business_name: document.getElementById('pf-biz').value.trim() || null,
             phone: fmtPhone(document.getElementById('pf-phone').value) || null,
+            bio: document.getElementById('pf-bio').value.trim() || null,
             offered_service_types: offeredNow,
             default_renewal_notice_days: Number(document.getElementById('pf-notice').value) || 0,
           });
