@@ -811,6 +811,86 @@ async function main(): Promise<void> {
     pass('13. Contract term: renewal warns both parties inside the window, stays silent outside it, never double-queues; term editable once signed while the document still 409s');
   }
 
+  // --- 14. Sending an invoice to an absent owner (R-17) --------------------
+  // Founder finding during the Week 5 test-card run: with the owner not
+  // present, there was no way to get them the invoice at all. This asserts
+  // the send, and then probes the new PUBLIC pay surface for over-reach —
+  // a login-free endpoint is worth testing like one.
+  {
+    const payClient = (
+      await ok('POST', '/api/clients', { full_name: `Absent ${stamp}`, email: `absent${stamp}@example.com` }, '14. Client')
+    ).data;
+    const payInvoice = (
+      await ok('POST', '/api/invoices', {
+        client_id: payClient.id, amount_cents: 9000, description: 'August walks',
+      }, '14. Invoice')
+    ).data;
+    assert(
+      payInvoice.pay_token === null && payInvoice.sent_at === null,
+      '14. Unsent invoice',
+      'A freshly created invoice must have no pay link and no sent_at — sending is explicit (D7)'
+    );
+
+    const sent = (await ok('POST', `/api/invoices/${payInvoice.id}/send`, {}, '14. Send')).data;
+    assert(
+      typeof sent.pay_token === 'string' && sent.pay_token.length >= 40 && !!sent.sent_at,
+      '14. Send',
+      `Sending should mint a high-entropy pay token and stamp sent_at; got token=${sent.pay_token}, sent_at=${sent.sent_at}`
+    );
+
+    // Re-sending must REUSE the token, or a link already sitting in the
+    // client's inbox stops working the moment the walker chases them.
+    const resent = (await ok('POST', `/api/invoices/${payInvoice.id}/send`, {}, '14. Resend')).data;
+    assert(
+      resent.pay_token === sent.pay_token,
+      '14. Resend',
+      'Re-sending must reuse the existing pay token, not mint a new one'
+    );
+
+    // The public surface, called with NO Authorization header.
+    const publicRes = await fetch(`${baseUrl}/api/pay/${sent.pay_token}`);
+    const publicJson = (await publicRes.json()) as any;
+    assert(
+      publicRes.status === 200 && publicJson.ok,
+      '14. Public pay lookup',
+      `The pay link must work without any login; got ${publicRes.status}`
+    );
+    const exposed = Object.keys(publicJson.data.invoice);
+    assert(
+      !exposed.includes('client_id') && !exposed.includes('professional_account_id') && !exposed.includes('pay_token'),
+      '14. Pay link scope',
+      `The pay link must not expose the client, the professional, or its own token; got ${exposed.join(', ')}`
+    );
+
+    // The token is NOT a general-purpose key.
+    const wrongDoor = await fetch(`${baseUrl}/api/clients`, {
+      headers: { Authorization: `Bearer ${sent.pay_token}` },
+    });
+    assert(
+      wrongDoor.status === 401,
+      '14. Pay token is not a session',
+      `A pay token used as a bearer token must be rejected; got ${wrongDoor.status}`
+    );
+
+    const bogus = await fetch(`${baseUrl}/api/pay/notarealtokenatallnotarealtoken1234`);
+    assert(bogus.status === 404, '14. Bogus token', `An unknown token must 404; got ${bogus.status}`);
+
+    // A client with no email can't be sent to — refuse clearly rather than
+    // half-sending and leaving the walker thinking it went out.
+    const noEmail = (await ok('POST', '/api/clients', { full_name: `NoEmail ${stamp}` }, '14. Client 2')).data;
+    const noEmailInvoice = (
+      await ok('POST', '/api/invoices', { client_id: noEmail.id, amount_cents: 1000, description: 'Walk' }, '14. Invoice 2')
+    ).data;
+    const refused = await api('POST', `/api/invoices/${noEmailInvoice.id}/send`, {});
+    assert(
+      refused.status === 422,
+      '14. No email',
+      `Sending to a client with no email must 422 with a clear message; got ${refused.status}`
+    );
+
+    pass('14. Invoice sending: explicit send mints a scoped pay token (resend reuses it), the public pay link works with no login and exposes nothing beyond that one invoice, the token is not a session, and a client with no email is refused');
+  }
+
   console.log(`\n\x1b[32m${passed} steps passed — E2E TEST PASSED against ${baseUrl}\x1b[0m`);
 }
 

@@ -144,6 +144,19 @@ invoicesRouter.post('/:id/checkout', async (req, res, next) => {
   }
 });
 
+/** POST /api/invoices/:id/send — email the invoice to the client (R-17).
+ *  Explicit rather than automatic on creation: walks auto-invoice on
+ *  completion, so auto-sending would email a daily client every day. */
+invoicesRouter.post('/:id/send', async (req, res, next) => {
+  try {
+    const origin = `${req.protocol}://${req.get('host')}`;
+    const invoice = await paymentService.sendInvoice(req.account!.id, req.params.id, origin);
+    res.json({ ok: true, data: invoice });
+  } catch (err) {
+    next(err);
+  }
+});
+
 /** POST /api/invoices/:id/sync — reconcile payment status straight from Stripe. */
 invoicesRouter.post('/:id/sync', async (req, res, next) => {
   try {
@@ -179,6 +192,43 @@ stripeWebhookRouter.post('/', raw({ type: 'application/json' }), async (req, res
       req.headers['stripe-signature'] as string | undefined
     );
     res.json({ ok: true, data: { received: true, ...result } });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ------------------------------------------------------ public pay link ----
+
+/**
+ * R-17 / 021: the login-free "view and pay this invoice" surface.
+ *
+ * ⚠️ This router is deliberately UNAUTHENTICATED — that is the whole point,
+ * since the recipient has no account and requiring one would put Supabase's
+ * ~2-magic-links-per-hour ceiling in front of paying a bill. Authenticity
+ * comes from the 256-bit token in the URL, exactly as the Stripe webhook
+ * above takes its authenticity from a signature rather than a session.
+ *
+ * The token authorises TWO things and nothing else: reading one invoice's
+ * amount/description/status, and starting a Stripe Checkout for it. The
+ * service layer returns a narrow projection rather than the invoice row, so
+ * a forwarded link cannot leak the client's details or any other invoice.
+ */
+export const payLinkRouter = Router();
+
+payLinkRouter.get('/:token', async (req, res, next) => {
+  try {
+    const data = await paymentService.invoiceByPayToken(req.params.token);
+    res.json({ ok: true, data });
+  } catch (err) {
+    next(err);
+  }
+});
+
+payLinkRouter.post('/:token/checkout', async (req, res, next) => {
+  try {
+    const origin = `${req.protocol}://${req.get('host')}`;
+    const data = await paymentService.checkoutByPayToken(req.params.token, origin);
+    res.json({ ok: true, data });
   } catch (err) {
     next(err);
   }

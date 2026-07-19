@@ -307,6 +307,12 @@ export interface Invoice {
   /** Visits this invoice prepays for `service_id` (019). NULL = not a
    *  prepaid package — which is every ordinary one-off invoice. */
   sessions_purchased: number | null;
+  /** Bearer token for the public pay page (021). Grants view + pay on THIS
+   *  invoice only. NULL until the invoice is first sent. Never expose it
+   *  anywhere except the emailed link. */
+  pay_token: string | null;
+  /** When the invoice was last emailed to the client (021). */
+  sent_at: string | null;
   created_at: string;
   updated_at: string;
 }

@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import Stripe from 'stripe';
 import { env } from '../config/env';
 import { supabaseAdmin } from '../config/supabase';
@@ -338,6 +339,123 @@ export class PaymentService {
     return data as Invoice;
   }
 
+  // ------------------------------------------------- sending an invoice ----
+
+  /**
+   * Send an invoice to the client (R-17, decisions D6/D7).
+   *
+   * Mints the public pay token on first send and reuses it afterwards, so a
+   * re-send doesn't invalidate a link the client may already be looking at.
+   * Sending is explicit rather than automatic on creation: walks auto-invoice
+   * on completion, so "always" would email a daily client daily.
+   */
+  async sendInvoice(
+    professionalAccountId: string,
+    invoiceId: string,
+    origin: string
+  ): Promise<Invoice> {
+    const invoice = await this.getInvoice(professionalAccountId, invoiceId);
+    if (invoice.status === 'paid') {
+      throw new ServiceError('invoice_already_paid', 'This invoice is already paid.', 409);
+    }
+    if (invoice.status === 'void') {
+      throw new ServiceError('invoice_void', 'A voided invoice cannot be sent.', 409);
+    }
+
+    const client = await clientService.getClient(professionalAccountId, invoice.client_id);
+    if (!client.email) {
+      throw new ServiceError(
+        'client_has_no_email',
+        `${client.full_name} has no email address on file — add one on their profile first.`,
+        422
+      );
+    }
+
+    // 32 bytes = 256 bits. Guessing is not a threat model; the token exists
+    // so the client can pay without an account.
+    const payToken = invoice.pay_token ?? randomBytes(32).toString('base64url');
+
+    const { data, error } = await supabaseAdmin
+      .from('invoices')
+      .update({
+        pay_token: payToken,
+        sent_at: new Date().toISOString(),
+        // A draft becomes a real, payable bill the moment it's sent.
+        status: invoice.status === 'draft' ? 'open' : invoice.status,
+      })
+      .eq('id', invoiceId)
+      .select()
+      .single();
+    if (error) throw new ServiceError('invoice_send_failed', error.message, 500);
+    const sent = data as Invoice;
+
+    await notificationService.enqueue({
+      accountId: professionalAccountId,
+      category: 'payment',
+      template: 'invoice_sent',
+      data: { invoice_id: sent.id, origin },
+    });
+    return sent;
+  }
+
+  /**
+   * Public lookup for the pay page. Takes ONLY the token — there is no
+   * account here by design — and deliberately returns a narrow projection
+   * rather than the invoice row, so a forwarded link can't leak the client's
+   * details, their pets, or any other invoice.
+   */
+  async invoiceByPayToken(token: string): Promise<{
+    invoice: Pick<Invoice, 'id' | 'amount_cents' | 'currency' | 'description' | 'status' | 'due_date' | 'paid_at' | 'created_at'>;
+    business_name: string;
+  }> {
+    if (!token || token.length < 20) {
+      throw new ServiceError('pay_link_invalid', 'That payment link is not valid.', 404);
+    }
+    const { data, error } = await supabaseAdmin
+      .from('invoices')
+      .select('id, amount_cents, currency, description, status, due_date, paid_at, created_at, professional_account_id')
+      .eq('pay_token', token)
+      .maybeSingle();
+    if (error) throw new ServiceError('pay_link_lookup_failed', error.message, 500);
+    if (!data) throw new ServiceError('pay_link_invalid', 'That payment link is not valid.', 404);
+
+    const { data: profile } = await supabaseAdmin
+      .from('professional_profiles')
+      .select('business_name, full_name')
+      .eq('account_id', data.professional_account_id)
+      .maybeSingle();
+
+    const { professional_account_id: _hidden, ...invoice } = data;
+    return {
+      invoice: invoice as Invoice,
+      business_name: (profile?.business_name as string) || (profile?.full_name as string) || 'Your pet care professional',
+    };
+  }
+
+  /** Start a Stripe Checkout from the public pay page. */
+  async checkoutByPayToken(token: string, origin: string): Promise<{ checkout_url: string }> {
+    const { data, error } = await supabaseAdmin
+      .from('invoices')
+      .select('id, professional_account_id, status')
+      .eq('pay_token', token)
+      .maybeSingle();
+    if (error) throw new ServiceError('pay_link_lookup_failed', error.message, 500);
+    if (!data) throw new ServiceError('pay_link_invalid', 'That payment link is not valid.', 404);
+    if (data.status === 'paid') {
+      throw new ServiceError('invoice_already_paid', 'This invoice has already been paid.', 409);
+    }
+    if (data.status === 'void') {
+      throw new ServiceError('invoice_void', 'This invoice was cancelled.', 409);
+    }
+    const { checkout_url } = await this.createCheckoutSession(
+      data.professional_account_id as string,
+      data.id as string,
+      origin,
+      { payLinkToken: token }
+    );
+    return { checkout_url };
+  }
+
   async voidInvoice(professionalAccountId: string, invoiceId: string): Promise<Invoice> {
     const invoice = await this.getInvoice(professionalAccountId, invoiceId);
     if (invoice.status === 'paid') {
@@ -375,7 +493,7 @@ export class PaymentService {
     professionalAccountId: string,
     invoiceId: string,
     origin: string,
-    options: { portal?: boolean } = {}
+    options: { portal?: boolean; payLinkToken?: string } = {}
   ): Promise<{ invoice: Invoice; checkout_url: string }> {
     const invoice = await this.getInvoice(professionalAccountId, invoiceId);
     if (invoice.status === 'paid') {
@@ -400,10 +518,15 @@ export class PaymentService {
       ],
       metadata: { invoice_id: invoice.id },
       payment_intent_data: { metadata: { invoice_id: invoice.id } },
-        // Stripe sends the payer back to whichever app started the checkout —
-        // the professional UI or the Week 8 owner portal.
-        success_url: `${origin}${options.portal ? '/portal' : '/'}#/invoice/${invoice.id}/return`,
-        cancel_url: `${origin}${options.portal ? '/portal' : '/'}#/invoice/${invoice.id}/return?canceled=1`,
+        // Stripe sends the payer back to whichever surface started the
+        // checkout — the professional UI, the owner portal, or (021) the
+        // public pay link, which has no login to return them to.
+        success_url: options.payLinkToken
+          ? `${origin}/pay?t=${encodeURIComponent(options.payLinkToken)}&paid=1`
+          : `${origin}${options.portal ? '/portal' : '/'}#/invoice/${invoice.id}/return`,
+        cancel_url: options.payLinkToken
+          ? `${origin}/pay?t=${encodeURIComponent(options.payLinkToken)}&canceled=1`
+          : `${origin}${options.portal ? '/portal' : '/'}#/invoice/${invoice.id}/return?canceled=1`,
       })
     );
     if (!session.url) throw new ServiceError('checkout_failed', 'Stripe returned no checkout URL.', 500);

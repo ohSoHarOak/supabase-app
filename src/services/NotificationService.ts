@@ -26,6 +26,8 @@ export type NotificationTemplate =
   | 'appointment_reminder'
   | 'portal_invite'
   | 'message_received'
+  // R-17: the invoice itself, sent to a client who isn't standing there.
+  | 'invoice_sent'
   // R-11/R-16: a term is ending. Two recipients, mirroring how payment
   // emails already go both ways — the walker needs to act, the client
   // needs to not be surprised.
@@ -311,6 +313,8 @@ export class NotificationService {
         return this.renderContractReady(payload.contract_id as string);
       case 'contract_signed':
         return this.renderContractSigned(payload.contract_id as string);
+      case 'invoice_sent':
+        return this.renderInvoiceSent(payload.invoice_id as string, payload.origin as string);
       case 'payment_receipt':
         return this.renderPaymentReceipt(payload.invoice_id as string);
       case 'payment_received':
@@ -481,6 +485,47 @@ export class NotificationService {
       .eq('account_id', professionalAccountId)
       .maybeSingle();
     return (data?.default_renewal_notice_days as number) ?? 30;
+  }
+
+  /**
+   * R-17: the invoice, emailed to a client who isn't standing next to the
+   * walker. Carries the login-free pay link (021).
+   *
+   * Rendered at send time like everything else, so an invoice paid, voided,
+   * or amended between queueing and sending cancels itself rather than
+   * chasing someone for money they already handed over.
+   */
+  private async renderInvoiceSent(invoiceId: string, origin: string): Promise<RenderResult> {
+    const ctx = await this.invoiceContext(invoiceId);
+    if ('cancel' in ctx) return { kind: 'cancel', reason: ctx.cancel };
+    const { invoice, client, businessName } = ctx;
+    if (!client.email) return { kind: 'cancel', reason: 'client has no email on file' };
+    if (invoice.status === 'paid') return { kind: 'cancel', reason: 'invoice was paid before the email went out' };
+    if (invoice.status === 'void') return { kind: 'cancel', reason: 'invoice was cancelled before the email went out' };
+    if (!invoice.pay_token) return { kind: 'cancel', reason: 'invoice has no pay link' };
+
+    const payUrl = `${origin}/pay?t=${encodeURIComponent(invoice.pay_token)}`;
+    return {
+      kind: 'send',
+      email: {
+        to: client.email,
+        subject: `${fmtMoney(invoice.amount_cents)} due — ${businessName}`,
+        html: emailLayout(
+          businessName,
+          `<p>Hi ${escapeHtml(client.full_name)},</p>
+           <p>Here's your invoice from ${escapeHtml(businessName)}.</p>
+           <table style="border-collapse:collapse;width:100%;font-size:0.95rem;margin:16px 0">
+             <tr><td style="padding:6px 0;color:#64748b">For</td><td style="padding:6px 0">${escapeHtml(invoice.description ?? 'Pet care services')}</td></tr>
+             <tr><td style="padding:6px 0;color:#64748b">Amount</td><td style="padding:6px 0"><strong>${fmtMoney(invoice.amount_cents)}</strong></td></tr>
+             ${invoice.due_date ? `<tr><td style="padding:6px 0;color:#64748b">Due</td><td style="padding:6px 0">${escapeHtml(fmtDateOnly(invoice.due_date))}</td></tr>` : ''}
+           </table>
+           <p style="margin:24px 0">
+             <a href="${escapeHtml(payUrl)}" style="background:#2B7192;color:#fff;padding:12px 22px;border-radius:8px;text-decoration:none;display:inline-block">Pay ${fmtMoney(invoice.amount_cents)}</a>
+           </p>
+           <p style="color:#64748b;font-size:0.9rem">No account or password needed — the link opens a secure payment page. Questions? Just reply to this email.</p>`
+        ),
+      },
+    };
   }
 
   private async renderPaymentReceipt(invoiceId: string): Promise<RenderResult> {

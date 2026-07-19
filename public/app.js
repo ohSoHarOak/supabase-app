@@ -962,12 +962,18 @@
           <div class="title">${esc(fmtMoney(inv.amount_cents))} — ${esc(inv.description || 'Services')}</div>
           <div class="meta">${inv.status === 'paid'
             ? `Paid ${esc(fmtDate(inv.paid_at))}`
-            : `Created ${esc(fmtDate(inv.created_at))}${inv.due_date ? ` · due ${esc(fmtDate(inv.due_date))}` : ''}`}</div>
+            : `Created ${esc(fmtDate(inv.created_at))}${inv.due_date ? ` · due ${esc(fmtDate(inv.due_date))}` : ''}${
+                inv.sent_at ? ` · emailed ${esc(fmtDate(inv.sent_at))}` : ''
+              }`}</div>
         </div>
+        ${inv.sent_at && inv.status !== 'paid' ? '<span class="pill pill-draft">sent</span>' : ''}
         ${invoicePill[inv.status] ?? ''}
         <div class="row-actions">
           ${inv.status === 'open' || inv.status === 'draft' ? `
             <button class="btn btn-ghost" data-void-invoice="${inv.id}">Void</button>
+            <!-- R-17: "Collect payment" only works with the client standing
+                 there; this is how an absent owner gets the bill. -->
+            <button class="btn btn-ghost" data-send-invoice="${inv.id}">${inv.sent_at ? 'Resend' : '✉ Send to client'}</button>
             <button class="btn btn-quiet" data-checkout-invoice="${inv.id}">Collect payment</button>` : ''}
         </div>
       </div>`);
@@ -1476,6 +1482,19 @@
             // Off to Stripe's hosted payment page; it redirects back to
             // #/invoice/:id/return when done.
             window.location.href = checkout_url;
+          } catch (err) {
+            toast(err.message);
+          }
+        });
+    });
+    // R-17: email the invoice with its login-free pay link.
+    document.querySelectorAll('[data-send-invoice]').forEach((btn) => {
+      btn.onclick = () =>
+        withBusy(btn, async () => {
+          try {
+            await api('POST', `/api/invoices/${btn.dataset.sendInvoice}/send`);
+            toast(`Invoice emailed to ${client.full_name.split(' ')[0]} — they can pay from the link without signing in.`, 'ok');
+            renderClient(clientId);
           } catch (err) {
             toast(err.message);
           }

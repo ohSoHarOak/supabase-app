@@ -7,6 +7,7 @@ import {
   billableItemsRouter,
   eventsRouter,
   invoicesRouter,
+  payLinkRouter,
   stripeWebhookRouter,
 } from './routes/billing';
 import { appointmentsRouter, servicesRouter } from './routes/scheduling';
@@ -37,6 +38,11 @@ export function createServer(): express.Express {
     res.sendFile(path.join(process.cwd(), 'public', 'portal.html'));
   });
 
+  // R-17: the public pay page. No login — the token in ?t= is the authority.
+  app.get('/pay', (_req, res) => {
+    res.sendFile(path.join(process.cwd(), 'public', 'pay.html'));
+  });
+
   app.get('/health', (_req, res) => {
     res.json({ ok: true, data: { service: 'petpro-connect', status: 'healthy' } });
   });
@@ -59,6 +65,8 @@ export function createServer(): express.Express {
   app.use('/api/appointments', appointmentsRouter);
   app.use('/api/billable-items', billableItemsRouter);
   app.use('/api/invoices', invoicesRouter);
+  // Unauthenticated by design — see the note on payLinkRouter.
+  app.use('/api/pay', payLinkRouter);
   app.use('/api/events', eventsRouter);
   app.use('/api/threads', threadsRouter);
   app.use('/api/messages', messagesRouter);
