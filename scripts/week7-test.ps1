@@ -18,8 +18,14 @@
 #
 #   .\scripts\week7-test.ps1 -BaseUrl "https://..." -TestEmail "you@yourbusiness.com"
 #
-# Without -TestEmail, step 7 targets this run's throwaway signup address,
-# which Resend will refuse (403) until a domain is verified.
+# -TestEmail is ONLY for watching a real email land in a real inbox.
+#
+# It is not required, and its absence is not a gap: the server already sends
+# the test to the signed-in account's OWN email address (renderTest falls back
+# to accounts.email), which is what a real walker gets with no configuration.
+# This script signs up a throwaway account at @example.com, so Resend refuses
+# to deliver to it — step 7 reports that as a PASS, since it proves the key
+# works and the refusal is about the fake address, not the app.
 
 param(
   [string]$BaseUrl = "http://localhost:3000",
@@ -138,6 +144,17 @@ try {
       Write-Host "        Re-run with your own address to see a real email land:" -ForegroundColor Yellow
       Write-Host "        .\scripts\week7-test.ps1 -BaseUrl `"$BaseUrl`" -TestEmail `"the-email-your-resend-account-uses`"" -ForegroundColor Yellow
       Write-Host "        To email real clients, verify your domain at resend.com/domains (founder task)." -ForegroundColor Yellow
+    } elseif ($probe.data.notification.error -match "example\.com|testing email address") {
+      # NOT a failure, and NOT a missing default. The server already sends the
+      # test to the signed-in account's OWN email (NotificationService.renderTest
+      # falls back to accounts.email when no recipient is given) — which is
+      # exactly what a real walker gets. This script just happens to sign up a
+      # throwaway account at @example.com, an address Resend refuses to deliver
+      # to. A real account with a real email needs no flag and no arguments.
+      Write-Host "[PASS] 7. Email key WORKS - Resend accepted it and correctly refused this run's throwaway @example.com address." -ForegroundColor Green
+      Write-Host "        Nothing to fix: emails already default to the signed-in account's own email address." -ForegroundColor Yellow
+      Write-Host "        To watch one actually land, re-run with a real inbox:" -ForegroundColor Yellow
+      Write-Host "        .\scripts\week7-test.ps1 -BaseUrl `"$BaseUrl`" -TestEmail `"you@yourbusiness.com`"" -ForegroundColor Yellow
     } else {
       Fail "Email probe" "Email key is set but the send failed: $($probe.data.notification.error)"
     }

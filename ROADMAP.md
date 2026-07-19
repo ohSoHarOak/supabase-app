@@ -687,9 +687,17 @@ Today: walker adds a client → **the owner is told nothing** (P2-13) → they m
 | `.\scripts\week4-test.ps1` | UI is served + API smoke test | None |
 | `.\scripts\week5-test.ps1` | Full Stripe payment loop, paid exactly once (8/8 green against Render 2026-07-16 — webhook recorded the payment with no polling running) | **Yes** — pays with test card `4242…` in the browser. Declined-card run (`4000 0000 0000 0002`) still outstanding — see Q-4 |
 | `.\scripts\week6-test.ps1` | Scheduling loop: service → recurring series → conflict 409 → complete → auto-invoice → series cancel | None |
-| `.\scripts\week7-test.ps1` | Messaging idempotency + draft sync, contract emails queued, signed-contract document, reminder lifecycle, live email-key probe | None (step 7 sends a real email once `RESEND_API_KEY` is set) |
+| `.\scripts\week7-test.ps1` | Messaging idempotency + draft sync, contract emails queued, signed-contract document, reminder lifecycle, live email-key probe | None. **`-TestEmail` is optional** — see the note below |
 
 ---
+
+**Who gets professional-facing emails (asked 2026-07-18, no build needed):** they already default to **the walker's own account email**, with no setup step. `NotificationService.renderTest` falls back to `accounts.email` when no recipient is given, and the two professional-facing templates — `payment_received` ("you got paid") and `contract_renewal_due_professional` — both resolve to the same column. Everything else is client-facing by design (`contract_ready`, `contract_signed`, `payment_receipt`, `invoice_sent`, `appointment_reminder`, `portal_invite`, `message_received` all go to `clients.email`).
+
+⚠️ **`week7-test.ps1`'s `-TestEmail` flag is a convenience, not a fix for a gap.** The script signs up a *throwaway account at `@example.com`*, so "default to the account's email" correctly resolves to an address Resend refuses to deliver to. That is the fake address being rejected, not the app misbehaving — step 7 now reports it as a PASS and says so, instead of failing and implying something was wrong (corrected 2026-07-18, after the founder reasonably asked why no note existed).
+
+⚠️ **Do not confuse the recipient with the sender.** `EMAIL_FROM` (Render env var, currently `info@eastwestoak.com`) is the **from** address, is **not** per-user, and **must stay on the Resend-verified domain** — pointing it anywhere else makes every send fail silently, which has already cost this project time twice.
+
+⚠️ **The one real gap, if you want it:** `professional_profiles` has **no email column**. The login email is the only address a walker has, so there is currently no way to log in as one address and receive business mail at another. Not built — say the word and it's a small migration plus a Profile field.
 
 ## Running Notes / Blockers Log
 
