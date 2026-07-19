@@ -33,6 +33,9 @@ export interface ProfessionalProfile {
   // Which service types this professional offers (014). Empty = no
   // preference yet — the UI shows every type until they choose.
   offered_service_types: ServiceType[];
+  /** Days before a contract's end_date to warn both parties (020). The
+   *  general default D5 asked for; each contract can override it. */
+  default_renewal_notice_days: number;
   created_at: string;
   updated_at: string;
 }
@@ -230,6 +233,11 @@ export interface Contract {
   signed_pdf_url: string | null;
   esign_envelope_id: string | null;
   signed_at: string | null;
+  /** Day the term ends (020). NULL = open-ended. A scheduling fact ABOUT the
+   *  agreement — never part of the immutable signed HTML. */
+  end_date: string | null;
+  /** Days before end_date to warn. NULL = the professional's default. */
+  renewal_notice_days: number | null;
   created_at: string;
   updated_at: string;
 }

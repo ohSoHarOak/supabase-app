@@ -721,6 +721,96 @@ async function main(): Promise<void> {
     pass('12. Prepaid visits: unpaid package credits nothing, paid package draws down (2 walks billed $0), the walk past it bills $30 again — exactly 2 invoices');
   }
 
+  // --- 13. Contract term + renewal notices (R-10/R-11/R-16) ----------------
+  // The failure modes here are both bad: never warning (the walker loses the
+  // client) and warning wrongly (the client is told their agreement is
+  // expiring when it isn't). This asserts the window in both directions, the
+  // no-duplicate rule, and that the term is editable while the DOCUMENT
+  // stays immutable — which is the whole hard constraint.
+  {
+    const ymd = (days: number) => new Date(Date.now() + days * 864e5).toISOString().slice(0, 10);
+    const termClient = (
+      await ok('POST', '/api/clients', { full_name: `Term ${stamp}`, email: `term${stamp}@example.com` }, '13. Client')
+    ).data;
+    const templates = (await ok('GET', '/api/contract-templates', undefined, '13. Templates')).data;
+
+    const signContract = async (endDate: string | null, label: string) => {
+      const gen = (
+        await ok('POST', '/api/contracts', {
+          template_id: templates[0].id,
+          client_id: termClient.id,
+          end_date: endDate,
+          renewal_notice_days: 30,
+          variables: { walk_type: 'Private walk', service_price: '$30.00', schedule: 'Weekdays' },
+        }, `13. Generate ${label}`)
+      ).data;
+      const contract = gen.contract ?? gen;
+      await ok('POST', `/api/contracts/${contract.id}/sign`, {
+        signer_name: 'Term Client',
+        signature_image:
+          'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+      }, `13. Sign ${label}`);
+      return contract;
+    };
+
+    const expiring = await signContract(ymd(10), 'expiring');
+    const farOff = await signContract(ymd(200), 'far-off');
+
+    const { queueDueRenewalNotices } = await import('../src/services/NotificationService');
+    const { supabaseAdmin } = await import('../src/config/supabase');
+    await queueDueRenewalNotices();
+
+    const renewalTemplatesFor = async (contractId: string) => {
+      const { data } = await supabaseAdmin
+        .from('notification_queue')
+        .select('payload')
+        .contains('payload', { contract_id: contractId });
+      return (data ?? [])
+        .map((r: any) => r.payload.template as string)
+        .filter((t) => t.startsWith('contract_renewal'))
+        .sort();
+    };
+
+    const expiringQueued = await renewalTemplatesFor(expiring.id);
+    assert(
+      expiringQueued.length === 2,
+      '13. Renewal queued',
+      `An agreement ending in 10 days (30-day notice) should warn BOTH parties; queued ${JSON.stringify(expiringQueued)}`
+    );
+    const farQueued = await renewalTemplatesFor(farOff.id);
+    assert(
+      farQueued.length === 0,
+      '13. Renewal window',
+      `An agreement ending in 200 days must not warn yet; queued ${JSON.stringify(farQueued)}`
+    );
+
+    // Re-running must not re-queue — the queue itself is the "already sent"
+    // record, so a host that reboots often can't spam a client.
+    await queueDueRenewalNotices();
+    const afterSecondPass = await renewalTemplatesFor(expiring.id);
+    assert(
+      afterSecondPass.length === 2,
+      '13. Renewal idempotency',
+      `A second pass must not re-queue; now ${JSON.stringify(afterSecondPass)}`
+    );
+
+    // The term is editable on a SIGNED agreement; the document is not.
+    const extended = await ok('PATCH', `/api/contracts/${expiring.id}`, { end_date: ymd(300) }, '13. Extend term');
+    assert(
+      extended.data.end_date === ymd(300),
+      '13. Term editable',
+      `Extending a signed agreement's term should succeed; got ${extended.data.end_date}`
+    );
+    const tamper = await api('PATCH', `/api/contracts/${expiring.id}`, { generated_html: '<p>tampered</p>' });
+    assert(
+      tamper.status === 409,
+      '13. Document still immutable',
+      `Editing a signed contract's HTML must still 409; got ${tamper.status}`
+    );
+
+    pass('13. Contract term: renewal warns both parties inside the window, stays silent outside it, never double-queues; term editable once signed while the document still 409s');
+  }
+
   console.log(`\n\x1b[32m${passed} steps passed — E2E TEST PASSED against ${baseUrl}\x1b[0m`);
 }
 

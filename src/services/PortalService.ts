@@ -228,7 +228,7 @@ export class PortalService {
         .limit(20),
       supabaseAdmin
         .from('contracts')
-        .select('id, client_id, status, created_at, signed_at, signer_name')
+        .select('id, client_id, status, created_at, signed_at, signer_name, end_date, renewal_notice_days')
         .in('client_id', ids)
         .order('created_at', { ascending: false }),
       supabaseAdmin

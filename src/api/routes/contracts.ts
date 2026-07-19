@@ -39,6 +39,9 @@ const generateSchema = z.object({
   service_id: z.string().uuid().nullish(),
   services: z.array(contractServiceSchema).max(20).optional(),
   variables: z.record(z.string(), z.string()).optional(),
+  // R-10/R-11: the term, and how far ahead to warn about its end.
+  end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'end_date must be YYYY-MM-DD.').nullish(),
+  renewal_notice_days: z.number().int().min(0).max(365).nullish(),
 });
 
 // Draft-stage edits only; 'signed' is deliberately absent — signing goes
@@ -47,6 +50,11 @@ const generateSchema = z.object({
 const updateContractSchema = z.object({
   generated_html: z.string().min(1).optional(),
   status: z.enum(['draft', 'sent', 'declined', 'voided']).optional(),
+  // R-10: the term is a fact ABOUT the agreement, not part of its text, so
+  // it stays adjustable after signing — pushing an end date back must not
+  // require re-signing, and it never touches the immutable generated_html.
+  end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'end_date must be YYYY-MM-DD.').nullish(),
+  renewal_notice_days: z.number().int().min(0).max(365).nullish(),
 });
 
 const signSchema = z.object({

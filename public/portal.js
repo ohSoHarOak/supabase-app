@@ -167,6 +167,22 @@
     };
     const firstName = (ov.clients[0]?.full_name || '').split(' ')[0];
 
+    // R-16: the owner is told before their agreement lapses, not after.
+    // Date-only maths, so a term ending today reads as today at any hour.
+    const daysUntil = (ymd) => {
+      const [y, m, d] = String(ymd).split('-').map(Number);
+      const today = new Date();
+      return Math.round(
+        (new Date(y, m - 1, d) - new Date(today.getFullYear(), today.getMonth(), today.getDate())) / 864e5
+      );
+    };
+    const signedContracts = ov.contracts.filter((k) => k.status === 'signed');
+    const expiringSoon = signedContracts.filter((k) => {
+      if (!k.end_date) return false;
+      const days = daysUntil(k.end_date);
+      return days >= 0 && days <= (k.renewal_notice_days ?? 30);
+    });
+
     // Cues: contracts awaiting signature, invoices awaiting payment.
     const unsigned = ov.contracts.filter((k) => k.status === 'draft' || k.status === 'sent');
     const openInvoices = ov.invoices.filter((inv) => inv.status === 'open' || inv.status === 'draft');
@@ -188,6 +204,20 @@
           </div>
           <button class="btn btn-primary" data-nav="#/contract/${k.id}">Review &amp; sign</button>
         </div>`),
+      // R-16: informational, not an action — renewing is the walker's move,
+      // so this deliberately offers "message them" rather than a button
+      // implying the owner can renew it themselves.
+      ...expiringSoon.map((k) => {
+        const days = daysUntil(k.end_date);
+        return `
+        <div class="card cue-card">
+          <div class="cue-text">
+            <div class="cue-title">Your agreement with ${esc(proName(k.client_id))} ends ${days === 0 ? 'today' : `in ${days} day${days === 1 ? '' : 's'}`}</div>
+            <div class="cue-sub">Runs until ${esc(fmtDateOnly(k.end_date))}. ${esc(proName(k.client_id))} will be in touch about continuing — message them if you have questions.</div>
+          </div>
+          <button class="btn btn-quiet" data-nav="#/messages">Message</button>
+        </div>`;
+      }),
       ...openInvoices.map((inv) => `
         <div class="card cue-card">
           <div class="cue-text">
@@ -207,11 +237,13 @@
         ${a.recurrence_rule || a.recurrence_parent_id ? '<span class="pill pill-sage">↻ weekly</span>' : ''}
       </div>`);
 
-    const signedRows = ov.contracts.filter((k) => k.status === 'signed').map((k) => `
+    const signedRows = signedContracts.map((k) => `
       <div class="card contract-row">
         <div class="what">
           <div class="title">Service agreement with ${esc(proName(k.client_id))}</div>
-          <div class="meta">Signed ${esc(fmtDate(k.signed_at))} by ${esc(k.signer_name ?? '')}</div>
+          <div class="meta">Signed ${esc(fmtDate(k.signed_at))} by ${esc(k.signer_name ?? '')}${
+            k.end_date ? ` · runs until ${esc(fmtDateOnly(k.end_date))}` : ''
+          }</div>
         </div>
         <span class="pill pill-sage">signed</span>
         <div class="row-actions"><button class="btn btn-ghost" data-nav="#/contract/${k.id}">View</button></div>

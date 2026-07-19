@@ -25,7 +25,12 @@ export type NotificationTemplate =
   | 'payment_received'
   | 'appointment_reminder'
   | 'portal_invite'
-  | 'message_received';
+  | 'message_received'
+  // R-11/R-16: a term is ending. Two recipients, mirroring how payment
+  // emails already go both ways — the walker needs to act, the client
+  // needs to not be surprised.
+  | 'contract_renewal_due'
+  | 'contract_renewal_due_professional';
 
 export interface EnqueueInput {
   /** The professional account this notification belongs to (recipients are
@@ -53,6 +58,18 @@ export interface ProcessSummary {
 }
 
 const REMINDER_LEAD_MS = 24 * 60 * 60 * 1000;
+
+/** YYYY-MM-DD → "September 30, 2026". Parsed as parts, not via new Date(str),
+ *  which reads a date-only string as UTC midnight and shows the day before
+ *  west of Greenwich — the same trap W-13 hit in the UI. */
+function fmtDateOnly(ymd: string): string {
+  const [y, m, d] = ymd.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+}
 
 function fmtMoney(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
@@ -304,6 +321,10 @@ export class NotificationService {
         return this.renderPortalInvite(payload.client_id as string, payload.origin as string);
       case 'message_received':
         return this.renderMessageReceived(payload.message_id as string, payload.origin as string);
+      case 'contract_renewal_due':
+        return this.renderContractRenewalDue(payload.contract_id as string, 'client');
+      case 'contract_renewal_due_professional':
+        return this.renderContractRenewalDue(payload.contract_id as string, 'professional');
       default:
         return { kind: 'cancel', reason: `unknown template: ${String(payload.template)}` };
     }
@@ -333,6 +354,7 @@ export class NotificationService {
     const ctx = await this.contractContext(contractId);
     if ('cancel' in ctx) return { kind: 'cancel', reason: ctx.cancel };
     const { contract, client, businessName } = ctx;
+    if (!client.email) return { kind: 'cancel', reason: 'client has no email on file' };
     if (contract.status !== 'draft' && contract.status !== 'sent') {
       return { kind: 'cancel', reason: `contract is ${contract.status}, no longer awaiting signature` };
     }
@@ -355,6 +377,7 @@ export class NotificationService {
     const ctx = await this.contractContext(contractId);
     if ('cancel' in ctx) return { kind: 'cancel', reason: ctx.cancel };
     const { contract, client, businessName } = ctx;
+    if (!client.email) return { kind: 'cancel', reason: 'client has no email on file' };
     if (contract.status !== 'signed') {
       return { kind: 'cancel', reason: `contract is ${contract.status}, not signed` };
     }
@@ -379,6 +402,85 @@ export class NotificationService {
         ],
       },
     };
+  }
+
+  /**
+   * R-11/R-16: the agreement's term is running out.
+   *
+   * Rendered at send time like every other template, so a contract that gets
+   * voided, superseded, or has its end date pushed back between queueing and
+   * sending **cancels itself** rather than telling a client their agreement
+   * is expiring when it isn't.
+   */
+  private async renderContractRenewalDue(
+    contractId: string,
+    audience: 'client' | 'professional'
+  ): Promise<RenderResult> {
+    const ctx = await this.contractContext(contractId);
+    if ('cancel' in ctx) return { kind: 'cancel', reason: ctx.cancel };
+    const { contract, client, businessName, professionalEmail } = ctx;
+
+    if (contract.status !== 'signed') {
+      return { kind: 'cancel', reason: `contract is ${contract.status}, not an active agreement` };
+    }
+    if (!contract.end_date) {
+      return { kind: 'cancel', reason: 'contract term is now open-ended' };
+    }
+    if (Date.parse(`${contract.end_date}T23:59:59Z`) < Date.now()) {
+      return { kind: 'cancel', reason: 'term already ended — a renewal warning would be stale' };
+    }
+    // The term must still be inside the notice window AT SEND TIME. Without
+    // this, extending an expiring agreement between queueing and sending
+    // still fires the warning — accurate about the new date, but announcing
+    // an expiry a year out for no reason. Recomputed rather than trusted
+    // from enqueue time, which is the whole point of send-time rendering.
+    const noticeDays = contract.renewal_notice_days ?? (await this.defaultNoticeDays(contract.professional_account_id));
+    const windowOpens = Date.parse(`${contract.end_date}T00:00:00Z`) - noticeDays * 24 * 60 * 60 * 1000;
+    if (Date.now() < windowOpens) {
+      return { kind: 'cancel', reason: 'term was extended — no longer within the renewal notice window' };
+    }
+
+    const ends = fmtDateOnly(contract.end_date);
+    if (audience === 'professional') {
+      if (!professionalEmail) return { kind: 'cancel', reason: 'professional has no email' };
+      return {
+        kind: 'send',
+        email: {
+          to: professionalEmail,
+          subject: `Agreement with ${client.full_name} ends ${ends}`,
+          html: emailLayout(
+            businessName,
+            `<p>Your service agreement with <strong>${escapeHtml(client.full_name)}</strong> ends on <strong>${escapeHtml(ends)}</strong>.</p>
+             <p>To keep them on the books, generate a new agreement from their client page — the signed one stays on file exactly as it is.</p>`
+          ),
+        },
+      };
+    }
+
+    if (!client.email) return { kind: 'cancel', reason: 'client has no email on file' };
+    return {
+      kind: 'send',
+      email: {
+        to: client.email,
+        subject: `Your agreement with ${businessName} ends ${ends}`,
+        html: emailLayout(
+          businessName,
+          `<p>Hi ${escapeHtml(client.full_name)},</p>
+           <p>A quick heads-up: your service agreement with ${escapeHtml(businessName)} runs until <strong>${escapeHtml(ends)}</strong>.</p>
+           <p>Nothing changes before then, and there's nothing you need to do right now — ${escapeHtml(businessName)} will be in touch about continuing. Questions? Just reply to this email.</p>`
+        ),
+      },
+    };
+  }
+
+  /** The professional's default notice window (020), or 30 if unset. */
+  private async defaultNoticeDays(professionalAccountId: string): Promise<number> {
+    const { data } = await supabaseAdmin
+      .from('professional_profiles')
+      .select('default_renewal_notice_days')
+      .eq('account_id', professionalAccountId)
+      .maybeSingle();
+    return (data?.default_renewal_notice_days as number) ?? 30;
   }
 
   private async renderPaymentReceipt(invoiceId: string): Promise<RenderResult> {
@@ -547,7 +649,7 @@ export class NotificationService {
   }
 
   private async contractContext(contractId: string): Promise<
-    | { contract: Contract; client: Client; businessName: string }
+    | { contract: Contract; client: Client; businessName: string; professionalEmail: string | null }
     | { cancel: string }
   > {
     const { data, error } = await supabaseAdmin
@@ -559,9 +661,22 @@ export class NotificationService {
     if (!data) return { cancel: 'contract no longer exists' };
     const { clients, ...contract } = data as Contract & { clients: Client | null };
     if (!clients) return { cancel: 'client no longer exists' };
-    if (!clients.email) return { cancel: 'client has no email on file' };
+    // NOTE: the "client has no email" check deliberately lives in the
+    // client-facing renderers, not here. R-11 sends a renewal warning to the
+    // PROFESSIONAL, and a client with no email on file must not suppress the
+    // walker's own reminder about their own business.
     const businessName = await this.businessName(contract.professional_account_id);
-    return { contract: contract as Contract, client: clients, businessName };
+    const { data: account } = await supabaseAdmin
+      .from('accounts')
+      .select('email')
+      .eq('id', contract.professional_account_id)
+      .maybeSingle();
+    return {
+      contract: contract as Contract,
+      client: clients,
+      businessName,
+      professionalEmail: (account?.email as string) ?? null,
+    };
   }
 
   private async invoiceContext(invoiceId: string): Promise<
@@ -606,6 +721,106 @@ export const notificationService = new NotificationService();
 
 /** Started once from index.ts — not in createServer(), so tests that build
  *  the app never spawn background timers. */
+/**
+ * R-11/R-16: queue renewal warnings for agreements whose term is closing in.
+ *
+ * A contract is due when `end_date - notice_days <= today <= end_date`, where
+ * notice_days is the contract's own override or the professional's default
+ * (30 per D5).
+ *
+ * **Exactly-once without a "notice sent" column:** the queue itself is the
+ * record. A contract that already has a `contract_renewal_due` row is skipped,
+ * so repeated passes — and a host that boots several times a day, like
+ * Render's free tier — can't spam a client. A second source of truth for
+ * "did we send it" is how double-sends and silent misses both happen.
+ */
+export async function queueDueRenewalNotices(): Promise<number> {
+  const today = new Date();
+  const todayYmd = today.toISOString().slice(0, 10);
+  // Widest possible window: no professional can warn more than 365 days out
+  // (the 020 CHECK), so nothing outside it can be due today.
+  const horizon = new Date(today.getTime() + 365 * 24 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 10);
+
+  const { data: contracts, error } = await supabaseAdmin
+    .from('contracts')
+    .select('id, professional_account_id, end_date, renewal_notice_days')
+    .eq('status', 'signed')
+    .not('end_date', 'is', null)
+    .gte('end_date', todayYmd)
+    .lte('end_date', horizon);
+  if (error) throw new ServiceError('renewal_scan_failed', error.message, 500);
+  if (!contracts?.length) return 0;
+
+  // One defaults lookup per professional, not per contract.
+  const proIds = [...new Set(contracts.map((c) => c.professional_account_id as string))];
+  const { data: profiles } = await supabaseAdmin
+    .from('professional_profiles')
+    .select('account_id, default_renewal_notice_days')
+    .in('account_id', proIds);
+  const defaults = new Map(
+    (profiles ?? []).map((p) => [p.account_id as string, (p.default_renewal_notice_days as number) ?? 30])
+  );
+
+  let queued = 0;
+  for (const contract of contracts) {
+    try {
+      const noticeDays =
+        (contract.renewal_notice_days as number | null) ??
+        defaults.get(contract.professional_account_id as string) ??
+        30;
+      const endMs = Date.parse(`${contract.end_date}T00:00:00Z`);
+      const windowOpensMs = endMs - noticeDays * 24 * 60 * 60 * 1000;
+      if (Date.parse(`${todayYmd}T00:00:00Z`) < windowOpensMs) continue; // not yet
+
+      // Already warned? The queue is the record — see the note above.
+      const { data: existing } = await supabaseAdmin
+        .from('notification_queue')
+        .select('id')
+        .eq('account_id', contract.professional_account_id)
+        .contains('payload', { contract_id: contract.id, template: 'contract_renewal_due' })
+        .limit(1);
+      if (existing?.length) continue;
+
+      await notificationService.enqueue({
+        accountId: contract.professional_account_id as string,
+        category: 'contract',
+        template: 'contract_renewal_due',
+        data: { contract_id: contract.id },
+      });
+      await notificationService.enqueue({
+        accountId: contract.professional_account_id as string,
+        category: 'contract',
+        template: 'contract_renewal_due_professional',
+        data: { contract_id: contract.id },
+      });
+      queued++;
+    } catch (err) {
+      // One contract's failure must not starve the rest of the pass.
+      console.error(`[renewals] failed for contract ${contract.id}:`, err);
+    }
+  }
+  return queued;
+}
+
+/** Interval driver for renewal notices, mirroring the recurring-invoice
+ *  worker: a pass at boot (the one moment a sleeping host is awake), then
+ *  hourly — a date-based check has no reason to run more often. */
+export function startRenewalNoticeWorker(intervalMs = 60 * 60_000): NodeJS.Timeout {
+  const pass = () =>
+    void queueDueRenewalNotices().then(
+      (n) => {
+        if (n > 0) console.log(`[renewals] queued renewal notices for ${n} agreement(s)`);
+      },
+      (err) => console.error('[renewals] pass failed:', err)
+    );
+  pass();
+  const timer = setInterval(pass, intervalMs);
+  timer.unref();
+  return timer;
+}
+
 export function startNotificationWorker(intervalMs = 30_000): NodeJS.Timeout {
   const timer = setInterval(() => {
     void notificationService.processDue().catch((err) => {

@@ -49,6 +49,11 @@ export interface GenerateContractInput {
   /** Manual values for template variables (walk_type, service_price, ...).
    *  Merged over the computed CRM values, so an explicit value always wins. */
   variables?: Record<string, string>;
+  /** R-10: day the term ends. Null/absent = open-ended. */
+  end_date?: string | null;
+  /** Days before end_date to warn both parties; null = the professional's
+   *  default (professional_profiles.default_renewal_notice_days). */
+  renewal_notice_days?: number | null;
 }
 
 export interface SignInPersonInput {
@@ -433,6 +438,10 @@ export class ContractService {
         service_id: input.service_id ?? null,
         template_id: template.id,
         generated_html: generatedHtml,
+        // R-10: the term. Null stays open-ended, which is what every
+        // pre-020 agreement is.
+        end_date: input.end_date ?? null,
+        renewal_notice_days: input.renewal_notice_days ?? null,
         status: 'draft',
       })
       .select()
@@ -518,11 +527,24 @@ export class ContractService {
    * Signing is NOT allowed here — only signInPerson() can set status='signed'.
    * On a signed contract the database trigger rejects the update; we surface
    * that as 409 so the API proves the immutability constraint end-to-end.
+   *
+   * R-10: `end_date` and `renewal_notice_days` are editable even once signed,
+   * and that is deliberate rather than a loophole. The 005 trigger guards the
+   * document — generated_html, signer_name, the signature, signed_at — and
+   * says nothing about these two, because they are facts *about* the
+   * agreement's administration, not clauses within it. Extending a term or
+   * changing when you get warned must not require re-signing. A signed
+   * contract still may not change status to anything but 'voided'.
    */
   async updateContract(
     professionalAccountId: string,
     contractId: string,
-    input: { generated_html?: string; status?: Exclude<ContractStatus, 'signed'> }
+    input: {
+      generated_html?: string;
+      status?: Exclude<ContractStatus, 'signed'>;
+      end_date?: string | null;
+      renewal_notice_days?: number | null;
+    }
   ): Promise<Contract> {
     await this.getContract(professionalAccountId, contractId); // ownership check
 

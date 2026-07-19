@@ -1,6 +1,6 @@
 import { env } from './config/env';
 import { createServer } from './api/server';
-import { startNotificationWorker } from './services/NotificationService';
+import { startNotificationWorker, startRenewalNoticeWorker } from './services/NotificationService';
 import { startRecurringInvoiceWorker } from './services/PaymentService';
 
 const app = createServer();
@@ -20,3 +20,8 @@ startNotificationWorker();
 // decision 2026-07-17): one pass at boot, then every 5 minutes. Note for a
 // sleeping host (Render free tier): passes only run while the app is awake.
 startRecurringInvoiceWorker();
+
+// R-11/R-16: warn both parties before an agreement's term runs out. A pass at
+// boot, then hourly — a date-based check gains nothing from running more
+// often, and the queue itself prevents a repeated boot from re-sending.
+startRenewalNoticeWorker();

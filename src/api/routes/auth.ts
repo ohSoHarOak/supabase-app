@@ -125,6 +125,8 @@ const profileUpdateSchema = z.object({
   // silently rejected 'drop_in' after 018 added it. validation.ts is the one
   // place a new profession gets added.
   offered_service_types: z.array(serviceTypeEnum).max(20).optional(),
+  // R-11: the general default D5 asked for. Each contract can override it.
+  default_renewal_notice_days: z.number().int().min(0).max(365).optional(),
 });
 
 /** PATCH /api/auth/profile — the professional edits their own profile. */

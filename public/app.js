@@ -198,6 +198,30 @@
     const spent = service.session_balance.remaining === 0;
     return `<span class="pill ${spent ? 'pill-alert' : 'pill-sage'}">${esc(text)}</span>`;
   }
+  // R-10/R-11: contract term. days-until is computed date-only so a term
+  // ending "today" reads as today regardless of the hour.
+  function daysUntil(ymd) {
+    const [y, m, d] = String(ymd).split('-').map(Number);
+    const end = new Date(y, m - 1, d);
+    const today = new Date();
+    return Math.round((end - new Date(today.getFullYear(), today.getMonth(), today.getDate())) / 864e5);
+  }
+  function termText(contract) {
+    if (!contract.end_date) return '';
+    return ` · term ends ${fmtDateOnly(contract.end_date)}`;
+  }
+  /** Only signed agreements get an urgency pill — a draft's term hasn't been
+   *  agreed to yet, so counting down to it would be theatre. */
+  function termPill(contract) {
+    if (contract.status !== 'signed' || !contract.end_date) return '';
+    const days = daysUntil(contract.end_date);
+    if (days < 0) return '<span class="pill pill-alert">term ended</span>';
+    if (days === 0) return '<span class="pill pill-alert">ends today</span>';
+    if (days <= (contract.renewal_notice_days ?? profile?.default_renewal_notice_days ?? 30)) {
+      return `<span class="pill pill-alert">renews in ${days} day${days === 1 ? '' : 's'}</span>`;
+    }
+    return '';
+  }
   // Long labels for the "Billed" select.
   const CADENCE_OPTIONS = {
     per_visit: 'Per visit — invoice auto-created after each visit',
@@ -575,6 +599,29 @@
           <button class="btn btn-primary" data-nav="#/contract/${k.id}/sign">Finish signing</button>
         </div>`;
     });
+    // R-11: an agreement running out is a renewal conversation the walker
+    // needs to start, not a surprise on the day it lapses. Same window the
+    // email worker uses, so the screen and the inbox can't disagree.
+    const renewalCues = contracts
+      .filter((k) => {
+        if (k.status !== 'signed' || !k.end_date) return false;
+        const days = daysUntil(k.end_date);
+        const notice = k.renewal_notice_days ?? profile?.default_renewal_notice_days ?? 30;
+        return days >= 0 && days <= notice;
+      })
+      .sort((a, b) => daysUntil(a.end_date) - daysUntil(b.end_date))
+      .map((k) => {
+        const c = byId[k.client_id];
+        const days = daysUntil(k.end_date);
+        return `
+        <div class="card cue-card">
+          <div class="cue-text">
+            <div class="cue-title">${esc(c?.full_name ?? 'A client')}'s agreement ends ${days === 0 ? 'today' : `in ${days} day${days === 1 ? '' : 's'}`}</div>
+            <div class="cue-sub">Term ends ${esc(fmtDateOnly(k.end_date))} — generate a new agreement to keep them on the books.</div>
+          </div>
+          ${c ? `<button class="btn btn-primary" data-nav="#/client/${c.id}/new-contract">New agreement</button>` : ''}
+        </div>`;
+      });
     // Unpaid invoices are money on the table — same urgency as an unsigned contract.
     const invoiceCues = openInvoices.map((inv) => {
       const c = byId[inv.client_id];
@@ -650,7 +697,7 @@
 
         <div class="eyebrow">Needs your attention</div>
         <div class="stack">
-          ${setupCue + cueCards.join('') + invoiceCues.join('') + pendingRows.join('') || '<div class="card empty">Nothing needs your attention. 🎉</div>'}
+          ${setupCue + cueCards.join('') + renewalCues.join('') + invoiceCues.join('') + pendingRows.join('') || '<div class="card empty">Nothing needs your attention. 🎉</div>'}
         </div>
 
         <div class="eyebrow">Active clients</div>
@@ -859,13 +906,18 @@
           <div class="title">${esc(k.contract_templates?.name ?? 'Service Agreement')}</div>
           <div class="meta">${k.status === 'signed'
             ? `Signed ${esc(fmtDate(k.signed_at))} by ${esc(k.signer_name ?? '')}`
-            : `Generated ${esc(fmtDate(k.created_at))}`}</div>
+            : `Generated ${esc(fmtDate(k.created_at))}`}${termText(k)}</div>
         </div>
+        ${termPill(k)}
         ${statusPill[k.status] ?? ''}
         <div class="row-actions">
           ${k.status === 'draft' || k.status === 'sent' ? `
             <button class="btn btn-ghost" data-nav="#/client/${client.id}/new-contract?replace=${k.id}">Edit terms</button>
-            <button class="btn btn-quiet" data-nav="#/contract/${k.id}/sign">Sign now</button>` : `
+            <button class="btn btn-ghost" data-cancel-contract="${k.id}">Cancel</button>
+            <button class="btn btn-quiet" data-nav="#/contract/${k.id}/sign">Sign now</button>` : k.status === 'signed' ? `
+            <button class="btn btn-ghost" data-term-contract="${k.id}">${k.end_date ? 'Change end date' : 'Set end date'}</button>
+            <button class="btn btn-ghost" data-cancel-contract="${k.id}">Cancel</button>
+            <button class="btn btn-ghost" data-view-contract="${k.id}">View</button>` : `
             <button class="btn btn-ghost" data-view-contract="${k.id}">View</button>`}
         </div>
       </div>`);
@@ -1101,6 +1153,65 @@
     };
     wireToggle('addpet-toggle', 'addpet-card', 'p-name');
     wireToggle('newinv-toggle', 'newinv-card', 'inv-item');
+
+    // ------------------------------------------------- contract term (R-10) --
+    // A signed agreement's END DATE is editable; its TEXT is not. The 005
+    // trigger enforces that split in the database, so this can't drift into
+    // editing the document by accident.
+    const contractsById = Object.fromEntries(contracts.map((k) => [k.id, k]));
+    document.querySelectorAll('[data-term-contract]').forEach((btn) => {
+      btn.onclick = () => {
+        const k = contractsById[btn.dataset.termContract];
+        const row = btn.closest('.contract-row');
+        const actions = row.querySelector('.row-actions');
+        actions.innerHTML = `
+          <input type="date" id="term-date-${k.id}" value="${esc(k.end_date ?? '')}" style="width:auto" />
+          <button class="btn btn-quiet" id="term-save-${k.id}">Save</button>
+          ${k.end_date ? `<button class="btn btn-ghost" id="term-clear-${k.id}">No end date</button>` : ''}
+          <button class="btn btn-ghost" id="term-cancel-${k.id}">Back</button>`;
+        const save = async (value) => {
+          await withBusy(document.getElementById(`term-save-${k.id}`), async () => {
+            try {
+              await api('PATCH', `/api/contracts/${k.id}`, { end_date: value });
+              toast(value ? 'Term updated.' : 'Term is now open-ended.', 'ok');
+              renderClient(clientId);
+            } catch (err) {
+              toast(err.message);
+            }
+          });
+        };
+        document.getElementById(`term-save-${k.id}`).onclick = () => {
+          const value = document.getElementById(`term-date-${k.id}`).value;
+          if (!value) { toast('Pick a date, or choose "No end date".'); return; }
+          save(value);
+        };
+        const clearBtn = document.getElementById(`term-clear-${k.id}`);
+        if (clearBtn) clearBtn.onclick = () => save(null);
+        document.getElementById(`term-cancel-${k.id}`).onclick = () => renderClient(clientId);
+      };
+    });
+
+    document.querySelectorAll('[data-cancel-contract]').forEach((btn) => {
+      btn.onclick = () => {
+        const k = contractsById[btn.dataset.cancelContract];
+        // Voiding a SIGNED agreement ends the arrangement going forward; the
+        // signed document itself survives untouched (and must — it's the
+        // record of what was agreed). Say so, rather than implying deletion.
+        const message = k.status === 'signed'
+          ? 'Cancel this agreement?\n\nThe signed document stays on file as a permanent record — cancelling only ends the arrangement going forward. Any services it created should be ended separately.'
+          : 'Cancel this draft agreement? It will be voided and can no longer be signed.';
+        if (!confirm(message)) return;
+        withBusy(btn, async () => {
+          try {
+            await api('PATCH', `/api/contracts/${k.id}`, { status: 'voided' });
+            toast('Agreement cancelled.', 'ok');
+            renderClient(clientId);
+          } catch (err) {
+            toast(err.message);
+          }
+        });
+      };
+    });
 
     // --------------------------------------------------------- pet edit --
     const petsById = Object.fromEntries(client.pets.map((p) => [p.id, p]));
@@ -1477,6 +1588,14 @@
             <div class="full"><label for="k-sched">Schedule <span class="hint">— written out, e.g. "Mon/Wed/Fri, 30-minute midday walk"</span></label>
               <input id="k-sched" required placeholder="Mon/Wed/Fri, 30-minute midday walk" /></div>
             <div><label for="k-start">First day of service</label><input id="k-start" type="date" required /></div>
+            <!-- R-10/R-11: the term, and when to be warned it's ending.
+                 Blank end date = open-ended, which is how every agreement
+                 before this behaved. -->
+            <div><label for="k-end">Agreement ends <span class="hint">— blank means open-ended</span></label>
+              <input id="k-end" type="date" /></div>
+            <div><label for="k-notice">Remind us this many days before it ends</label>
+              <input id="k-notice" type="number" min="0" max="365" class="num"
+                value="${esc(profile?.default_renewal_notice_days ?? 30)}" /></div>
             <div><label for="k-fee">Late-cancel / no-show fee <span class="hint">— appears as a contract clause</span></label>
               <input id="k-fee" required class="money" value="$25.00" /></div>
             <div><label for="k-vetcap">Emergency vet spending cap</label><input id="k-vetcap" required class="money" value="$500.00" /></div>
@@ -1604,6 +1723,10 @@
             template_id: document.getElementById('k-template').value,
             client_id: client.id,
             services: readServiceBlocks(),
+            // R-10: blank stays open-ended rather than becoming a term
+            // nobody agreed to.
+            end_date: document.getElementById('k-end').value || null,
+            renewal_notice_days: Number(document.getElementById('k-notice').value) || null,
             variables: {
               // walk_type and service_price are derived from the services now
               // (W-5) — the server fills them, so they're deliberately absent.
@@ -2202,6 +2325,14 @@
             </div>
             <p class="preview-note" style="margin-top:10px">Only the types you check appear when adding a service, so a dog walker never wades through Grooming or Boarding. Leave everything unchecked to keep all types available.</p>
           </div>
+          <!-- R-11: the general default D5 asked for; each agreement can
+               override it when it's generated. -->
+          <div class="form-grid">
+            <div><label for="pf-notice">Contract renewal reminder</label>
+              <input id="pf-notice" type="number" min="0" max="365" class="num"
+                value="${esc(profile?.default_renewal_notice_days ?? 30)}" />
+              <p class="preview-note" style="margin-top:6px">Days before an agreement's end date that you and your client are both emailed. Any agreement can use its own number instead.</p></div>
+          </div>
         </div>
         <div class="form-foot">
           <div class="spacer"></div>
@@ -2240,6 +2371,7 @@
             business_name: document.getElementById('pf-biz').value.trim() || null,
             phone: fmtPhone(document.getElementById('pf-phone').value) || null,
             offered_service_types: offeredNow,
+            default_renewal_notice_days: Number(document.getElementById('pf-notice').value) || 0,
           });
           await loadProfile();
           toast('Profile saved.', 'ok');
