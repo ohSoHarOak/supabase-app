@@ -20,6 +20,19 @@ async function main() {
     process.exit(1);
   }
 
+  // Echo the target before touching anything — the username carries the
+  // project ref, so this is how you confirm "am I about to migrate test or
+  // prod?" before it runs. Password is never printed.
+  const target = (() => {
+    try {
+      const u = new URL(env.databaseUrl);
+      return `${u.username}@${u.host}`;
+    } catch {
+      return '(could not parse DATABASE_URL)';
+    }
+  })();
+  console.log(`Target database: ${target}`);
+
   const client = new Client({
     connectionString: env.databaseUrl,
     ssl: { rejectUnauthorized: false },
