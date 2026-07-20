@@ -45,7 +45,11 @@ const petSchema = z.object({
   medical_conditions: z.string().nullish(),
   behavior_notes: z.string().nullish(),
   feeding_notes: z.string().nullish(),
+  // Legacy single field (kept accepted for back-compat); the app now writes
+  // the split pair below (PH-2 / migration 022).
   emergency_vet: z.string().nullish(),
+  emergency_vet_name: z.string().nullish(),
+  emergency_vet_phone: z.string().nullish(),
 });
 
 const vaccinationSchema = z.object({

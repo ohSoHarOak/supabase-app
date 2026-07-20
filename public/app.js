@@ -889,8 +889,12 @@
         </div>
         <div class="pet-tags">
           ${p.behavior_notes ? `<span class="pill pill-draft">${esc(p.behavior_notes.slice(0, 40))}${p.behavior_notes.length > 40 ? '…' : ''}</span>` : ''}
-          ${p.emergency_vet ? `<span class="pill pill-sage">vet on file</span>` : ''}
         </div>
+        ${(p.emergency_vet_name || p.emergency_vet_phone || p.emergency_vet)
+          ? `<div class="contact-line">🏥 ${esc(p.emergency_vet_name || p.emergency_vet || 'Vet')}${p.emergency_vet_phone
+              ? ` · <a href="tel:${esc(String(p.emergency_vet_phone).replace(/[^\d+]/g, ''))}">${esc(fmtPhone(p.emergency_vet_phone))}</a>`
+              : ''}</div>`
+          : ''}
       </div>`);
 
     const statusPill = {
@@ -1056,7 +1060,8 @@
             </select></div>
             <div><label for="p-breed">Breed</label><input id="p-breed" required placeholder="e.g. Beagle" /></div>
             <div><label for="p-weight">Weight <span class="hint">lb</span></label><input id="p-weight" type="number" required min="1" max="500" step="0.1" class="num" /></div>
-            <div><label for="p-vet">Emergency vet</label><input id="p-vet" placeholder="Clinic, phone" /></div>
+            <div><label for="p-vetname">Emergency vet</label><input id="p-vetname" placeholder="Clinic name" /></div>
+            <div><label for="p-vetphone">Vet phone</label><input id="p-vetphone" data-phone placeholder="(555)000-0000" /></div>
             <div class="full"><label for="p-behavior">Behavior notes</label><textarea id="p-behavior" rows="3" required placeholder="e.g. pulls on leash, reactive to bikes"></textarea></div>
           </div>
           <div class="form-foot" style="margin-top:0">
@@ -1235,7 +1240,8 @@
             </select></div>
             <div><label for="pe-breed-${p.id}">Breed</label><input id="pe-breed-${p.id}" value="${esc(p.breed ?? '')}" placeholder="e.g. Beagle" /></div>
             <div><label for="pe-weight-${p.id}">Weight <span class="hint">lb</span></label><input id="pe-weight-${p.id}" type="number" min="1" max="500" step="0.1" class="num" value="${esc(p.weight_lb ?? '')}" /></div>
-            <div><label for="pe-vet-${p.id}">Emergency vet</label><input id="pe-vet-${p.id}" value="${esc(p.emergency_vet ?? '')}" placeholder="Clinic, phone" /></div>
+            <div><label for="pe-vetname-${p.id}">Emergency vet</label><input id="pe-vetname-${p.id}" value="${esc(p.emergency_vet_name ?? p.emergency_vet ?? '')}" placeholder="Clinic name" /></div>
+            <div><label for="pe-vetphone-${p.id}">Vet phone</label><input id="pe-vetphone-${p.id}" data-phone value="${esc(fmtPhone(p.emergency_vet_phone ?? ''))}" placeholder="(555)000-0000" /></div>
             <div class="full"><label for="pe-behavior-${p.id}">Behavior notes</label><textarea id="pe-behavior-${p.id}" rows="3" placeholder="e.g. pulls on leash, reactive to bikes">${esc(p.behavior_notes ?? '')}</textarea></div>
           </div>
           <div class="form-foot" style="margin-top:0">
@@ -1256,7 +1262,8 @@
                 species: document.getElementById(`pe-species-${p.id}`).value,
                 breed: val(`pe-breed-${p.id}`),
                 weight_lb: weight ? Number(weight) : null,
-                emergency_vet: val(`pe-vet-${p.id}`),
+                emergency_vet_name: val(`pe-vetname-${p.id}`),
+                emergency_vet_phone: fmtPhone(val(`pe-vetphone-${p.id}`)) || null,
                 behavior_notes: val(`pe-behavior-${p.id}`),
               });
               toast('Pet updated.', 'ok');
@@ -1291,7 +1298,8 @@
             species: document.getElementById('p-species').value,
             breed: val('p-breed'),
             weight_lb: weight ? Number(weight) : null,
-            emergency_vet: val('p-vet'),
+            emergency_vet_name: val('p-vetname'),
+            emergency_vet_phone: fmtPhone(val('p-vetphone')) || null,
             behavior_notes: val('p-behavior'),
           });
           toast('Pet added.', 'ok');

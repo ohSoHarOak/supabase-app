@@ -102,7 +102,11 @@ export interface Pet {
   medical_conditions: string | null;
   behavior_notes: string | null;
   feeding_notes: string | null;
+  /** @deprecated Split into emergency_vet_name + emergency_vet_phone (022).
+   *  Retained read-only for rollback; not written by new code. */
   emergency_vet: string | null;
+  emergency_vet_name: string | null;
+  emergency_vet_phone: string | null;
   created_at: string;
   updated_at: string;
 }

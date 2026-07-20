@@ -396,7 +396,16 @@ export class ContractService {
       emergency_contact: client.emergency_contact_name
         ? [client.emergency_contact_name, client.emergency_contact_phone].filter(Boolean).join(', ')
         : '—',
-      preferred_vet: client.pets.find((p) => p.emergency_vet)?.emergency_vet ?? '—',
+      // PH-2: prefer the split name/phone pair; fall back to the legacy
+      // free-text column for pets not yet re-saved after migration 022.
+      preferred_vet: (() => {
+        const p = client.pets.find(
+          (x) => x.emergency_vet_name || x.emergency_vet_phone || x.emergency_vet,
+        );
+        if (!p) return '—';
+        const split = [p.emergency_vet_name, p.emergency_vet_phone].filter(Boolean).join(', ');
+        return split || p.emergency_vet || '—';
+      })(),
     };
 
     // Pre-W-9 templates describe the single service through fixed Key Terms

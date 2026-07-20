@@ -29,7 +29,11 @@ export interface PetInput {
   medical_conditions?: string | null;
   behavior_notes?: string | null;
   feeding_notes?: string | null;
+  /** @deprecated superseded by emergency_vet_name + emergency_vet_phone (022);
+   *  still accepted so older callers and the e2e suite don't break. */
   emergency_vet?: string | null;
+  emergency_vet_name?: string | null;
+  emergency_vet_phone?: string | null;
 }
 
 export interface VaccinationInput {
