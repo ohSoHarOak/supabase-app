@@ -401,10 +401,10 @@ Why two devices: the story lands hardest when the audience sees **both sides**. 
 
 *Founder feature requests logged 2026-07-13 (P2-1…P2-5) and 2026-07-14 (P2-6…P2-8); P2-9…P2-11 logged 2026-07-15 from a typical-user walkthrough of the live UI (see Running Notes). These are out of scope for the 8-week Phase 1 build (the Week 8 demo doesn't depend on them), but earlier weeks lay seams for them so nothing has to be rebuilt. Do not start these until Phase 1 is done and the founder pulls them in.*
 
+> **Moved to Phase 3 (2026-07-19):** P2-1, P2-7, P2-9, P2-11, P2-12, and P2-14 were relocated to **`PHASE_3_ROADMAP.md`** at founder direction. Their entries below are now redirect stubs — the full specs live in that file, under their unchanged `P2-x` IDs (kept as stable references). **P2-2 stayed in Phase 2** — Workstream M's QR check-in + GPS depend on it.
+
 ### P2-1: Walker ratings (1–5 dogs)
-Clients rate walkers on a 1–5 **dog** scale (not stars), 5 = best, 1 = needs improvement. Half-dog ratings (e.g. 4.5) are supported — store as a numeric with one decimal place, validated to 0.5 increments.
-- Natural home: owner portal (extends Week 8's portal). Ratings attach to the walker's *account*, keeping the marketplace seam — a future Phase 3 marketplace can surface the same ratings unchanged.
-- Needs a new `ratings` table + type in `src/types/index.ts` (deliberate addition — flag at build time per CLAUDE.md).
+➡️ **Moved to Phase 3 — full spec in `PHASE_3_ROADMAP.md`** (relocated 2026-07-19). Clients rate walkers on a 1–5 dog scale; needs a new `ratings` table + type.
 
 ### P2-2: Walk-report auto-message on completion
 Walker can opt in (per-walker setting) to: scan-in/scan-out ends the walk, and completion automatically sends the client a message with walk stats — time of walk, distance, "were they a good dog," "did they get a treat," free-form notes. If the appointment is recurring, the message includes the date/time of the next walk.
@@ -439,11 +439,7 @@ Professionals can set up their own payment processing instead of everything runn
 - **Pulled forward 2026-07-19 into Workstream M (`PHASE_2_ROADMAP.md`) as "M-Connect".** Path 1 (Stripe Connect) chosen; **Express** account type decided, and the connected account must be disconnectable/changeable on relationship termination (P2-15 seam). Motivated by an onboarding gap: professionals have no way to set up getting paid, so all money currently routes to the platform account. Multi-processor (path 2) stays parked.
 
 ### P2-7: Branded invoices — logo + business name
-Owner can add their logo and business name so invoices look like *their* business (founder request 2026-07-14).
-- Business name already exists on `professional_profiles`; needs a logo upload (Supabase Storage, same pattern as signature images) and rendering on the invoice view + payment confirmation + (Week 7) payment emails.
-- Caveat: the Stripe **Checkout page** itself shows the *Stripe account's* branding — in Phase 1's platform-charge model that's the founder's account, the same for every professional. Per-professional branding on Checkout only becomes possible with Stripe Connect (P2-6). Our own invoice/receipt surfaces can be fully branded now.
-- Small enough to be a Week 8 slack candidate alongside P2-5 if demo prep goes fast — a branded invoice is a strong demo moment.
-- 2026-07-18 (tester question F-6): make each invoice row in client Billing (and the owner portal) open a **printable invoice/receipt document** — same print-styled-HTML approach as the signed contract (W-1), branded per this item. Today invoices are list rows only; the paid/open status and history are all there, but there's nothing to hand a client.
+➡️ **Moved to Phase 3 — full spec in `PHASE_3_ROADMAP.md`** (relocated 2026-07-19). Logo + business name on invoice/receipt surfaces, plus a printable invoice document (F-6, C-4, R-12 all requested this).
 
 ### P2-8: In-person payment in the app — tap to pay
 When collecting payment in person, the payment should happen inside the app rather than a link the client deals with later; ideally tap-to-pay on the walker's phone (founder request 2026-07-14).
@@ -453,10 +449,7 @@ When collecting payment in person, the payment should happen inside the app rath
 - **Pulled forward 2026-07-19 into Workstream M (`PHASE_2_ROADMAP.md`) as "M2 — Tap-to-Pay (Android)".** Native Tap-to-Pay on Android (Stripe Terminal, NFC + Android 11+ device) is in scope for the first Android build so it can be tested; iPhone Tap-to-Pay rides with the Phase 3 iOS port. Routes to the walker's Connect account once M-Connect lands (platform account for founder-only testing before then).
 
 ### P2-9: Record payments taken outside Stripe (cash, check, Venmo/Zelle)
-Real walkers get handed cash and Venmo constantly, but today the only way an invoice becomes `paid` is through Stripe — there is no "mark as paid" for money collected outside the app, so those invoices sit "awaiting payment" forever (or get voided, losing the revenue record).
-- Build: a "Record payment — cash / check / other" action on the invoice that creates a transaction with a `payment_method` marker and fires the same `payment_received` event, reusing `PaymentService`'s paid-exactly-once guard so a Stripe payment and a manual one can never double-record.
-- ⚠️ Founder decision at pickup: manual mark-paid is trust-based (a mistap says a client paid who didn't) — decide whether it needs an undo window or a confirmation step.
-- Strong Week 8 slack candidate: cash is common enough that a demo walker may ask about it unprompted.
+➡️ **Moved to Phase 3 — full spec in `PHASE_3_ROADMAP.md`** (relocated 2026-07-19). A "Record payment — cash/check/other" action that marks an invoice paid outside Stripe, reusing the paid-exactly-once guard.
 
 ### P2-10: No-show & late-cancel fee flow
 The data model already knows about this — `AppointmentStatus` includes `no_show` and clients carry `no_show_fee_cents` + `cancellation_window_hours`, and the contract even promises the fee — but the UI offers only Cancel / Mark complete, so the policy is unenforceable in practice.
@@ -464,16 +457,10 @@ The data model already knows about this — `AppointmentStatus` includes `no_sho
 - Founder decisions at pickup: is the fee auto-charged or offered-then-confirmed? Does a late cancel still consume a package session (once P2-11-era package tracking exists)?
 
 ### P2-11: Full pet profile + vaccination records UI
-The schema and API are far richer than the UI shows. Pets support photo, date of birth, color, microchip, medical conditions, and feeding notes; a `vaccination_records` table has full add/list/delete API support (built Week 2) — but the UI exposes only name/breed/weight/vet/behavior, and vaccinations appear nowhere.
-- Build: expand the pet card/form to the full field set (photo upload = Supabase Storage, same pattern as signatures), plus a vaccinations list with expiry dates.
-- Expiring/expired vaccinations are a natural "Needs your attention" cue (ties into W-4's cue work) — rabies expiry is something real walkers genuinely track for liability.
-- Client `general_notes` is in the same boat (schema yes, UI no) — fold it in here.
+➡️ **Moved to Phase 3 — full spec in `PHASE_3_ROADMAP.md`** (relocated 2026-07-19). Expose the full pet field set (photo, DOB, microchip, medical, feeding) + a vaccination list with expiry; the API already exists from Week 2.
 
 ### P2-12: Bring-your-own contract template (upload)
-Professionals can upload and use their own contracts instead of (or alongside) the packaged Pet Services Agreement (founder request 2026-07-17).
-- The backend seam already exists: `contract_templates` is per-account, and `POST`/`PATCH /api/contract-templates` accept arbitrary `body_html` — what's missing is UI.
-- The real work is conversion: what owners actually have is a .docx or PDF with no merge fields, so an upload needs either a guided "map your fields" step or docx→HTML tooling. The Pet Services Agreement conversion (2026-07-17) is the manual prototype of exactly this — its decisions (bracket→merge-field mapping, services table placement, signature block) are the checklist to automate.
-- ⚠️ Safety rails to decide at pickup: template markup is *trusted* by design (interpolated data is escaped, the template itself renders as-is), so uploaded HTML must be sanitized or constrained; and every template must keep the legal-review notice and the signing placeholders (`{{client_signature_image}}`, `{{provider_signature_image}}`, `{{signed_date}}`) or the signing flow breaks. Comments must avoid literal `{{...}}` tokens (substitution runs everywhere — learned the hard way 2026-07-17).
+➡️ **Moved to Phase 3 — full spec in `PHASE_3_ROADMAP.md`** (relocated 2026-07-19). UI to upload/use a professional's own contract; backend seam (`contract_templates`) exists — the real work is docx/PDF → merge-field conversion + HTML sanitization.
 
 ### P2-13: Owner onboarding — the portal has no invitation path
 **Adding a client sends them nothing.** There is no welcome email, no service summary, and no login link. The five notification templates are `contract_ready`, `contract_signed`, `payment_receipt`, `payment_received`, `appointment_reminder` (`NotificationService.ts:20-26`) — none of them is an invite, and `contract_ready` explicitly says *"no action needed right now"* because it was written for the Week-4 in-person signing model.
@@ -484,6 +471,8 @@ The only way to get a magic link is for the owner to visit `/portal` and request
 - Fold in the service summary the founder asked for (2026-07-18): what they signed up for, price, cadence — the data is already on the contract.
 
 ### P2-15: Delete / deactivate an account
+📌 **Scheduled 2026-07-19 as its own Workstream D** in `PHASE_2_ROADMAP.md` (account lifecycle & data privacy) — sequenced early (step 2, before mobile) because M-Connect's Stripe Connect link is built on its deactivation seam. Spec below stays the source of truth for the build.
+
 Requested 2026-07-18. Nothing can currently remove an account — throwaway accounts from testing (the e2e suite, the founder's trial signups, and one `emailcheck.*` account created while verifying the sender) accumulate in production with no way to clear them, and a real professional or pet owner has no way to leave.
 
 **⚠️ A hard row delete is architecturally impossible, and that's by design — don't try to force it.** Four foreign keys reference `accounts(id)` with **no `ON DELETE` rule**, so Postgres defaults to `NO ACTION` and the delete is refused:
@@ -502,9 +491,7 @@ Requested 2026-07-18. Nothing can currently remove an account — throwaway acco
 - Useful side effect: gives the e2e suite a cleanup path, so test runs stop leaving residue in production.
 
 ### P2-14: Default price + duration per service type
-Split out of O-1 step 2 (2026-07-18) because nothing stores it. `services` rows are **contract-born by design** (F-4), so a per-type default is a genuinely new concept: a `service_type_defaults` table (or a jsonb column on `professional_profiles`) keyed by account + service type, holding `price_cents`, `duration_minutes`, and `billing_cadence`.
-- Value: contract generation pre-fills instead of asking for a price every time — the founder sets "private walk = $30, 45 min" once.
-- ⚠️ Keep it a *default*, not a constraint: the contract stays the source of truth for what a client actually pays, or F-4's root cause comes back in a new shape.
+➡️ **Moved to Phase 3 — full spec in `PHASE_3_ROADMAP.md`** (relocated 2026-07-19). A per-account, per-service-type default (`price_cents`/`duration_minutes`/`billing_cadence`) so contract generation pre-fills; stays a default, not a constraint (F-4).
 
 ---
 

@@ -43,6 +43,21 @@ Phase 2 is organized into **workstreams** instead of fixed weeks, because scope 
 - [ ] **Security review #2 — after Workstream X + the owner portal are live:** re-run the tenant audit with two account types (owner vs. professional) reading shared tables; verify magic-link auth can't reach professional-only surfaces; re-check webhook signature verification and idempotency under the expanded event set
 - [ ] Device/browser QA matrix (used by checkpoints M and U): iPhone Safari, Android Chrome, desktop Chrome/Edge/Firefox — light + dark mode
 
+## Workstream D — Account Lifecycle & Data Privacy (delete / deactivate)
+
+> **Added 2026-07-19 at founder direction — data privacy and deletion is a first-class concern, not a backlog afterthought.** Detailed spec stays in `ROADMAP.md` → **P2-15**; this workstream schedules the build and its gates. It lands **early**: it's the seam **M-Connect's** Stripe Connect account depends on, and it gives the e2e suite (Workstream 0) a cleanup path so test runs stop leaving residue in production.
+
+**Core principle (from the spec — do not violate):** a hard row delete is architecturally impossible *by design* — four FKs reference `accounts(id)` with no `ON DELETE` rule, and the `events` append-only trigger (Marketplace Seam 2 + a `CLAUDE.md` hard constraint) forbids deleting event rows. **Build it as deactivation + PII scrub, never row deletion.**
+
+- [ ] **Deactivation core:** set `status = 'deactivated'` (the enum value has existed unused since migration `001`); block login and reject the session in `requireAuth`. This is the seam — a reversible status flip, not a destructive op.
+- [ ] **PII scrub:** null/redact the identifying columns on `accounts` (`email`, `phone`) so a "delete my data" request is satisfied while the immutable history keeps referring to a row that still exists (keep `id`). Fold in client `general_notes` and any other free-text PII surfaced by the privacy review. **Do not scrub `professional_profiles.business_name`** — the client-handling decision needs the walker's name to still render (shown as "deactivated") in the owner's portal.
+- [ ] **Supabase Auth user:** delete or disable the matching `auth.users` row, or a deactivated account can still authenticate (`AccountService.ts:61` already flags the orphan-auth-user case — this seam is known fiddly).
+- [ ] **Retention guardrails:** signed contracts (`generated_html` immutable once signed), invoices, and transactions must survive deactivation untouched — retention/legal value, and a hard constraint. A test asserts they remain readable afterward.
+- [ ] **Connected-account link (M-Connect seam):** the Stripe Connect `account_id` is a **nullable, replaceable** link cleared on deactivation / relationship-termination — never hardwired into the payment path. M-Connect builds on this; deactivation must null it cleanly.
+- [ ] **e2e cleanup path:** expose deactivation to the test suite so runs stop seeding permanent rows into production (ties to Workstream 0's test-data routine).
+- [ ] **Client handling (DECIDED 2026-07-19 — retain, portal access unaffected):** a deactivated professional's client rows and their owners' portal login stay intact (orphan-but-retain — real people with signed agreements). Wherever the walker is surfaced to an owner, they **display as "deactivated"** rather than disappearing. Deactivation must not cascade to or lock out those client/owner records.
+- [ ] **QA checkpoint D:** deactivate a professional **and** an owner account → login blocked, session rejected, PII scrubbed, auth user gone → signed contracts / invoices / transactions still intact and readable → the professional's clients retained, their owners' portal login still works, and the walker shows as "deactivated" in the portal. Folded into **Security review #1's** scope, since deactivation is both an auth boundary and a data-handling surface.
+
 ## Workstream M — Mobile: Android-first native app
 
 > **Founder direction 2026-07-19: build a real native app, Android first.** This supersedes the earlier PWA-first stance (a good mobile web app was going to come first, native only when a feature demanded it). The founder's original goal was an app for iOS **and** Android; the plan below gets there in phases. Phase 1 (the web app) is unchanged and remains the demo surface for now. iOS follows in **Phase 3** (below).
@@ -58,14 +73,14 @@ Phase 2 is organized into **workstreams** instead of fixed weeks, because scope 
 - [ ] **GPS walk tracking — starts on walk start** (P2-2, founder note 2026-07-19): live route + distance, running **only** from "Start walk" to "Complete walk" — no always-on/background location. Implemented as an Android **foreground service** with an ongoing "Walk in progress" notification during the walk only (permission-friendly and battery-friendly vs. always-on).
 - [ ] **Tap-to-Pay (Android)** (P2-8, pulled into Phase 2 for testing 2026-07-19): Stripe Terminal SDK, connection-token endpoint, in-person card flow. Needs an **NFC + Android 11+** device Stripe supports. Routes to the walker's connected account once **M-Connect** is done; on the platform account for founder-only testing before then. Independent of QR/GPS — can be resequenced ahead of M1 if testing payments early matters, provided the security gate (M0.5) is done first.
 - [ ] **Push notifications**: native channel extending Week 7's `notification_queue` (reminders, walk-done, new message, payment).
-- [ ] **Camera / photos** (P2-3, P2-7, P2-11): dog photo on the walk report; pet photos; profile/logo.
+- [ ] **Camera / photos** (P2-3; also feeds P2-7 + P2-11, now Phase 3): dog photo on the walk report. The Capacitor camera plugin is Phase 2 infra; the pet-photo and profile/logo *UIs* it serves moved to Phase 3 with P2-11/P2-7.
 - [ ] **Calendar integration** (P2-4): push walks to the phone's calendar.
 - [ ] **Local notifications + "walk in progress" home-screen widget.**
 
 ### M-Connect — Payment setup: "Get paid" (Stripe Connect / P2-6)
 *Gap found 2026-07-19: the simplified onboarding has **no way for a professional to set up getting paid** — today all money routes to the platform (founder) Stripe account. Real walkers can't receive money until this exists, and Tap-to-Pay to a real walker's account depends on it.*
 - [ ] **Stripe Connect Express** (founder decision 2026-07-19) — Stripe-hosted KYC/onboarding.
-  - ⚠️ **Do not hardwire the connected account.** It must be disconnectable/changeable later — e.g. if the professional relationship is terminated — so build it behind the same seam as **P2-15** account deactivation, not as a permanent one-time link. Storing the `account_id` is a nullable, replaceable link on the account, never an assumption baked into the payment path.
+  - ⚠️ **Do not hardwire the connected account.** It must be disconnectable/changeable later — e.g. if the professional relationship is terminated — so build it behind the same seam as **Workstream D** (P2-15) account deactivation, not as a permanent one-time link. Storing the `account_id` is a nullable, replaceable link on the account, never an assumption baked into the payment path.
 - [ ] Generate onboarding link, store connected `account_id`, handle the incomplete-onboarding (not-payout-ready) state.
 - [ ] Route charges (Checkout **and** Tap-to-Pay) to the walker's connected account. `PaymentService` was built so Connect slots in without changing callers.
 - [ ] "Set up payments" step in the onboarding wizard (skippable) **plus** a persistent Profile card until complete.
@@ -145,10 +160,9 @@ The **iOS port** is the main Phase 3 driver — it's what needs a **Mac or cloud
 
 *The detailed specs live in `ROADMAP.md` → "Phase 2 Backlog" (P2-1…P2-11) — they are not duplicated here. This is the priority ordering, revised as the founder learns from real users.*
 
+> **Moved to Phase 3 (2026-07-19):** P2-1, P2-7, P2-9, P2-11 (and P2-12, P2-14, which were never tiered here) were relocated to **`PHASE_3_ROADMAP.md`** at founder direction and dropped from the tiers below. P2-2 stayed — Workstream M depends on it.
+
 **Tier 1 — quick wins, mostly thin UI over existing APIs (candidates to interleave early):**
-- [ ] P2-9 Record payments taken outside Stripe (cash/check/Venmo)
-- [ ] P2-11 Full pet profile + vaccination records UI (vaccination expiry feeds "Needs your attention")
-- [ ] P2-7 Branded invoices (logo + business name)
 - [ ] P2-10 No-show & late-cancel fee flow
 - [ ] P2-5 Signup onboarding wizard *(scheduled inside Workstreams U + X above)*
 
@@ -156,7 +170,6 @@ The **iOS port** is the main Phase 3 driver — it's what needs a **Mac or cloud
 - [ ] **Nitro Sign electronic signing (the "Phase 1.5" deferral from Week 4)** — the full plan is preserved in `ROADMAP.md` Week 4's collapsed section; goes through `IeSignProvider` as always
 - [ ] P2-2 Walk-report auto-message on completion (decisions: SMS vs email/in-app first; check-in mechanism)
 - [ ] P2-3 Photos + notes on walk reports
-- [ ] P2-1 Walker ratings (1–5 dogs 🐕)
 - [ ] P2-4 Calendar sync (iCal feed first)
 
 **Tier 3 — big lifts, gated on explicit founder decisions:**
@@ -173,11 +186,12 @@ The **iOS port** is the main Phase 3 driver — it's what needs a **Mac or cloud
 | Order | What | Why first |
 |---|---|---|
 | 1 | Workstream 0 + Security review #1 | Clean, audited base before anything is built on it |
-| 2 | Workstream M (mobile) | Highest-leverage gap for real walkers; everything after inherits it |
-| 3 | Workstream U (polish) + Tier 1 features interleaved | Demo feedback will be fresh; Tier 1 items are small enough to ride along |
-| 4 | Workstream X (professions) + Security review #2 | Opens the market; the second security review catches what expansion changed |
-| 5 | Workstream S (subscription tiers) | Turn on paid signup once the product is polished and mobile-ready enough to be worth paying for — gating signups behind a paywall before then costs adoption. Founder can pull it earlier if revenue timing demands |
-| 6 | Tiers 2–3 by founder priority | Each needs decisions logged in the queue below |
+| 2 | Workstream D (account lifecycle & data privacy) | Foundational: M-Connect's connected-account seam depends on it, it gives the e2e suite a cleanup path, and data-deletion is a compliance surface worth having before real users arrive. Pairs with Security review #1 |
+| 3 | Workstream M (mobile) | Highest-leverage gap for real walkers; everything after inherits it |
+| 4 | Workstream U (polish) + Tier 1 features interleaved | Demo feedback will be fresh; Tier 1 items are small enough to ride along |
+| 5 | Workstream X (professions) + Security review #2 | Opens the market; the second security review catches what expansion changed |
+| 6 | Workstream S (subscription tiers) | Turn on paid signup once the product is polished and mobile-ready enough to be worth paying for — gating signups behind a paywall before then costs adoption. Founder can pull it earlier if revenue timing demands |
+| 7 | Tiers 2–3 by founder priority | Each needs decisions logged in the queue below |
 
 ## Founder Decisions Queue
 
@@ -187,14 +201,15 @@ The **iOS port** is the main Phase 3 driver — it's what needs a **Mac or cloud
 - [ ] **Front-end modernization** (Workstream U): approve/decline the Vite + TypeScript recommendation — now also the front-end pipeline Workstream M's Capacitor wrap wants, so this decision is on the mobile critical path
 - [x] **PWA vs. native timing** — **DECIDED 2026-07-19: native app, Android-first** (Capacitor wrap + native features), iOS in Phase 3. Supersedes the PWA-first plan. See Workstream M.
 - [x] **QR check-in mechanism** (P2-2) — **DECIDED 2026-07-19: QR with a manual "Start walk" fallback.** QR is an option the walker can use, never a dependency; candidate for a paid tier.
-- [x] **Payout account type** (Workstream M / P2-6) — **DECIDED 2026-07-19: Stripe Connect Express.** Requirement: the connected account must be changeable/disconnectable if the professional relationship is terminated — not hardwired (build behind the P2-15 deactivation seam).
+- [x] **Payout account type** (Workstream M / P2-6) — **DECIDED 2026-07-19: Stripe Connect Express.** Requirement: the connected account must be changeable/disconnectable if the professional relationship is terminated — not hardwired (build behind the P2-15 deactivation seam — now **Workstream D**).
 - [ ] **Payment setup: block vs. fall back** (Workstream M / M-Connect): until a walker completes Connect onboarding, is collecting payment **blocked**, or does it **fall back to the platform account**? — OPEN
 - [ ] **Platform fee** (Workstream M / M-Connect): does PetPro take a percentage of each transaction, or pass 100% to the walker? — OPEN
 - [ ] **RLS as a second isolation net** (Security review #1): recommended once the owner portal is live — approve the migration work
+- [x] **Deactivated professional's clients** (Workstream D) — **DECIDED 2026-07-19: retain, portal access unaffected.** Client rows and the owners' portal login are untouched when a professional deactivates; wherever the walker is surfaced to an owner, they **display as "deactivated."** (Orphan-but-retain — they're real people with signed agreements.)
 - [ ] **eSign timing**: when does Nitro Sign (Phase 1.5) actually start — before or after mobile?
 - [ ] **Tier matrix** (blocks Workstream S): which features land in Just Me vs. Essential vs. Business, monthly prices, annual discount yes/no, free trial vs. card-up-front
 - [ ] **What "Business" includes**: if it means multiple staff under one account, that's a data-model expansion to scope separately (seats, client ownership, per-staff schedules)
-- [ ] **When tiers switch on**: proposed as step 5 in sequencing (after polish + mobile) — pull earlier only if revenue timing demands it
+- [ ] **When tiers switch on**: proposed as step 6 in sequencing (after polish + mobile) — pull earlier only if revenue timing demands it
 - [ ] **Which professions launch first** in Workstream X (affects which contract templates to source)
 - [ ] *(carried from Phase 1, still open)* Invoice timing for weekly/monthly-billed services
 
@@ -204,14 +219,19 @@ The **iOS port** is the main Phase 3 driver — it's what needs a **Mac or cloud
 |---|---|
 | 0 — Closeout & cleanup | Not started (baseline verified clean 2026-07-15) |
 | Q — QA & security reviews | Not started (review #1 scheduled with Workstream 0) |
+| D — Account lifecycle & data privacy | Added & scheduled 2026-07-19 (P2-15 spec; deactivation + PII scrub; seam for M-Connect). Not started |
 | M — Mobile (Android-first native) | Planned & spec'd 2026-07-19 (Android-first; Tap-to-Pay + Stripe Connect Express in scope; iOS → Phase 3). Not started |
 | U — UI/UX polish | Not started |
 | X — Multi-profession | Not started |
 | S — Subscription tiers | Not started (blocked on tier-matrix decision) |
 | F — Feature backlog | Not started |
 
+*Phase 3 work (iOS port + Biometric Login, and the six backlog items moved 2026-07-19) is tracked in **`PHASE_3_ROADMAP.md`**.*
+
 ## Changelog
 
+- **2026-07-19 (later still)** — **New Workstream D — Account Lifecycle & Data Privacy** added at founder direction ("data privacy and deletion is important"). Schedules the previously-unscheduled **P2-15** (delete/deactivate) as deactivation + PII scrub + Supabase auth-user removal, with retention guardrails for signed contracts/invoices/transactions and a QA checkpoint folded into Security review #1. Sequenced as step **2** (before Workstream M) because M-Connect's connected-account link is built on its deactivation seam and it gives the e2e suite a cleanup path. Added a Status-at-a-Glance row, a Decisions-Queue item (fate of a deactivated professional's clients), and re-pointed the two M-Connect P2-15 seam references at Workstream D.
+- **2026-07-19 (later)** — **Six backlog items moved to Phase 3** at founder direction, into a new **`PHASE_3_ROADMAP.md`**: P2-1 (walker ratings), P2-7 (branded invoices), P2-9 (record outside-Stripe payments), P2-11 (full pet profile + vaccination UI), P2-12 (bring-your-own contract upload), P2-14 (default price/duration per service type). Dropped from Workstream F's tiers; their `ROADMAP.md` specs are now redirect stubs. IDs kept as `P2-x` (stable references). **P2-2 stayed in Phase 2** — Workstream M's QR check-in + GPS are built on it. The camera/photos M-item keeps its Capacitor plugin in Phase 2 but notes the P2-7/P2-11 UIs it feeds are now Phase 3.
 - **2026-07-19** — **Workstream M rewritten as an Android-first native app** at founder direction, superseding the PWA-first plan. Capacitor wrap + native features pulled forward from the backlog: QR check-in with manual fallback (P2-2), GPS walk tracking that starts only on walk start (P2-2), Tap-to-Pay on Android for testing (P2-8), push, camera/photos (P2-3/7/11), calendar (P2-4), local notifications + widget. New **M-Connect** item closes a gap found in onboarding — no way for a professional to set up getting paid (all money currently routes to the platform account); **Stripe Connect Express** chosen, with a requirement that the connected account be changeable/disconnectable on relationship termination (P2-15 seam). **iOS + Biometric Login moved to Phase 3** (Mac/cloud build env + Apple review). Estimates: first testable on a phone ~2–2.5 wks; submission-ready ~13–16 wks with Connect in the first cycle. Decisions logged: native/Android-first, QR-with-fallback, Stripe Express (all decided); **block-vs-fall-back** and **platform fee** left OPEN. Feature-gating note added so Phase 2 features sit behind clean entitlement checks for the Workstream S tiers.
 - **2026-07-15 (later)** — **Workstream S added at founder direction: paid signup with three account tiers — Just Me, Essential, Business** — built on the generic-billing seam via Stripe Billing subscriptions, with central entitlement checks, never-delete-data lockout policy, and its own QA checkpoint. Three new items in the Founder Decisions Queue (tier matrix; whether Business means multi-staff; when tiers switch on) and a sequencing row (proposed step 5, after polish + mobile). Entitlement enforcement added to Security review #2's scope.
 - **2026-07-15** — Document created at founder direction: workstreams 0/Q/M/U/X/F defined; Phase 1 backlog P2-1…P2-11 tiered into Workstream F; security posture baselined (no RLS, no helmet/rate-limiting — scheduled into review #1); code baseline verified (typecheck clean, zero audit vulnerabilities, all work committed). Phase 1 Weeks 7–8 still run under `ROADMAP.md` first.
