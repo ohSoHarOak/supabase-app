@@ -1,0 +1,76 @@
+name: CI
+
+# Runs typecheck + the full e2e suite on every push and pull request, so a
+# broken commit can't sit unnoticed (Phase 2 Workstream 0). Everything here
+# targets the separate Supabase TEST project via repo secrets — never prod.
+# Note: a branch with an open PR runs twice (once for the push, once for the
+# PR). If that redundancy ever matters, scope push to `branches: [main]`.
+on:
+  push:
+  pull_request:
+
+# A newer push to the same branch cancels the older, still-running check.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typecheck-and-e2e:
+    name: typecheck + e2e (TEST project)
+    runs-on: ubuntu-latest
+
+    # All of these come from repo Settings -> Secrets and variables -> Actions.
+    # They are the TEST project's values (ref dzejaycyjjaqajmatmjs) + Stripe
+    # TEST-mode keys — the same values as the local .env. Never prod.
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        # Node 22+ is required: @supabase/supabase-js's realtime client needs a
+        # global WebSocket, which Node 20 lacks (createClient throws at boot).
+        # 24 matches the local dev environment.
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      # Idempotent: already-applied migrations are skipped. Keeps the TEST
+      # project's schema in lockstep with the committed migrations so the
+      # e2e below is meaningful, and proves a new migration applies cleanly.
+      - name: Apply migrations to the TEST project
+        run: npm run migrate
+
+      - name: Start server, wait for health, run e2e
+        run: |
+          npx tsx src/index.ts &
+          SERVER_PID=$!
+          echo "server started (pid $SERVER_PID); waiting for /health ..."
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:3000/health >/dev/null; then
+              echo "server healthy after ${i}s"
+              break
+            fi
+            if [ "$i" -eq 30 ]; then
+              echo "::error::server never became healthy on :3000"
+              exit 1
+            fi
+            sleep 1
+          done
+          npm test
+          status=$?
+          kill "$SERVER_PID" 2>/dev/null || true
+          exit $status
