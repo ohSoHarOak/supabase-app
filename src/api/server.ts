@@ -15,17 +15,24 @@ import { messagesRouter, threadsRouter } from './routes/messaging';
 import { notificationsRouter } from './routes/notifications';
 import { portalRouter } from './routes/portal';
 import { errorHandler } from './middleware/errorHandler';
+import { securityHeaders, corsMiddleware, authLimiter, webhookLimiter } from './middleware/security';
 import { env } from '../config/env';
 
 export function createServer(): express.Express {
   const app = express();
   // Render terminates TLS at its proxy; this makes req.protocol report
-  // https so Stripe Checkout return URLs are built correctly.
+  // https so Stripe Checkout return URLs are built correctly. It also gives
+  // express-rate-limit the real client IP from X-Forwarded-For.
   app.set('trust proxy', 1);
 
+  // Security headers (helmet) + explicit default-deny CORS, before any route.
+  app.use(corsMiddleware);
+  app.use(securityHeaders);
+
   // The Stripe webhook must see the raw request bytes for signature
-  // verification, so it mounts before the JSON body parser.
-  app.use('/api/webhooks/stripe', stripeWebhookRouter);
+  // verification, so it mounts before the JSON body parser. Rate-limited to
+  // cap forged floods (real Stripe traffic stays well under the ceiling).
+  app.use('/api/webhooks/stripe', webhookLimiter, stripeWebhookRouter);
 
   app.use(express.json({ limit: '1mb' }));
 
@@ -56,7 +63,7 @@ export function createServer(): express.Express {
     });
   });
 
-  app.use('/api/auth', authRouter);
+  app.use('/api/auth', authLimiter, authRouter);
   app.use('/api/clients', clientsRouter);
   app.use('/api/pets', petsRouter);
   app.use('/api/contract-templates', contractTemplatesRouter);
@@ -65,12 +72,16 @@ export function createServer(): express.Express {
   app.use('/api/appointments', appointmentsRouter);
   app.use('/api/billable-items', billableItemsRouter);
   app.use('/api/invoices', invoicesRouter);
-  // Unauthenticated by design — see the note on payLinkRouter.
-  app.use('/api/pay', payLinkRouter);
+  // Unauthenticated by design — see the note on payLinkRouter. Rate-limited
+  // since it has no session in front of it.
+  app.use('/api/pay', authLimiter, payLinkRouter);
   app.use('/api/events', eventsRouter);
   app.use('/api/threads', threadsRouter);
   app.use('/api/messages', messagesRouter);
   app.use('/api/notifications', notificationsRouter);
+  // Throttle the magic-link request specifically (the rest of the portal is
+  // behind an authenticated session); runs before the portal router.
+  app.use('/api/portal/login', authLimiter);
   app.use('/api/portal', portalRouter);
 
   app.use((_req, res) => {
