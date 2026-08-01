@@ -151,6 +151,19 @@ portalRouter.post('/threads/:id/messages', async (req, res, next) => {
   }
 });
 
+/** POST /api/portal/deactivate — the owner closes their own portal account
+ *  (Workstream D). No password to confirm — owners are passwordless (magic
+ *  link), so the live session is the proof. Scrubs the owner's contact PII and
+ *  deletes their auth user; the professional's client records are retained. */
+portalRouter.post('/deactivate', async (req, res, next) => {
+  try {
+    await accountService.deactivateAccount(req.account!.id, { reason: 'self_service_portal' });
+    res.json({ ok: true, data: { deactivated: true } });
+  } catch (err) {
+    next(err);
+  }
+});
+
 /** POST /api/portal/threads/:id/read */
 portalRouter.post('/threads/:id/read', async (req, res, next) => {
   try {

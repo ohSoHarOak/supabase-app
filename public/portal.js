@@ -578,7 +578,15 @@
             .filter(Boolean).join(' · '))}
           ${(c.pets ?? []).length ? row('Your pets', petSummary(c.pets)) : ''}
         </div>
-        ${c.professional ? `
+        ${c.professional ? (c.professional.deactivated ? `
+        <div class="eyebrow">Your pet care professional</div>
+        <div class="card fieldset">
+          ${row('Business name', c.professional.business_name)}
+          <div class="contract-row"><div class="what">
+            <div class="meta">Status</div>
+            <div class="title">Deactivated — this account has been closed. Your records and this portal stay available, but they can no longer be reached here.</div>
+          </div></div>
+        </div>` : `
         <div class="eyebrow">Your pet care professional</div>
         <div class="card fieldset">
           ${row('Business name', c.professional.business_name)}
@@ -597,7 +605,7 @@
             <div class="spacer"></div>
             <button class="btn btn-quiet" data-nav="#/messages">Message them</button>
           </div>
-        </div>` : ''}
+        </div>`) : ''}
       </div>`);
 
     appEl.innerHTML = header('profile') + `

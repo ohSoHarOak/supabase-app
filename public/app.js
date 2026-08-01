@@ -2401,6 +2401,25 @@
           <button class="btn" type="submit">Update password</button>
         </div>
         </form>
+
+        <div class="eyebrow" style="margin-top:28px">Close my account</div>
+        <form id="deactivate-form">
+        <div class="card fieldset">
+          <p class="page-sub" style="margin-top:0">
+            Closing your account signs you out everywhere and removes your login and contact details.
+            Your signed contracts, invoices, and payment history are kept for your records, and your
+            clients' portal access is unaffected. This can't be undone from here.
+          </p>
+          <div class="form-grid">
+            <div><label for="da-password">Confirm your password</label>
+              <input id="da-password" type="password" required autocomplete="current-password" /></div>
+          </div>
+        </div>
+        <div class="form-foot">
+          <div class="spacer"></div>
+          <button class="btn btn-danger" type="submit">Close my account</button>
+        </div>
+        </form>
       </div>`;
 
     document.getElementById('pf-form').onsubmit = async (e) => {
@@ -2439,6 +2458,22 @@
           });
           e.target.reset();
           toast('Password updated.', 'ok');
+        } catch (err) {
+          toast(err.message);
+        }
+      });
+    };
+    document.getElementById('deactivate-form').onsubmit = async (e) => {
+      e.preventDefault();
+      if (!confirm('Close your account? You will be signed out and won\'t be able to log back in. Your contracts, invoices, and clients are kept.')) return;
+      const btn = e.target.querySelector('button[type=submit]');
+      await withBusy(btn, async () => {
+        try {
+          await api('POST', '/api/auth/deactivate', {
+            current_password: document.getElementById('da-password').value,
+          });
+          toast('Your account has been closed.', 'ok');
+          logout(); // token is already dead server-side; clear local state and return to login
         } catch (err) {
           toast(err.message);
         }

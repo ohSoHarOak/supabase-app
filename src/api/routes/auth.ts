@@ -160,6 +160,30 @@ authRouter.patch('/profile', requireAuth, async (req, res, next) => {
   }
 });
 
+/** POST /api/auth/deactivate — the professional closes their own account
+ *  (Workstream D). Re-confirms the current password (destructive + irreversible
+ *  from the user's side), then deactivates: session dies immediately, login is
+ *  blocked, contact PII is scrubbed, the auth user is deleted. Signed contracts,
+ *  invoices, and their clients' records + portal access are all retained. */
+authRouter.post('/deactivate', requireAuth, async (req, res, next) => {
+  try {
+    const parsed = z.object({ current_password: z.string().min(1) }).safeParse(req.body);
+    if (!parsed.success) {
+      res.status(422).json({ ok: false, error: { code: 'validation', message: 'Your current password is required to close your account.' } });
+      return;
+    }
+    const ok = await accountService.confirmPassword(req.account!, parsed.data.current_password);
+    if (!ok) {
+      res.status(401).json({ ok: false, error: { code: 'wrong_password', message: 'Your current password is incorrect.' } });
+      return;
+    }
+    await accountService.deactivateAccount(req.account!.id, { reason: 'self_service' });
+    res.json({ ok: true, data: { deactivated: true } });
+  } catch (err) {
+    next(err);
+  }
+});
+
 /** GET /api/auth/me — current account + profile (verifies the session works). */
 authRouter.get('/me', requireAuth, async (req, res, next) => {
   try {

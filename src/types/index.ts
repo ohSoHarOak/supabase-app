@@ -18,6 +18,11 @@ export interface Account {
   email: string;
   phone: string | null;
   status: AccountStatus;
+  /** M-Connect seam (024): nullable, replaceable Stripe Connect account id.
+   *  NULLed on deactivation; nothing populates it until Workstream M. */
+  stripe_connect_account_id: string | null;
+  /** When status was flipped to 'deactivated' (024). NULL unless deactivated. */
+  deactivated_at: string | null;
   created_at: string;
   updated_at: string;
 }
