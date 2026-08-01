@@ -313,11 +313,19 @@
           ${tab('clients', 'Clients')}
           ${tab('messages', 'Messages')}
           ${tab('profile', 'Profile')}
-          <a href="#/login" onclick="window.petproLogout(); return false;">Log out</a>
+          <a href="#/login" data-action="logout">Log out</a>
         </nav>
       </div></header>`;
   }
   window.petproLogout = () => logout();
+  // CSP-safe logout: a delegated listener replaces an inline onclick handler,
+  // so script-src can stay strict (no 'unsafe-inline').
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('[data-action="logout"]')) {
+      e.preventDefault();
+      window.petproLogout();
+    }
+  });
 
   // ------------------------------------------------------------- login ----
   function renderLogin(mode = 'login') {

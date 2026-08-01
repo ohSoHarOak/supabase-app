@@ -71,10 +71,12 @@ function validationError(res: import('express').Response, issues: z.ZodIssue[]):
 /** GET /api/clients?q=<search>&status=<status> — list, with search across client + pet fields. */
 clientsRouter.get('/', async (req, res, next) => {
   try {
-    const status = req.query.status as 'prospect' | 'active' | 'inactive' | undefined;
+    // Validate query params rather than trusting them: an unrecognised status
+    // is ignored (no filter) instead of passed through as an untyped string.
+    const statusParsed = z.enum(['prospect', 'active', 'inactive']).safeParse(req.query.status);
     const clients = await clientService.listClients(req.account!.id, {
       query: typeof req.query.q === 'string' ? req.query.q : undefined,
-      status,
+      status: statusParsed.success ? statusParsed.data : undefined,
     });
     res.json({ ok: true, data: clients });
   } catch (err) {

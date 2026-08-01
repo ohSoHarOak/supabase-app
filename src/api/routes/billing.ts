@@ -94,16 +94,13 @@ invoicesRouter.post('/', async (req, res, next) => {
 /** GET /api/invoices?client_id=<uuid>&status=<status> */
 invoicesRouter.get('/', async (req, res, next) => {
   try {
-    const status = req.query.status as
-      | 'draft'
-      | 'open'
-      | 'paid'
-      | 'void'
-      | 'uncollectible'
-      | undefined;
+    // Validate query params: an invalid client_id would otherwise reach
+    // Postgres as a malformed UUID (a 500); an unknown status is ignored.
+    const statusParsed = z.enum(['draft', 'open', 'paid', 'void', 'uncollectible']).safeParse(req.query.status);
+    const clientIdParsed = z.string().uuid().safeParse(req.query.client_id);
     const invoices = await paymentService.listInvoices(req.account!.id, {
-      clientId: typeof req.query.client_id === 'string' ? req.query.client_id : undefined,
-      status,
+      clientId: clientIdParsed.success ? clientIdParsed.data : undefined,
+      status: statusParsed.success ? statusParsed.data : undefined,
     });
     res.json({ ok: true, data: invoices });
   } catch (err) {

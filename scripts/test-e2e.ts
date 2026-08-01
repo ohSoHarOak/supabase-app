@@ -891,6 +891,64 @@ async function main(): Promise<void> {
     pass('14. Invoice sending: explicit send mints a scoped pay token (resend reuses it), the public pay link works with no login and exposes nothing beyond that one invoice, the token is not a session, and a client with no email is refused');
   }
 
+  // --- 15. Cross-tenant isolation (Security review #1) ---------------------
+  // Professional B must never see or touch Professional A's data. This makes
+  // the tenant-scoping audit permanent: any future endpoint that forgets to
+  // scope by professional_account_id fails right here.
+  {
+    // Everything above ran as Professional A (the `token` global). Grab a few
+    // of A's real resource ids to try to reach from another account.
+    const aClients = (await ok('GET', '/api/clients', undefined, '15. A clients')).data as any[];
+    assert(aClients.length > 0, '15. Setup', 'Expected Professional A to own clients by now');
+    const aClientId = aClients[0].id as string;
+    const aPetId = aClients.find((c) => c.pets?.length)?.pets?.[0]?.id as string | undefined;
+    const aInvoices = (await ok('GET', '/api/invoices', undefined, '15. A invoices')).data as any[];
+    assert(aInvoices.length > 0, '15. Setup', 'Expected Professional A to have invoices by now');
+    const aInvoiceId = aInvoices[0].id as string;
+
+    // A brand-new second professional with an empty world.
+    const bSignup = await ok('POST', '/api/auth/signup', {
+      email: `e2e.tenantB+${stamp}@example.com`,
+      password: 'Test-Password-123!',
+      fullName: 'Tenant B',
+      businessName: 'B Co.',
+    }, '15. B signup');
+    const tokenB = bSignup.data.access_token as string;
+
+    // Every cross-tenant attempt must be denied (a scope miss reads as 404).
+    const attempts: Array<[string, string, unknown]> = [
+      ['GET', `/api/clients/${aClientId}`, undefined],
+      ['PATCH', `/api/clients/${aClientId}`, { full_name: 'hijacked' }],
+      ['DELETE', `/api/clients/${aClientId}`, undefined],
+      ['GET', `/api/invoices/${aInvoiceId}`, undefined],
+      ['POST', `/api/invoices/${aInvoiceId}/void`, {}],
+    ];
+    if (aPetId) {
+      attempts.push(['GET', `/api/pets/${aPetId}`, undefined]);
+      attempts.push(['PATCH', `/api/pets/${aPetId}`, { name: 'hijacked' }]);
+    }
+    for (const [method, path, body] of attempts) {
+      const r = await api(method, path, body, tokenB);
+      assert(
+        r.status === 404 || r.status === 403,
+        '15. Cross-tenant blocked',
+        `${method} ${path} as another professional must be 404/403; got ${r.status}`
+      );
+    }
+
+    // B's own listings must be empty — A's rows must not leak into them.
+    const bClients = (await ok('GET', '/api/clients', undefined, '15. B clients', tokenB)).data as any[];
+    assert(bClients.length === 0, '15. List isolation', `Professional B must see none of A's clients; saw ${bClients.length}`);
+    const bInvoices = (await ok('GET', '/api/invoices', undefined, '15. B invoices', tokenB)).data as any[];
+    assert(bInvoices.length === 0, '15. List isolation', `Professional B must see none of A's invoices; saw ${bInvoices.length}`);
+
+    // And the failed attempts above must not have actually mutated A's data.
+    const stillThere = await ok('GET', `/api/clients/${aClientId}`, undefined, '15. A intact');
+    assert(stillThere.data.full_name !== 'hijacked', '15. No tamper', "A's client was mutated by another tenant");
+
+    pass("15. Cross-tenant isolation: a second professional gets 404/403 on every one of A's clients, pets, and invoices (read/edit/delete), sees an empty list, and cannot tamper");
+  }
+
   console.log(`\n\x1b[32m${passed} steps passed — E2E TEST PASSED against ${baseUrl}\x1b[0m`);
 }
 

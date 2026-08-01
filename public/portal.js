@@ -29,6 +29,13 @@
     if (redirect) { location.hash = ''; render(); }
   }
   window.petproPortalLogout = () => logout();
+  // CSP-safe logout: a delegated listener replaces an inline onclick handler.
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('[data-action="logout"]')) {
+      e.preventDefault();
+      window.petproPortalLogout();
+    }
+  });
 
   // -------------------------------------------------------- api client ----
   async function api(method, path, body) {
@@ -106,7 +113,7 @@
           ${tab('billing', 'Billing')}
           ${tab('messages', 'Messages')}
           ${tab('profile', 'Profile')}
-          <a href="#" onclick="window.petproPortalLogout(); return false;">Log out</a>
+          <a href="#" data-action="logout">Log out</a>
         </nav>
       </div></header>`;
   }
