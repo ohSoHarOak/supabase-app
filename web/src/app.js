@@ -1,6 +1,9 @@
 /* PetPro Connect — professional UI (Week 4, extended with Week 5 billing).
    Vanilla JS single-page app, hash-routed, talking to the REST API.
-   No build step: this file is served as-is by the Express server. */
+   M0-b: bundled by Vite as an ES module (was a classic <script>). */
+import { PetPro } from './shared.js';
+import { API_BASE } from './config.js';
+import { createClient } from '@supabase/supabase-js';
 
 (() => {
   'use strict';
@@ -21,7 +24,7 @@
   async function api(method, path, body) {
     let res;
     try {
-      res = await fetch(path, {
+      res = await fetch(API_BASE + path, {
         method,
         headers: {
           'Content-Type': 'application/json',
@@ -1839,7 +1842,7 @@
     // header, so fetch it first, then print or download the result.
     if (signed) {
       const fetchDocument = async () => {
-        const res = await fetch(`/api/contracts/${contractId}/document`, {
+        const res = await fetch(`${API_BASE}/api/contracts/${contractId}/document`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (!res.ok) throw new Error('Could not load the contract document.');
@@ -2484,15 +2487,15 @@
 
   // ---------------------------------------------------------- messaging ----
   // Realtime: one Supabase client (anon key from /api/config), authorized
-  // with the user's JWT so RLS only ever delivers their own threads. If the
-  // CDN script or the socket fails, the 8s poll below covers delivery.
+  // with the user's JWT so RLS only ever delivers their own threads. The
+  // client is bundled now (M0-b, no CDN); if config or the socket fails, the
+  // 8s poll below covers delivery.
   let sbClient = null; // null = not tried, false = unavailable
   async function getSupabase() {
     if (sbClient !== null) return sbClient;
     try {
-      if (!window.supabase) { sbClient = false; return sbClient; }
       const cfg = await api('GET', '/api/config');
-      sbClient = window.supabase.createClient(cfg.supabase_url, cfg.supabase_anon_key, {
+      sbClient = createClient(cfg.supabase_url, cfg.supabase_anon_key, {
         auth: { persistSession: false, autoRefreshToken: false },
       });
     } catch {

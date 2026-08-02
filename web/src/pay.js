@@ -7,7 +7,10 @@
    It can do exactly two things: show one invoice, and start a Stripe Checkout
    for it. There is no session, nothing is stored, and no other data is
    reachable from here. Formatters come from shared.js so this page can't
-   drift from the other two (T-3 / PH-3). */
+   drift from the other two (T-3 / PH-3).
+   M0-b: bundled by Vite as an ES module (was a classic <script>). */
+import { PetPro } from './shared.js';
+import { API_BASE } from './config.js';
 
 (() => {
   'use strict';
@@ -25,7 +28,7 @@
   async function api(method, path, body) {
     let res;
     try {
-      res = await fetch(path, {
+      res = await fetch(API_BASE + path, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: body === undefined ? undefined : JSON.stringify(body),

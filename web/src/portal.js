@@ -1,7 +1,10 @@
 /* PetPro Connect — pet owner portal (Week 8).
    Magic-link login, then: upcoming walks, contracts (view + sign), invoices
    (view + pay via Stripe Checkout), and messaging the professional.
-   Same vanilla hash-routed pattern as app.js, deliberately smaller. */
+   Same vanilla hash-routed pattern as app.js, deliberately smaller.
+   M0-b: bundled by Vite as an ES module (was a classic <script>). */
+import { PetPro } from './shared.js';
+import { API_BASE } from './config.js';
 
 (() => {
   'use strict';
@@ -41,7 +44,7 @@
   async function api(method, path, body) {
     let res;
     try {
-      res = await fetch(path, {
+      res = await fetch(API_BASE + path, {
         method,
         headers: {
           'Content-Type': 'application/json',
@@ -334,7 +337,7 @@
     let contract, docHtml;
     try {
       // The overview endpoint doesn't return HTML; the document endpoint does.
-      const res = await fetch(`/api/portal/contracts/${contractId}/document`, {
+      const res = await fetch(`${API_BASE}/api/portal/contracts/${contractId}/document`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) throw new Error('Could not load the agreement.');

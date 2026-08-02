@@ -15,9 +15,14 @@
    because its 401 branch differs by design — the professional re-logs in with
    a password, the owner requests a new magic link.
 
-   scripts/check-structure.mjs verifies the [data-*] hooks below survive. */
+   scripts/check-structure.mjs verifies the [data-*] hooks below survive.
 
-window.PetPro = (() => {
+   M0-b: this is now an ES module. Instead of assigning window.PetPro and
+   relying on <script> load order, it exports the PetPro object; app.js and
+   portal.js/pay.js `import { PetPro }` from it, so the bundler guarantees the
+   handshake that the old load-order check used to protect. */
+
+export const PetPro = (() => {
   'use strict';
 
   // ------------------------------------------------------------ format ----

@@ -11,12 +11,9 @@
 <body>
   <div id="app" aria-live="polite"></div>
   <div id="toast" class="toast" role="alert" hidden></div>
-  <!-- Supabase client for Realtime message delivery (Week 7). The app works
-       without it — messaging falls back to polling if the CDN is blocked. -->
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js" defer></script>
-  <!-- shared.js must load first — app.js reads window.PetPro at startup.
-       Both are deferred, so they execute in document order. -->
-  <script src="/shared.js" defer></script>
-  <script src="/app.js" defer></script>
+  <!-- M0-b: single ES-module entry, bundled by Vite. It imports shared.js
+       (the old window.PetPro handshake) and @supabase/supabase-js directly, so
+       there's no CDN dependency and no load-order requirement anymore. -->
+  <script type="module" src="/src/app.js"></script>
 </body>
 </html>
