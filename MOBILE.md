@@ -33,7 +33,9 @@ From the repo root (PowerShell):
 # 1. Point the app at your backend (the deployed API origin). Do NOT add a
 #    trailing slash. For founder-only local testing you can use your machine's
 #    LAN address instead, e.g. http://192.168.1.20:3000
-$env:VITE_API_BASE = "https://<your-app>.onrender.com"
+#    Live URL (confirmed): https://petpro-app.onrender.com  (the Render service
+#    is named "petpro-app" — note this differs from render.yaml's "petpro-connect").
+$env:VITE_API_BASE = "https://petpro-app.onrender.com"
 
 # 2. Build the web app with that API base and copy it into the Android project
 npm run build:native
