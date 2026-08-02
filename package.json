@@ -10,6 +10,9 @@
     "build": "tsc && vite build",
     "build:api": "tsc",
     "build:web": "vite build",
+    "build:native": "vite build && cap sync android",
+    "cap:sync": "cap sync android",
+    "cap:open": "cap open android",
     "preview:web": "vite preview",
     "start": "node dist/index.js",
     "migrate": "tsx src/db/migrate.ts",
@@ -21,6 +24,8 @@
     "node": ">=22"
   },
   "dependencies": {
+    "@capacitor/android": "^8.5.0",
+    "@capacitor/core": "^8.5.0",
     "@supabase/supabase-js": "^2.45.0",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
@@ -32,6 +37,7 @@
     "zod": "^3.23.0"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.5.0",
     "@types/cors": "^2.8.19",
     "@types/express": "^4.17.21",
     "@types/node": "^20.14.0",
