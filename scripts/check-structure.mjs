@@ -28,10 +28,12 @@ import path from 'path';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (rel) => readFileSync(path.join(root, rel), 'utf8');
 
-const CSS = 'public/styles.css';
-const APP = 'public/app.js';
-const PORTAL = 'public/portal.js';
-const SHARED = 'public/shared.js';
+// Front-end moved under the Vite root in M0-a (Workstream M): the classic
+// scripts live in web/public/, the HTML entry points in web/.
+const CSS = 'web/public/styles.css';
+const APP = 'web/public/app.js';
+const PORTAL = 'web/public/portal.js';
+const SHARED = 'web/public/shared.js';
 
 /**
  * hook      — the data-* attribute, in both the CSS selector and the markup
@@ -67,8 +69,8 @@ const CONTRACTS = [
    own script first (or drops shared.js entirely) throws on first render.
    Cheap to verify statically, and the failure is otherwise a blank screen. */
 const LOAD_ORDER = [
-  { page: 'public/index.html', script: 'app.js' },
-  { page: 'public/portal.html', script: 'portal.js' },
+  { page: 'web/index.html', script: 'app.js' },
+  { page: 'web/portal.html', script: 'portal.js' },
 ];
 
 /** Pull the declaration body for `[hook] { ... }` out of the stylesheet. */

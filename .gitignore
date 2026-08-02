@@ -3,5 +3,6 @@
 !.env.example
 node_modules/
 dist/
+dist-web/
 *.log
 render.pdf
