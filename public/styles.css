@@ -177,6 +177,8 @@ h1, h2, h3 { line-height: 1.25; text-wrap: balance; margin: 0; }
 .btn-primary:hover { filter: brightness(1.04); }
 .btn-quiet { background: transparent; color: var(--steel); border-color: var(--steel); }
 @media (prefers-color-scheme: dark) { .btn-quiet { color: var(--ink); border-color: var(--ink-soft); } }
+.btn-danger { background: transparent; color: var(--alert); border-color: var(--alert); }
+.btn-danger:hover { background: var(--alert); color: #fff; }
 .btn-ghost { background: transparent; border-color: transparent; color: var(--ink-soft); }
 .btn[disabled] { opacity: 0.5; cursor: default; }
 .btn.busy { opacity: 0.7; cursor: progress; }

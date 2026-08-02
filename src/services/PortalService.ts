@@ -179,7 +179,16 @@ export class PortalService {
   async overview(ownerAccountId: string): Promise<{
     clients: (Client & {
       professional:
-        | { business_name: string | null; full_name: string; phone: string | null; email: string }
+        | {
+            business_name: string | null;
+            full_name: string;
+            phone: string | null;
+            email: string;
+            /** Workstream D: the walker deactivated their account. Their client
+             *  records + this portal stay intact, but they show as "deactivated"
+             *  and their (scrubbed) contact details are withheld. */
+            deactivated: boolean;
+          }
         | null;
     })[];
     appointments: (Appointment & { services: { name: string } | null })[];
@@ -207,7 +216,7 @@ export class PortalService {
       // professional_profiles — the owner portal shows them as a contact card.
       supabaseAdmin
         .from('accounts')
-        .select('id, phone, email')
+        .select('id, phone, email, status')
         .in('id', professionalIds),
       supabaseAdmin
         .from('appointments')
@@ -265,18 +274,28 @@ export class PortalService {
     }
 
     const contactByAccount = new Map(
-      (accountsRes.data ?? []).map((a) => [a.id, { phone: a.phone as string | null, email: a.email as string }])
+      (accountsRes.data ?? []).map((a) => [
+        a.id,
+        { phone: a.phone as string | null, email: a.email as string, status: a.status as string },
+      ])
     );
     const profileByAccount = new Map(
-      (profilesRes.data ?? []).map((p) => [
-        p.account_id,
-        {
-          business_name: p.business_name,
-          full_name: p.full_name,
-          phone: contactByAccount.get(p.account_id)?.phone ?? null,
-          email: contactByAccount.get(p.account_id)?.email ?? '',
-        },
-      ])
+      (profilesRes.data ?? []).map((p) => {
+        const contact = contactByAccount.get(p.account_id);
+        const deactivated = contact?.status !== 'active';
+        return [
+          p.account_id,
+          {
+            business_name: p.business_name,
+            full_name: p.full_name,
+            // A deactivated walker's phone is already nulled and their email is
+            // a tombstone (deactivated+…@deleted.invalid) — never surface either.
+            phone: deactivated ? null : contact?.phone ?? null,
+            email: deactivated ? '' : contact?.email ?? '',
+            deactivated,
+          },
+        ];
+      })
     );
     return {
       clients: clients.map((c) => ({

@@ -949,6 +949,105 @@ async function main(): Promise<void> {
     pass("15. Cross-tenant isolation: a second professional gets 404/403 on every one of A's clients, pets, and invoices (read/edit/delete), sees an empty list, and cannot tamper");
   }
 
+  // --- 16. Account lifecycle & data privacy (Workstream D) -----------------
+  // Deactivate a professional AND an owner. Prove: session dies + re-login
+  // blocked + auth user deleted, contact PII scrubbed, the connect-account seam
+  // nulled — while signed contracts, invoices, the professional's clients, and
+  // the owner's portal access all survive, and the walker shows "deactivated".
+  {
+    const { supabaseAdmin, supabaseAnon } = await import('../src/config/supabase');
+
+    // A fresh professional C with a full little world of its own.
+    const cEmail = `e2e.deactivateC+${stamp}@example.com`;
+    const cPassword = 'Test-Password-123!';
+    const cSignup = await ok('POST', '/api/auth/signup', {
+      email: cEmail, password: cPassword, fullName: 'Pro C', businessName: 'C Co.', phone: '5550101616',
+    }, '16. C signup');
+    const tokenC = cSignup.data.access_token as string;
+    const cAccountId = cSignup.data.account.id as string;
+
+    // Capture C's auth user id before deactivation removes it.
+    const { data: cBefore } = await supabaseAdmin.from('accounts').select('auth_user_id').eq('id', cAccountId).single();
+    const cAuthUserId = cBefore!.auth_user_id as string;
+    // Plant a connect-account id so we can prove deactivation nulls the M-Connect seam.
+    await supabaseAdmin.from('accounts').update({ stripe_connect_account_id: 'acct_e2e_dummy' }).eq('id', cAccountId);
+
+    // C's client, a signed contract, and an invoice — the records that MUST survive.
+    const ownerEmail = `e2e.deactivateOwner+${stamp}@example.com`;
+    const cClient = (await ok('POST', '/api/clients', { full_name: `Owner D ${stamp}`, email: ownerEmail }, '16. C client', tokenC)).data;
+    const cTemplate = (await ok('POST', '/api/contract-templates/seed', {}, '16. C template', tokenC)).data;
+    const cContract = (await ok('POST', '/api/contracts', { template_id: cTemplate.id, client_id: cClient.id }, '16. C contract', tokenC)).data.contract;
+    const cSigned = (await ok('POST', `/api/contracts/${cContract.id}/sign`, { signer_name: 'Owner D', signature_image: SIGNATURE }, '16. C sign', tokenC)).data;
+    assert(cSigned.status === 'signed', '16. Setup', 'Contract should be signed before deactivation');
+    const cInvoice = (await ok('POST', '/api/invoices', { client_id: cClient.id, amount_cents: 4500, description: 'Walk' }, '16. C invoice', tokenC)).data;
+
+    // An owner session linked to C's client (mint the magic link server-side).
+    await supabaseAdmin.auth.admin.createUser({ email: ownerEmail, email_confirm: true });
+    const link = await supabaseAdmin.auth.admin.generateLink({ type: 'magiclink', email: ownerEmail });
+    const verified = await supabaseAnon.auth.verifyOtp({ token_hash: link.data!.properties!.hashed_token, type: 'magiclink' });
+    let ownerToken = verified.data.session!.access_token;
+    const ownerSession = (await ok('POST', '/api/portal/session', { access_token: ownerToken }, '16. Owner session')).data;
+    const ownerAccountId = ownerSession.account.id as string;
+    const { data: ownerBefore } = await supabaseAdmin.from('accounts').select('auth_user_id').eq('id', ownerAccountId).single();
+    const ownerAuthUserId = ownerBefore!.auth_user_id as string;
+
+    // 16a. Deactivation needs the right password.
+    const wrongPw = await api('POST', '/api/auth/deactivate', { current_password: 'not-the-password' }, tokenC);
+    assert(wrongPw.status === 401, '16. Password gate', `Wrong password must 401; got ${wrongPw.status}`);
+
+    // 16b. Deactivate C for real.
+    const deactivated = await ok('POST', '/api/auth/deactivate', { current_password: cPassword }, '16. Deactivate C', tokenC);
+    assert(deactivated.data.deactivated === true, '16. Deactivate C', 'Expected deactivated:true');
+
+    // 16c. The live session is dead, and re-login is refused. (401 because the
+    //      auth user was deleted, so the token no longer resolves at all — an
+    //      even harder stop than the status-gate 403; either means "rejected".)
+    const deadSession = await api('GET', '/api/auth/me', undefined, tokenC);
+    assert(deadSession.status === 401 || deadSession.status === 403, '16. Session killed', `Deactivated session must be rejected (401/403); got ${deadSession.status}`);
+    const reLogin = await api('POST', '/api/auth/login', { email: cEmail, password: cPassword });
+    assert(reLogin.status === 401, '16. Re-login blocked', `Deactivated account re-login must 401; got ${reLogin.status}`);
+
+    // 16d. The account row: status flipped, contact PII scrubbed, seams nulled.
+    const { data: cAfter } = await supabaseAdmin.from('accounts')
+      .select('status, email, phone, auth_user_id, stripe_connect_account_id, deactivated_at').eq('id', cAccountId).single();
+    assert(cAfter!.status === 'deactivated', '16. Scrub', `status should be deactivated; got ${cAfter!.status}`);
+    assert(String(cAfter!.email).startsWith('deactivated+'), '16. Scrub', `email should be tombstoned; got ${cAfter!.email}`);
+    assert(cAfter!.phone === null, '16. Scrub', 'phone should be nulled');
+    assert(cAfter!.auth_user_id === null, '16. Scrub', 'auth_user_id should be severed');
+    assert(cAfter!.stripe_connect_account_id === null, '16. Scrub', 'connect account (M-Connect seam) should be nulled');
+    assert(cAfter!.deactivated_at !== null, '16. Scrub', 'deactivated_at should be set');
+
+    // 16e. The Supabase auth user is actually gone.
+    const { data: goneUser } = await supabaseAdmin.auth.admin.getUserById(cAuthUserId);
+    assert(!goneUser?.user, '16. Auth user deleted', 'The Supabase auth user should no longer exist');
+
+    // 16f. Retention: the signed contract (immutable) and invoice survive intact.
+    const { data: keptContract } = await supabaseAdmin.from('contracts').select('status, generated_html').eq('id', cContract.id).single();
+    assert(keptContract?.status === 'signed' && (keptContract.generated_html?.length ?? 0) > 0, '16. Retention', 'Signed contract must survive deactivation intact');
+    const { data: keptInvoice } = await supabaseAdmin.from('invoices').select('id').eq('id', cInvoice.id).single();
+    assert(keptInvoice?.id === cInvoice.id, '16. Retention', 'Invoice must survive deactivation');
+
+    // 16g. The owner keeps portal access; the client is retained; the walker
+    //      shows as "deactivated" with contact details withheld.
+    const ovAfter = (await ok('GET', '/api/portal/overview', undefined, '16. Owner overview', ownerToken)).data;
+    assert(ovAfter.clients.length === 1 && ovAfter.clients[0].id === cClient.id, '16. Client retained', 'Owner should still see their retained client');
+    const proAfter = ovAfter.clients[0].professional;
+    assert(proAfter?.deactivated === true, '16. Deactivated shown', 'Walker should be flagged deactivated in the portal');
+    assert(proAfter?.email === '' && proAfter?.phone === null, '16. PII withheld', 'Scrubbed walker contact details must not surface to the owner');
+    assert(proAfter?.business_name === 'C Co.', '16. Business name kept', 'Business name is kept so the portal can still name the walker');
+
+    // 16h. Owners can leave too (passwordless — the live session is the proof).
+    await ok('POST', '/api/portal/deactivate', {}, '16. Deactivate owner', ownerToken);
+    const ownerDead = await api('GET', '/api/portal/overview', undefined, ownerToken);
+    assert(ownerDead.status === 401 || ownerDead.status === 403, '16. Owner session killed', `Deactivated owner session must be rejected (401/403); got ${ownerDead.status}`);
+    const { data: ownerAfter } = await supabaseAdmin.from('accounts').select('status, email, auth_user_id').eq('id', ownerAccountId).single();
+    assert(ownerAfter!.status === 'deactivated' && String(ownerAfter!.email).startsWith('deactivated+') && ownerAfter!.auth_user_id === null, '16. Owner scrub', 'Owner account should be deactivated + scrubbed');
+    const { data: ownerGone } = await supabaseAdmin.auth.admin.getUserById(ownerAuthUserId);
+    assert(!ownerGone?.user, '16. Owner auth user deleted', 'The owner Supabase auth user should be gone');
+
+    pass('16. Account lifecycle: deactivating a professional and an owner kills the session + blocks re-login + deletes the auth user + scrubs contact PII + nulls the M-Connect seam, while signed contracts, invoices, the professional\'s clients, and the owner\'s portal access all survive and the walker shows "deactivated"');
+  }
+
   console.log(`\n\x1b[32m${passed} steps passed — E2E TEST PASSED against ${baseUrl}\x1b[0m`);
 }
 
