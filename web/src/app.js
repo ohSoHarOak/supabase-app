@@ -4,6 +4,9 @@
 import { PetPro } from './shared.js';
 import { API_BASE } from './config.js';
 import { createClient } from '@supabase/supabase-js';
+import { registerPWA } from './pwa.js';
+
+registerPWA();
 
 (() => {
   'use strict';

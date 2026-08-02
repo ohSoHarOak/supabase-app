@@ -5,6 +5,9 @@
    M0-b: bundled by Vite as an ES module (was a classic <script>). */
 import { PetPro } from './shared.js';
 import { API_BASE } from './config.js';
+import { registerPWA } from './pwa.js';
+
+registerPWA();
 
 (() => {
   'use strict';
