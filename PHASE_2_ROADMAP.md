@@ -89,11 +89,16 @@ Phase 2 is organized into **workstreams** instead of fixed weeks, because scope 
 - [ ] **Not mobile-specific** — build on web, the Android app inherits it. Slots **before** Tap-to-Pay (M2). Founder-only testing can defer it (platform-account fallback); real-walker payment testing needs it first.
 
 ### Foundation & polish (folded in from the original Workstream M)
-- [ ] Responsive audit at 375px: navigation, tables/cards, forms, the schedule week view (7 columns won't fit → mobile day/agenda layout), modals and toasts.
-- [ ] Touch-first pass: tap-target sizes, the signature pad under touch (test on a real phone — pointer events differ from mouse), mobile date/time pickers.
-- [ ] PWA baseline: manifest + icons, service worker with a safe cache strategy (never cache API responses that would show stale schedules), graceful offline message. (Week 7's offline draft-sync endpoint is the seam — don't rebuild it, just don't break it.)
-- [ ] **Vite + TypeScript build step** (**DECIDED 2026-07-19: approved** — the Workstream U modernization path, now confirmed): Capacitor expects a web build pipeline; bolting plugins onto the single 2,742-line `app.js` is fragile.
+- [~] Responsive audit at 375px: navigation, tables/cards, forms, the schedule week view (7 columns won't fit → mobile day/agenda layout), modals and toasts.
+  - Note (2026-08-10): partial — base responsive breakpoints exist (`styles.css` @620px/@760px collapse form grids and the sign layout to one column), but a **dedicated 375px pass is unverified** and the **schedule week-view mobile day/agenda layout is not built**. Finish during M0 with a real-device/375px check.
+- [~] Touch-first pass: tap-target sizes, the signature pad under touch (test on a real phone — pointer events differ from mouse), mobile date/time pickers.
+  - Note (2026-08-10): partial — the signature canvas uses `touch-action: none` so a finger can draw. **Tap-target sizing and mobile date/time pickers not yet audited**, and no real-phone test has been run. Finish during M0.
+- [x] PWA baseline: manifest + icons, service worker with a safe cache strategy (never cache API responses that would show stale schedules), graceful offline message. (Week 7's offline draft-sync endpoint is the seam — don't rebuild it, just don't break it.)
+  - DONE 2026-08-10 (commit `22dc192`, shipped in #4): `manifest.webmanifest` + icon, `sw.js` with a safe cache strategy, `pwa.js` registration.
+- [x] **Vite + TypeScript build step** (**DECIDED 2026-07-19: approved** — the Workstream U modernization path, now confirmed): Capacitor expects a web build pipeline; bolting plugins onto the single 2,742-line `app.js` is fragile.
+  - DONE 2026-08-10 (commits `c743674` build pipeline + `d3040b3` ES-module refactor, shipped in #4): `web/` split into `src/` modules with an API base seam; `npm run build` runs `tsc && vite build`.
 - [ ] One-handed field workflow: check schedule / mark complete / collect payment each ≤ 2 taps from home (builds on Phase 1 finding W-4).
+  - Note (2026-08-10): not started — no evidence in the shipped M0 work. Carry into M0 close-out.
 - [~] **Security gate before payments face public installs** (pairs with Security review #1): `helmet`, rate-limiting on auth + webhook endpoints, on-device auth-token storage review. — `helmet` + rate-limiting **DONE 2026-08-01** in Security review #1; **on-device auth-token storage review still open** (mobile-specific, do it during M0/M0.5).
 
 ### Feature gating (forward reference — not built in Phase 2)
