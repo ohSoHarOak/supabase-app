@@ -184,6 +184,11 @@ export class PortalService {
             full_name: string;
             phone: string | null;
             email: string;
+            /** Trust content shown to the client (#9): who they hired. */
+            bio: string | null;
+            years_experience: number | null;
+            profile_photo_url: string | null;
+            business_logo_url: string | null;
             /** Workstream D: the walker deactivated their account. Their client
              *  records + this portal stay intact, but they show as "deactivated"
              *  and their (scrubbed) contact details are withheld. */
@@ -210,7 +215,7 @@ export class PortalService {
     const [profilesRes, accountsRes, apptsRes, contractsRes, invoicesRes, servicesRes, unreadRes] = await Promise.all([
       supabaseAdmin
         .from('professional_profiles')
-        .select('account_id, business_name, full_name')
+        .select('account_id, business_name, full_name, bio, years_experience, profile_photo_url, business_logo_url')
         .in('account_id', professionalIds),
       // C-3/PH-1: the walker's phone and email live on `accounts`, not on
       // professional_profiles — the owner portal shows them as a contact card.
@@ -292,6 +297,10 @@ export class PortalService {
             // a tombstone (deactivated+…@deleted.invalid) — never surface either.
             phone: deactivated ? null : contact?.phone ?? null,
             email: deactivated ? '' : contact?.email ?? '',
+            bio: p.bio ?? null,
+            years_experience: p.years_experience ?? null,
+            profile_photo_url: p.profile_photo_url ?? null,
+            business_logo_url: p.business_logo_url ?? null,
             deactivated,
           },
         ];

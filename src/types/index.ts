@@ -35,6 +35,8 @@ export interface ProfessionalProfile {
   years_experience: number | null;
   service_areas: string[];
   profile_photo_url: string | null;
+  // Optional business logo, separate from the (required) profile photo (025).
+  business_logo_url: string | null;
   // Which service types this professional offers (014). Empty = no
   // preference yet — the UI shows every type until they choose.
   offered_service_types: ServiceType[];
@@ -142,7 +144,7 @@ export type ServiceType =
 
 /** Human labels for service types. The server needs these because it builds
  *  service names itself now (W-5) rather than taking a typed-in name.
- *  Mirrored by SERVICE_TYPES in public/app.js, which needs them for the Type
+ *  Mirrored by SERVICE_TYPES in web/src/app.js, which needs them for the Type
  *  dropdown — keep the two in step when adding a profession. */
 export const SERVICE_TYPE_LABELS: Record<ServiceType, string> = {
   group_walk: 'Group walk',
@@ -164,7 +166,7 @@ export type BillingCadence =
   | 'per_package'
   | 'one_time';
 
-/** Mirrored by CADENCES in public/app.js — keep the two in step. */
+/** Mirrored by CADENCES in web/src/app.js — keep the two in step. */
 export const BILLING_CADENCE_LABELS: Record<BillingCadence, string> = {
   per_visit: 'per visit',
   per_day: 'per day',

@@ -576,6 +576,88 @@ export class ContractService {
     return data as Contract;
   }
 
+  /**
+   * Send a draft agreement to the client to review and sign remotely, for when
+   * they aren't present to sign in person (feedback #6). Moves the contract to
+   * 'sent' and emails them a link to their portal, where the same in-app
+   * signature flow the professional's device uses is available. This is the
+   * app's OWN signing — NOT the deferred Nitro Sign vendor integration
+   * (CLAUDE.md), which stays parked for Phase 1.5. Re-sending an already-'sent'
+   * contract just re-emails the link.
+   */
+  async sendToClient(
+    professionalAccountId: string,
+    contractId: string,
+    origin: string
+  ): Promise<Contract> {
+    const contract = await this.getContract(professionalAccountId, contractId);
+    if (contract.status !== 'draft' && contract.status !== 'sent') {
+      throw new ServiceError(
+        'not_sendable',
+        `A ${contract.status} contract can't be sent for signing.`,
+        409
+      );
+    }
+    const client = await clientService.getClient(professionalAccountId, contract.client_id);
+    if (!client.email) {
+      throw new ServiceError(
+        'client_no_email',
+        "Add an email address to this client first — that's where the signing link goes.",
+        422
+      );
+    }
+
+    const updated =
+      contract.status === 'sent'
+        ? contract
+        : await this.updateContract(professionalAccountId, contractId, { status: 'sent' });
+
+    await eventService.publish({
+      actorAccountId: professionalAccountId,
+      eventType: 'contract_sent',
+      subjectType: 'contract',
+      subjectId: contractId,
+      metadata: { to: client.email },
+    });
+
+    await notificationService.enqueue({
+      accountId: professionalAccountId,
+      category: 'contract',
+      template: 'contract_sent',
+      data: { contract_id: contractId, origin },
+    });
+
+    return updated;
+  }
+
+  /**
+   * Re-email the client their copy of a signed agreement on demand (feedback
+   * #7). The signed email already goes out once at signing; this lets the
+   * professional resend it — e.g. the client asks for another copy. Reuses the
+   * 'contract_signed' template, which attaches the document rendered at send
+   * time, so the copy always matches the immutable signed record.
+   */
+  async emailSignedCopy(professionalAccountId: string, contractId: string): Promise<void> {
+    const contract = await this.getContract(professionalAccountId, contractId);
+    if (contract.status !== 'signed') {
+      throw new ServiceError('not_signed', 'Only a signed agreement can be emailed as a copy.', 409);
+    }
+    const client = await clientService.getClient(professionalAccountId, contract.client_id);
+    if (!client.email) {
+      throw new ServiceError(
+        'client_no_email',
+        "Add an email address to this client first — that's where the copy goes.",
+        422
+      );
+    }
+    await notificationService.enqueue({
+      accountId: professionalAccountId,
+      category: 'contract',
+      template: 'contract_signed',
+      data: { contract_id: contractId },
+    });
+  }
+
   // ------------------------------------------------------------- signing ----
 
   /**

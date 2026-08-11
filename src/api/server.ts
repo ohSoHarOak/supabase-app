@@ -34,20 +34,29 @@ export function createServer(): express.Express {
   // cap forged floods (real Stripe traffic stays well under the ceiling).
   app.use('/api/webhooks/stripe', webhookLimiter, stripeWebhookRouter);
 
+  // Profile photo / logo uploads carry a base64 image, which the 1mb default
+  // below would reject. A larger parser mounts first for just that path; the
+  // client downscales before sending, so real payloads stay small. express.json
+  // is a no-op once the body is read, so the global parser skips it afterward.
+  app.use('/api/auth/profile/image', express.json({ limit: '6mb' }));
+
   app.use(express.json({ limit: '1mb' }));
 
-  // Week 4 web UI — static files, no build step. Served from the repo's
-  // public/ directory (process.cwd() is the repo root locally and on Render).
-  app.use(express.static(path.join(process.cwd(), 'public')));
+  // Web UI — built by Vite into dist-web/ (Workstream M / M0-a). `npm run build`
+  // runs `vite build`; in dev the front-end is served by the Vite dev server
+  // (`npm run dev:web`, proxying /api here). process.cwd() is the repo root
+  // locally and on Render.
+  const webDir = path.join(process.cwd(), 'dist-web');
+  app.use(express.static(webDir));
 
-  // Week 8 owner portal — its own small page, same static directory.
+  // Week 8 owner portal — its own small page, same built directory.
   app.get('/portal', (_req, res) => {
-    res.sendFile(path.join(process.cwd(), 'public', 'portal.html'));
+    res.sendFile(path.join(webDir, 'portal.html'));
   });
 
   // R-17: the public pay page. No login — the token in ?t= is the authority.
   app.get('/pay', (_req, res) => {
-    res.sendFile(path.join(process.cwd(), 'public', 'pay.html'));
+    res.sendFile(path.join(webDir, 'pay.html'));
   });
 
   app.get('/health', (_req, res) => {

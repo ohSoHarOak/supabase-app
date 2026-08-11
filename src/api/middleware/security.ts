@@ -16,13 +16,14 @@ const supabaseWs = supabaseOrigin.replace(/^https:/, 'wss:'); // wss://<ref>.sup
  *
  * We keep helmet's strict defaults — including `script-src 'self'`,
  * `script-src-attr 'none'` (no inline event handlers), `object-src 'none'`,
- * `base-uri 'self'`, and `frame-ancestors 'self'` — and widen only the three
+ * `base-uri 'self'`, and `frame-ancestors 'self'` — and widen only the two
  * directives the frontend actually needs:
- *   - script-src: add the supabase-js CDN (index.html loads it for Realtime)
  *   - connect-src: add the Supabase REST origin + its wss:// for Realtime
  *   - img-src: add data: (base64 signature images) and https: (pet photo URLs)
- * helmet's default `style-src 'self' https: 'unsafe-inline'` already covers the
- * inline <style> block in a server-rendered contract document.
+ * script-src stays 'self': M0-b bundles @supabase/supabase-js into the app, so
+ * the old jsdelivr CDN allowance is gone. helmet's default
+ * `style-src 'self' https: 'unsafe-inline'` already covers the inline <style>
+ * block in a server-rendered contract document.
  *
  * HSTS is left on in production and disabled locally so it can't pin
  * http://localhost dev to https.
@@ -31,7 +32,6 @@ export const securityHeaders = helmet({
   contentSecurityPolicy: {
     useDefaults: true,
     directives: {
-      'script-src': ["'self'", 'https://cdn.jsdelivr.net'],
       'connect-src': ["'self'", supabaseOrigin, supabaseWs],
       'img-src': ["'self'", 'data:', 'https:'],
     },
@@ -90,12 +90,21 @@ export const webhookLimiter = rateLimit({
 
 // Default-deny: browser requests from an unlisted origin get no CORS headers and
 // are blocked by the browser. Requests with no Origin header (same-origin
-// navigations, curl, the Stripe webhook) are allowed. Add browser origins (e.g.
-// the future mobile app shell) via APP_ORIGINS as a comma-separated list.
-const allowedOrigins = (process.env.APP_ORIGINS ?? '')
-  .split(',')
-  .map((s) => s.trim())
-  .filter(Boolean);
+// navigations, curl, the Stripe webhook) are allowed.
+//
+// Capacitor native shells (Workstream M) call the API cross-origin: Android
+// serves the bundled app from https://localhost, iOS (Phase 3) from
+// capacitor://localhost. A remote web page cannot forge these origins, so
+// allowing them by default is safe and is what lets the native app reach the
+// backend. Any additional browser origins come from APP_ORIGINS (comma list).
+const NATIVE_APP_ORIGINS = ['https://localhost', 'capacitor://localhost'];
+const allowedOrigins = [
+  ...NATIVE_APP_ORIGINS,
+  ...(process.env.APP_ORIGINS ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean),
+];
 
 export const corsMiddleware = cors({
   origin(origin, callback) {

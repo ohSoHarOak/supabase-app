@@ -239,3 +239,26 @@ contractsRouter.post('/:id/sign', async (req, res, next) => {
     next(err);
   }
 });
+
+/** POST /api/contracts/:id/send — email the client a link to review and sign
+ *  in their portal, for when they aren't present to sign in person (#6). */
+contractsRouter.post('/:id/send', async (req, res, next) => {
+  try {
+    const origin = `${req.protocol}://${req.get('host')}`;
+    const contract = await contractService.sendToClient(req.account!.id, req.params.id, origin);
+    res.json({ ok: true, data: contract });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** POST /api/contracts/:id/email-copy — re-email the client their copy of a
+ *  signed agreement, document attached (#7). */
+contractsRouter.post('/:id/email-copy', async (req, res, next) => {
+  try {
+    await contractService.emailSignedCopy(req.account!.id, req.params.id);
+    res.json({ ok: true, data: { emailed: true } });
+  } catch (err) {
+    next(err);
+  }
+});

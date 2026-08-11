@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { accountService } from '../../services/AccountService';
+import { uploadProfileImage } from '../../services/imageUpload';
 import { requireAuth } from '../middleware/auth';
 import { serviceTypeEnum } from '../validation';
 
@@ -121,6 +122,10 @@ const profileUpdateSchema = z.object({
   phone: z.string().trim().max(40).nullish(),
   bio: z.string().trim().max(2000).nullish(),
   years_experience: z.number().int().min(0).max(80).nullish(),
+  // Set by the image-upload route below, which returns the stored URL; also
+  // accepted here so the photo/logo can be cleared (null) from the profile.
+  profile_photo_url: z.string().url().max(1000).nullish(),
+  business_logo_url: z.string().url().max(1000).nullish(),
   // Imported, not re-listed: this route had its own copy of the enum and so
   // silently rejected 'drop_in' after 018 added it. validation.ts is the one
   // place a new profession gets added.
@@ -154,6 +159,44 @@ authRouter.patch('/profile', requireAuth, async (req, res, next) => {
       await accountService.updateAccountPhone(req.account!.id, phone ?? null);
     }
     const profile = await accountService.updateProfessionalProfile(req.account!.id, profileFields);
+    res.json({ ok: true, data: profile });
+  } catch (err) {
+    next(err);
+  }
+});
+
+const profileImageSchema = z.object({
+  kind: z.enum(['photo', 'logo']),
+  // base64 or data-URL PNG/JPEG/WebP; validated by magic bytes in imageUpload.
+  image: z.string().min(50, 'image must be a base64 PNG, JPEG, or WebP.'),
+});
+
+/** POST /api/auth/profile/image — upload a profile photo or business logo.
+ *  Stores it in the public `profiles` bucket, writes the URL onto the profile,
+ *  and returns the updated profile. Mounted with a larger body limit in
+ *  server.ts because the payload carries an image. */
+authRouter.post('/profile/image', requireAuth, async (req, res, next) => {
+  try {
+    if (req.account!.account_type !== 'professional') {
+      res.status(403).json({
+        ok: false,
+        error: { code: 'forbidden', message: 'Only professional accounts have this profile.' },
+      });
+      return;
+    }
+    const parsed = profileImageSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(422).json({
+        ok: false,
+        error: { code: 'validation', message: parsed.error.issues.map((i) => i.message).join(' ') },
+      });
+      return;
+    }
+    const url = await uploadProfileImage(req.account!.id, parsed.data.kind, parsed.data.image);
+    const column = parsed.data.kind === 'photo' ? 'profile_photo_url' : 'business_logo_url';
+    const profile = await accountService.updateProfessionalProfile(req.account!.id, {
+      [column]: url,
+    });
     res.json({ ok: true, data: profile });
   } catch (err) {
     next(err);

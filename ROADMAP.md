@@ -493,6 +493,9 @@ Requested 2026-07-18. Nothing can currently remove an account — throwaway acco
 ### P2-14: Default price + duration per service type
 ➡️ **Moved to Phase 3 — full spec in `PHASE_3_ROADMAP.md`** (relocated 2026-07-19). A per-account, per-service-type default (`price_cents`/`duration_minutes`/`billing_cadence`) so contract generation pre-fills; stays a default, not a constraint (F-4).
 
+### P2-16: Confirmation email on account setup
+Logged 2026-08-08 (founder). Send a confirmation/welcome email when a professional finishes account setup. Rides the existing notification queue + `IEmailProvider` (Resend) — a new `account_setup` template + an enqueue at the end of onboarding; no new infrastructure. Open questions for when it's pulled in: trigger point (signup vs. completing the setup wizard), and whether it doubles as email-address verification.
+
 ---
 
 ## Frontend Architecture — Shared-Stylesheet Coupling (logged 2026-07-18)

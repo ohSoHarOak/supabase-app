@@ -3,5 +3,10 @@
 !.env.example
 node_modules/
 dist/
+dist-web/
 *.log
 render.pdf
+
+# Android Studio / IntelliJ per-machine project files
+.idea/
+android/.idea/

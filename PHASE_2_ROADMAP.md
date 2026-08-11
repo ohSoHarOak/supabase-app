@@ -84,6 +84,8 @@ Phase 2 is organized into **workstreams** instead of fixed weeks, because scope 
 - [ ] Generate onboarding link, store connected `account_id`, handle the incomplete-onboarding (not-payout-ready) state.
 - [ ] Route charges (Checkout **and** Tap-to-Pay) to the walker's connected account. `PaymentService` was built so Connect slots in without changing callers.
 - [ ] "Set up payments" step in the onboarding wizard (skippable) **plus** a persistent Profile card until complete.
+  - **Founder confirmed 2026-08-08:** add this as an **optional** step in the signup process so a professional can set up accepting payments during onboarding (and skip to do it later). ✅ Already the plan — noting the explicit ask so it isn't re-derived.
+  - ⚠️ **We never collect raw banking details ourselves.** With Stripe Connect Express (line above), bank account / tax ID / KYC are entered on **Stripe's hosted onboarding**, not a form in our app — we only store the returned `account_id`. This keeps card/bank credentials off our server (same principle as Checkout) and is the safe, correct way to satisfy "add banking information."
 - [ ] **Not mobile-specific** — build on web, the Android app inherits it. Slots **before** Tap-to-Pay (M2). Founder-only testing can defer it (platform-account fallback); real-walker payment testing needs it first.
 
 ### Foundation & polish (folded in from the original Workstream M)

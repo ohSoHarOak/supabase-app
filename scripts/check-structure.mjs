@@ -1,8 +1,8 @@
 /**
  * Structural contract check (T-2).
  *
- * The professional app (public/app.js) and the pet-owner portal
- * (public/portal.js) are independent frontends that share one styles.css.
+ * The professional app (web/src/app.js) and the pet-owner portal
+ * (web/src/portal.js) are independent frontends that share one styles.css.
  * A handful of CSS declarations are load-bearing: remove them and a screen
  * breaks silently — no error, no console warning, nothing visibly wrong
  * until someone tries to use it.
@@ -28,10 +28,12 @@ import path from 'path';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (rel) => readFileSync(path.join(root, rel), 'utf8');
 
-const CSS = 'public/styles.css';
-const APP = 'public/app.js';
-const PORTAL = 'public/portal.js';
-const SHARED = 'public/shared.js';
+// M0-b (Workstream M): the frontends are now ES modules under web/src/, bundled
+// by Vite; styles.css stays a static asset in web/public/.
+const CSS = 'web/public/styles.css';
+const APP = 'web/src/app.js';
+const PORTAL = 'web/src/portal.js';
+const SHARED = 'web/src/shared.js';
 
 /**
  * hook      — the data-* attribute, in both the CSS selector and the markup
@@ -60,15 +62,15 @@ const CONTRACTS = [
   },
 ];
 
-/* T-3 moved the sign screen into shared.js, so the two frontends can no
-   longer disagree about it — the divergence check below has nothing left to
-   compare. What replaces it is a load-order check: shared.js defines
-   window.PetPro, and both pages read it at startup, so a page that loads its
-   own script first (or drops shared.js entirely) throws on first render.
-   Cheap to verify statically, and the failure is otherwise a blank screen. */
-const LOAD_ORDER = [
-  { page: 'public/index.html', script: 'app.js' },
-  { page: 'public/portal.html', script: 'portal.js' },
+/* T-3 moved the sign screen into shared.js so the two frontends can't disagree
+   about it. M0-b made shared.js an ES module that *exports* PetPro, imported by
+   each frontend — that import is the handshake the old load-order check guarded
+   (now enforced by the bundler). What's still worth a static check: the import
+   is actually present. A frontend that drops it gets an undefined PetPro and
+   throws on first render — otherwise a silent blank screen. */
+const IMPORT_HANDSHAKE = [
+  { file: APP, name: 'app.js' },
+  { file: PORTAL, name: 'portal.js' },
 ];
 
 /** Pull the declaration body for `[hook] { ... }` out of the stylesheet. */
@@ -116,21 +118,15 @@ for (const c of CONTRACTS) {
   }
 }
 
-// Load order: shared.js defines window.PetPro and both frontends read it at
-// startup, so it must be the first of the two script tags on each page.
-for (const { page, script } of LOAD_ORDER) {
-  const html = read(page);
-  const sharedAt = html.indexOf('/shared.js');
-  const ownAt = html.indexOf(`/${script}`);
-  if (sharedAt === -1) {
+// Module handshake: each frontend must import PetPro from shared.js. Without it
+// PetPro is undefined at startup and the page throws on first render (blank
+// screen). The bundler guarantees execution order once the import is present.
+const IMPORTS_SHARED = /import\s*\{[^}]*\bPetPro\b[^}]*\}\s*from\s*['"]\.\/shared(?:\.js)?['"]/;
+for (const { file, name } of IMPORT_HANDSHAKE) {
+  if (!IMPORTS_SHARED.test(sources.get(file))) {
     failures.push({
-      contract: { why: `${script} calls window.PetPro at startup; without shared.js the page throws on first render and shows a blank screen.` },
-      problem: `${page} does not load /shared.js.`,
-    });
-  } else if (ownAt !== -1 && sharedAt > ownAt) {
-    failures.push({
-      contract: { why: `${script} reads window.PetPro at startup, so shared.js must execute first. Both tags are deferred, which preserves document order.` },
-      problem: `${page} loads /${script} before /shared.js.`,
+      contract: { why: `${name} reads PetPro at startup; without the import it is undefined and the page throws on first render, showing a blank screen.` },
+      problem: `${file} does not import { PetPro } from './shared.js'.`,
     });
   }
 }
