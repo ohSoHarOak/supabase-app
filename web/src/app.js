@@ -319,8 +319,8 @@ registerPWA();
           ${tab('clients', 'Clients')}
           ${tab('messages', 'Messages')}
           ${tab('profile', 'Profile')}
-          <a href="#/login" data-action="logout">Log out</a>
         </nav>
+        <a class="logout-link" href="#/login" data-action="logout">Log out</a>
       </div></header>`;
   }
   window.petproLogout = () => logout();
@@ -391,30 +391,140 @@ registerPWA();
     };
   }
 
+  // ------------------------------------------------------ image uploads ----
+  // Downscale in the browser before upload: a phone photo is multi-MB, but the
+  // profile only needs a small square, and this keeps every payload well under
+  // the API body limit. Logos stay PNG to preserve transparency; photos become
+  // JPEG (smaller, and a headshot has nothing transparent to lose).
+  function downscaleImage(file, maxDim, mime) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+        const w = Math.max(1, Math.round(img.width * scale));
+        const h = Math.max(1, Math.round(img.height * scale));
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL(mime, 0.85));
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        reject(new Error('That image could not be read — try a PNG or JPEG.'));
+      };
+      img.src = url;
+    });
+  }
+
+  // A file picker with a live preview. Uploads immediately (so the URL is saved
+  // to the profile before the form is submitted), updating local `profile`.
+  function imageField({ id, kind, label, required, hint, currentUrl }) {
+    const shape = kind === 'logo' ? 'square' : 'circle';
+    const tag = required
+      ? '<span class="req" title="required">*</span>'
+      : '<span class="hint">optional</span>';
+    const inner = currentUrl
+      ? `<img src="${esc(currentUrl)}" alt="" />`
+      : `<span class="image-placeholder">${kind === 'logo' ? 'Logo' : 'Photo'}</span>`;
+    return `
+      <div class="image-field" data-image-field="${id}">
+        <label>${label} ${tag}</label>
+        <div class="image-field-row">
+          <div class="image-preview ${shape}" id="${id}-preview">${inner}</div>
+          <div class="image-field-actions">
+            <input type="file" id="${id}-file" accept="image/png,image/jpeg,image/webp" hidden />
+            <button type="button" class="btn btn-quiet" id="${id}-btn">${currentUrl ? 'Change' : 'Upload'}</button>
+            ${hint ? `<p class="preview-note" style="margin:6px 0 0">${hint}</p>` : ''}
+          </div>
+        </div>
+      </div>`;
+  }
+
+  function wireImageField(id, kind) {
+    const btn = document.getElementById(`${id}-btn`);
+    const fileInput = document.getElementById(`${id}-file`);
+    const preview = document.getElementById(`${id}-preview`);
+    if (!btn || !fileInput) return;
+    btn.onclick = () => fileInput.click();
+    fileInput.onchange = async () => {
+      const file = fileInput.files?.[0];
+      if (!file) return;
+      try {
+        const maxDim = kind === 'logo' ? 600 : 512;
+        const dataUrl = await downscaleImage(file, maxDim, kind === 'logo' ? 'image/png' : 'image/jpeg');
+        preview.innerHTML = `<img src="${dataUrl}" alt="" />`; // optimistic
+        await withBusy(btn, async () => {
+          const updated = await api('POST', '/api/auth/profile/image', { kind, image: dataUrl });
+          profile = updated;
+          localStorage.setItem('petpro_profile', JSON.stringify(profile));
+        });
+        // withBusy restores the button's label, so set "Change" after it returns.
+        btn.textContent = 'Change';
+        toast(`${kind === 'logo' ? 'Logo' : 'Photo'} saved.`, 'ok');
+      } catch (err) {
+        toast(err.message);
+        fileInput.value = '';
+      }
+    };
+  }
+
   // ---------------------------------------------------------- onboarding ----
-  // O-1: three steps after signup. "Done" is derived from the profile itself
+  // O-1: four steps after signup. "Done" is derived from the profile itself
   // rather than a flag column — nothing to migrate, nothing to keep in sync.
+  // #1/#9: business name, phone, and a profile photo are all required to finish.
   const setupDone = () =>
-    Boolean(profile?.full_name && account?.phone && profile?.offered_service_types?.length);
+    Boolean(
+      profile?.full_name &&
+      profile?.business_name &&
+      account?.phone &&
+      profile?.profile_photo_url &&
+      profile?.offered_service_types?.length
+    );
+
+  const SETUP_STEPS = 4;
 
   function renderSetup(step) {
-    const stepper = ['1 · You', '2 · Services', '3 · Ready']
+    const stepper = ['1 · You', '2 · About', '3 · Services', '4 · Ready']
       .map((label, i) => `<span class="step${i === step - 1 ? ' on' : ''}">${label}</span>`).join('');
-    const skip = step < 3
-      ? `<a class="backlink" href="#/setup/${step + 1}">Skip for now</a>`
-      : `<a class="backlink" href="#/today">Go to today</a>`;
+    // Step 1's fields are all required, so there's no "skip" there — you can't
+    // finish setup without them. Steps 2–3 stay skippable.
+    const skip = step === 1 ? ''
+      : step < SETUP_STEPS
+        ? `<a class="backlink" href="#/setup/${step + 1}">Skip for now</a>`
+        : `<a class="backlink" href="#/today">Go to today</a>`;
 
     const body = step === 1 ? `
-      <div class="form-grid">
+      ${imageField({
+        id: 'su-photo', kind: 'photo', label: 'Your profile photo', required: true,
+        currentUrl: profile?.profile_photo_url,
+        hint: 'Clients see this in their portal — a friendly face builds trust.',
+      })}
+      <div class="form-grid" style="margin-top:14px">
         <div><label for="su-name">Your full name</label>
           <input id="su-name" required value="${esc(profile?.full_name ?? '')}" /></div>
         <div><label for="su-biz">Business name</label>
-          <input id="su-biz" value="${esc(profile?.business_name ?? '')}" placeholder="e.g. Sunny Trails Walking Co." /></div>
+          <input id="su-biz" required value="${esc(profile?.business_name ?? '')}" placeholder="e.g. Sunny Trails Walking Co." /></div>
         <div><label for="su-phone">Your phone</label>
-          <input id="su-phone" data-phone value="${esc(fmtPhone(account?.phone ?? ''))}" placeholder="(555)000-0000" /></div>
+          <input id="su-phone" data-phone required value="${esc(fmtPhone(account?.phone ?? ''))}" placeholder="(555)000-0000" /></div>
       </div>
       <p class="preview-note">Your business name heads every contract and invoice; your phone is how clients reach you from their portal.</p>`
       : step === 2 ? `
+      <div class="form-grid">
+        <div class="full"><label for="su-bio">About me</label>
+          <textarea id="su-bio" rows="4" placeholder="A few lines clients will see — your experience, your approach, what makes your care different.">${esc(profile?.bio ?? '')}</textarea></div>
+        <div><label for="su-years">Years in service</label>
+          <input id="su-years" type="number" min="0" max="80" class="num" value="${profile?.years_experience ?? ''}" placeholder="e.g. 5" /></div>
+      </div>
+      ${imageField({
+        id: 'su-logo', kind: 'logo', label: 'Business logo', required: false,
+        currentUrl: profile?.business_logo_url,
+        hint: 'Optional — appears on your contracts and in the client portal.',
+      })}
+      <p class="preview-note" style="margin-top:10px">This is how you introduce yourself to clients. You can change any of it later from your profile.</p>`
+      : step === 3 ? `
       <label>Which services do you offer?</label>
       <div class="appt-flags" style="margin-top:6px">
         ${Object.entries(SERVICE_TYPES).map(([v, l]) => `
@@ -422,37 +532,50 @@ registerPWA();
       </div>
       <p class="preview-note" style="margin-top:10px">Only what you check appears when you build a contract, so you never wade past Grooming to find Dog walking.</p>`
       : `
-      <p>Your agreement is ready to use — the packaged Pet Services Agreement, with your business details merged in.</p>
+      <p>Your <strong>Pet Services Agreement</strong> is ready to use — the packaged contract every client signs before their first walk. It sets out your services, rates, cancellation policy, and liability terms, with your business details already merged in.</p>
       <p class="preview-note">⚠️ It's a general template, not legal advice. Have it reviewed before a real client signs.</p>`;
 
     appEl.innerHTML = header('today') + `
       <div class="page">
-        <h1 class="page-title">${step === 3 ? "You're set up" : 'Set up your business'}</h1>
-        <p class="page-sub">Three quick steps — you can stop after any of them and finish later.</p>
+        <h1 class="page-title">${step === SETUP_STEPS ? "You're set up" : 'Set up your business'}</h1>
+        <p class="page-sub">A few quick steps — steps 2 and 3 you can finish later.</p>
         <div class="stepper">${stepper}</div>
         <form id="su-form">
           <div class="card fieldset" style="margin-top:14px">${body}</div>
           <div class="form-foot">
             ${skip}
             <div class="spacer"></div>
-            <button class="btn btn-primary" type="submit">${step === 3 ? 'Add your first client' : 'Save & continue'}</button>
+            <button class="btn btn-primary" type="submit">${step === SETUP_STEPS ? 'Add your first client' : 'Save & continue'}</button>
           </div>
         </form>
       </div>`;
 
+    if (step === 1) wireImageField('su-photo', 'photo');
+    if (step === 2) wireImageField('su-logo', 'logo');
+
     document.getElementById('su-form').onsubmit = async (e) => {
       e.preventDefault();
-      if (step === 3) { location.hash = '#/client-new'; return; }
+      if (step === SETUP_STEPS) { location.hash = '#/client-new'; return; }
+      // Step 1 requires a saved profile photo before continuing.
+      if (step === 1 && !profile?.profile_photo_url) {
+        toast('Please add a profile photo to continue.');
+        return;
+      }
       await withBusy(e.target.querySelector('button[type=submit]'), async () => {
         try {
-          await api('PATCH', '/api/auth/profile', step === 1 ? {
+          const patch = step === 1 ? {
             full_name: document.getElementById('su-name').value.trim(),
             business_name: document.getElementById('su-biz').value.trim() || null,
             phone: fmtPhone(document.getElementById('su-phone').value) || null,
+          } : step === 2 ? {
+            bio: document.getElementById('su-bio').value.trim() || null,
+            years_experience: document.getElementById('su-years').value
+              ? Number(document.getElementById('su-years').value) : null,
           } : {
             offered_service_types: [...document.querySelectorAll('[data-offer]')]
               .filter((cb) => cb.checked).map((cb) => cb.dataset.offer),
-          });
+          };
+          await api('PATCH', '/api/auth/profile', patch);
           await loadProfile();
           location.hash = `#/setup/${step + 1}`;
         } catch (err) {
@@ -694,7 +817,7 @@ registerPWA();
       <div class="card contract-row" data-nav="#/setup" tabindex="0" role="link">
         <div class="what">
           <div class="title">Finish setting up your business</div>
-          <div class="meta">Your phone and the services you offer — a minute, and contracts fill themselves in.</div>
+          <div class="meta">Your photo, business details, and the services you offer — a minute, and contracts fill themselves in.</div>
         </div>
         <span class="chev">›</span>
       </div>`;
@@ -1084,6 +1207,15 @@ registerPWA();
           </div></form>
         </div>
 
+        ${client.pets.length > 0 && contracts.length === 0 ? `
+        <div class="card contract-row next-step" data-nav="#/client/${client.id}/new-contract" tabindex="0" role="link">
+          <div class="what">
+            <div class="title">Next: set up services &amp; agreement</div>
+            <div class="meta">Choose ${esc(client.full_name.split(' ')[0])}'s services and rates, then generate the Pet Services Agreement to sign.</div>
+          </div>
+          <span class="chev">›</span>
+        </div>` : ''}
+
         <div class="eyebrow">Services</div>
         <div class="stack">${serviceRows.join('') || `<div class="card empty">No services yet — services come from a signed contract, so they'll appear here once ${esc(client.full_name.split(' ')[0])} signs one.</div>`}</div>
         <div class="row-actions" style="margin-top:10px">
@@ -1317,7 +1449,11 @@ registerPWA();
             behavior_notes: val('p-behavior'),
           });
           toast('Pet added.', 'ok');
-          renderClient(clientId);
+          // #3: re-render with the add-pet form collapsed, and scroll back to
+          // the top so the pet and the next step are in view — no hunting down
+          // a long page for what to do next.
+          await renderClient(clientId, { justAddedPet: true });
+          window.scrollTo({ top: 0, behavior: 'smooth' });
         } catch (err) {
           toast(err.message);
         }
@@ -1818,14 +1954,18 @@ registerPWA();
         <div style="display:flex; align-items:center; gap:14px; flex-wrap:wrap">
           <a class="backlink" href="#/client/${client.id}">‹ ${esc(client.full_name)}</a>
           <span style="flex:1"></span>
-          ${signable ? `<button class="btn btn-ghost" data-nav="#/client/${client.id}/new-contract?replace=${contract.id}">✎ Edit terms</button>` : ''}
+          ${signable ? `<button class="btn btn-ghost" data-nav="#/client/${client.id}/new-contract?replace=${contract.id}">✎ Edit terms</button>
+            <button class="btn btn-quiet" id="send-to-client">✉ ${contract.status === 'sent' ? 'Resend signing link' : 'Send to client'}</button>` : ''}
           ${signed ? `
             <button class="btn btn-ghost" id="doc-download">⬇ Download</button>
             <button class="btn btn-quiet" id="doc-print">🖨 Print / save as PDF</button>
+            <button class="btn btn-quiet" id="email-copy">✉ Email a copy to client</button>
             <button class="btn btn-primary" data-nav="#/appointment-new?client=${client.id}">📅 Schedule walks</button>` : ''}
         </div>
         <h1 class="page-title" style="margin-top:8px">${signed ? 'Signed contract' : 'Sign contract'}</h1>
-        ${signable ? `<p class="page-sub">Still a draft — every term can be edited until the moment it's signed. Hand the device to your client to review and sign.</p>` : ''}
+        ${signable ? `<p class="page-sub">${contract.status === 'sent'
+          ? 'Sent to your client to review and sign online. You can still sign in person here, or resend the link.'
+          : 'Still a draft — every term can be edited until the moment it\'s signed. Hand the device to your client to sign in person, or send it for them to sign online.'}</p>` : ''}
 
         <div class="sign-layout">
           ${PetPro.contractPane({ frameTitle: 'Contract document' })}
@@ -1881,9 +2021,31 @@ registerPWA();
             setTimeout(() => URL.revokeObjectURL(blobUrl), 10_000);
           } catch (err) { toast(err.message); }
         });
+      // #7: re-email the signed copy to the client on demand.
+      document.getElementById('email-copy').onclick = (e) =>
+        withBusy(e.target, async () => {
+          try {
+            await api('POST', `/api/contracts/${contractId}/email-copy`);
+            toast(`A copy is on its way to ${client.email || 'your client'}.`, 'ok');
+          } catch (err) { toast(err.message); }
+        });
     }
 
     if (!signable) { wireNav(); return; }
+
+    // #6: send the agreement for the client to sign in their portal, for when
+    // they're not there to sign in person. Moves the contract to 'sent' and
+    // emails them a signing link; re-render reflects the new status.
+    document.getElementById('send-to-client').onclick = (e) =>
+      withBusy(e.target, async () => {
+        try {
+          await api('POST', `/api/contracts/${contractId}/send`);
+          toast('Sent — your client has a link to review and sign.', 'ok');
+          renderSign(contractId);
+        } catch (err) {
+          toast(err.message);
+        }
+      });
 
     // ------------------------------------------------- signature canvas --
     const sigPad = PetPro.createSignaturePad();
@@ -2332,20 +2494,16 @@ registerPWA();
 
         <div class="card fieldset" style="margin-top:18px">
           <div class="media-row">
-            <div class="media-slot">
-              <div class="avatar media-avatar">${esc(initials(profile?.full_name ?? ''))}</div>
-              <div>
-                <strong>Profile photo</strong>
-                <div class="media-note">Uploads arrive with Phase 2 branding — your initials stand in for now.</div>
-              </div>
-            </div>
-            <div class="media-slot">
-              <div class="media-logo">${PAW}</div>
-              <div>
-                <strong>Business logo</strong>
-                <div class="media-note">Will appear on branded invoices &amp; receipts (Phase 2).</div>
-              </div>
-            </div>
+            ${imageField({
+              id: 'pf-photo', kind: 'photo', label: 'Profile photo', required: true,
+              currentUrl: profile?.profile_photo_url,
+              hint: 'Shown to your clients in their portal.',
+            })}
+            ${imageField({
+              id: 'pf-logo', kind: 'logo', label: 'Business logo', required: false,
+              currentUrl: profile?.business_logo_url,
+              hint: 'Appears on your contracts and in the client portal.',
+            })}
           </div>
         </div>
 
@@ -2375,6 +2533,12 @@ registerPWA();
             <textarea id="pf-bio" rows="5" maxlength="2000"
               placeholder="How long you've been walking dogs, what you specialise in, anything a new client would want to know…">${esc(profile?.bio ?? '')}</textarea>
             <p class="preview-note" style="margin-top:6px">Shown to your clients in their portal.</p>
+          </div>
+          <div class="form-grid">
+            <div><label for="pf-years">Years in service</label>
+              <input id="pf-years" type="number" min="0" max="80" class="num"
+                value="${profile?.years_experience ?? ''}" placeholder="e.g. 5" />
+              <p class="preview-note" style="margin-top:6px">Shown to your clients in their portal.</p></div>
           </div>
           <!-- R-11: the general default D5 asked for; each agreement can
                override it when it's generated. -->
@@ -2428,6 +2592,9 @@ registerPWA();
         </form>
       </div>`;
 
+    wireImageField('pf-photo', 'photo');
+    wireImageField('pf-logo', 'logo');
+
     document.getElementById('pf-form').onsubmit = async (e) => {
       e.preventDefault();
       const btn = e.target.querySelector('button[type=submit]');
@@ -2436,11 +2603,13 @@ registerPWA();
           const offeredNow = [...document.querySelectorAll('[data-offer]')]
             .filter((cb) => cb.checked)
             .map((cb) => cb.dataset.offer);
+          const yearsRaw = document.getElementById('pf-years').value;
           await api('PATCH', '/api/auth/profile', {
             full_name: document.getElementById('pf-name').value.trim(),
             business_name: document.getElementById('pf-biz').value.trim() || null,
             phone: fmtPhone(document.getElementById('pf-phone').value) || null,
             bio: document.getElementById('pf-bio').value.trim() || null,
+            years_experience: yearsRaw ? Number(yearsRaw) : null,
             offered_service_types: offeredNow,
             default_renewal_notice_days: Number(document.getElementById('pf-notice').value) || 0,
           });
@@ -2790,7 +2959,7 @@ registerPWA();
     if (parts[0] === 'messages') { renderMessages(); return; }
     if (parts[0] === 'profile') { renderProfile(); return; }
     if (parts[0] === 'appointment-new') { renderNewAppointment(params); return; }
-    if (parts[0] === 'setup') { renderSetup(Math.min(3, Math.max(1, Number(parts[1]) || 1))); return; }
+    if (parts[0] === 'setup') { renderSetup(Math.min(SETUP_STEPS, Math.max(1, Number(parts[1]) || 1))); return; }
     if (parts[0] === 'client-new') { renderNewClient(); return; }
     if (parts[0] === 'client' && parts[1] && parts[2] === 'new-contract') {
       renderNewContract(parts[1], params.get('replace')); return;

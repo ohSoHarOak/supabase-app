@@ -34,6 +34,12 @@ export function createServer(): express.Express {
   // cap forged floods (real Stripe traffic stays well under the ceiling).
   app.use('/api/webhooks/stripe', webhookLimiter, stripeWebhookRouter);
 
+  // Profile photo / logo uploads carry a base64 image, which the 1mb default
+  // below would reject. A larger parser mounts first for just that path; the
+  // client downscales before sending, so real payloads stay small. express.json
+  // is a no-op once the body is read, so the global parser skips it afterward.
+  app.use('/api/auth/profile/image', express.json({ limit: '6mb' }));
+
   app.use(express.json({ limit: '1mb' }));
 
   // Web UI — built by Vite into dist-web/ (Workstream M / M0-a). `npm run build`

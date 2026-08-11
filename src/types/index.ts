@@ -35,6 +35,8 @@ export interface ProfessionalProfile {
   years_experience: number | null;
   service_areas: string[];
   profile_photo_url: string | null;
+  // Optional business logo, separate from the (required) profile photo (025).
+  business_logo_url: string | null;
   // Which service types this professional offers (014). Empty = no
   // preference yet — the UI shows every type until they choose.
   offered_service_types: ServiceType[];

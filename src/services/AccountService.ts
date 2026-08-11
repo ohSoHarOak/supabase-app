@@ -16,6 +16,8 @@ export interface ProfessionalProfileUpdate {
   business_name?: string | null;
   bio?: string | null;
   years_experience?: number | null;
+  profile_photo_url?: string | null;
+  business_logo_url?: string | null;
   offered_service_types?: ServiceType[];
   /** R-11: days before a contract's end_date to warn both parties (020). */
   default_renewal_notice_days?: number;

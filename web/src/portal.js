@@ -595,6 +595,22 @@ registerPWA();
         </div>` : `
         <div class="eyebrow">Your pet care professional</div>
         <div class="card fieldset">
+          ${(c.professional.profile_photo_url || c.professional.business_logo_url || c.professional.bio || c.professional.years_experience != null) ? `
+          <div class="pro-intro">
+            ${c.professional.profile_photo_url
+              ? `<img class="pro-photo" src="${esc(c.professional.profile_photo_url)}" alt="" />`
+              : ''}
+            <div class="pro-intro-text">
+              <div class="pro-name">${esc(c.professional.business_name || c.professional.full_name)}</div>
+              ${c.professional.years_experience != null
+                ? `<div class="pro-years">${esc(c.professional.years_experience)} year${c.professional.years_experience === 1 ? '' : 's'} in service</div>`
+                : ''}
+            </div>
+            ${c.professional.business_logo_url
+              ? `<img class="pro-logo" src="${esc(c.professional.business_logo_url)}" alt="Business logo" />`
+              : ''}
+          </div>
+          ${c.professional.bio ? `<p class="pro-bio">${esc(c.professional.bio)}</p>` : ''}` : ''}
           ${row('Business name', c.professional.business_name)}
           ${row('Your contact there', c.professional.full_name)}
           ${c.professional.phone ? `

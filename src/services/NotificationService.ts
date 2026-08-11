@@ -20,6 +20,9 @@ import { ServiceError } from './errors';
 export type NotificationTemplate =
   | 'test'
   | 'contract_ready'
+  // #6: agreement sent to a client to review and sign in their portal, for
+  // when they aren't present to sign in person.
+  | 'contract_sent'
   | 'contract_signed'
   | 'payment_receipt'
   | 'payment_received'
@@ -311,6 +314,8 @@ export class NotificationService {
         return this.renderTest(row.account_id, payload.to as string | undefined);
       case 'contract_ready':
         return this.renderContractReady(payload.contract_id as string);
+      case 'contract_sent':
+        return this.renderContractSent(payload.contract_id as string, payload.origin as string);
       case 'contract_signed':
         return this.renderContractSigned(payload.contract_id as string);
       case 'invoice_sent':
@@ -372,6 +377,30 @@ export class NotificationService {
           `<p>Hi ${escapeHtml(client.full_name)},</p>
            <p>Your service agreement with ${escapeHtml(businessName)} is ready. You'll review and sign it together at your next visit — no action needed right now.</p>
            <p>Questions before then? Just reply to this email.</p>`
+        ),
+      },
+    };
+  }
+
+  private async renderContractSent(contractId: string, origin: string): Promise<RenderResult> {
+    const ctx = await this.contractContext(contractId);
+    if ('cancel' in ctx) return { kind: 'cancel', reason: ctx.cancel };
+    const { contract, client, businessName } = ctx;
+    if (!client.email) return { kind: 'cancel', reason: 'client has no email on file' };
+    if (contract.status !== 'sent' && contract.status !== 'draft') {
+      return { kind: 'cancel', reason: `contract is ${contract.status}, no longer awaiting signature` };
+    }
+    return {
+      kind: 'send',
+      email: {
+        to: client.email!,
+        subject: `Please review and sign your agreement with ${businessName}`,
+        html: emailLayout(
+          businessName,
+          `<p>Hi ${escapeHtml(client.full_name)},</p>
+           <p>${escapeHtml(businessName)} has sent you a service agreement to review and sign. You can read it in full and sign online from your portal — no account to create and no password to remember.</p>
+           <p><a href="${escapeHtml(origin)}/portal">Review &amp; sign your agreement</a></p>
+           <p>Enter this email address and we'll send you a secure link. Questions before you sign? Just reply to this email.</p>`
         ),
       },
     };

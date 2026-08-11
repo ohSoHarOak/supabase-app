@@ -131,10 +131,13 @@ export const PetPro = (() => {
     return `
       <div class="doc-pane">
         <div class="doc-tools">
-          <span class="hint">Zoom</span>
-          <button class="btn btn-ghost" id="zoom-out" type="button" aria-label="Zoom out">−</button>
-          <span class="num" id="zoom-label" aria-live="polite">100%</span>
-          <button class="btn btn-ghost" id="zoom-in" type="button" aria-label="Zoom in">＋</button>
+          <span class="doc-label">📄 Document preview</span>
+          <span class="doc-zoom">
+            <span class="hint">Zoom</span>
+            <button class="btn btn-ghost" id="zoom-out" type="button" aria-label="Zoom out">−</button>
+            <span class="num" id="zoom-label" aria-live="polite">100%</span>
+            <button class="btn btn-ghost" id="zoom-in" type="button" aria-label="Zoom in">＋</button>
+          </span>
         </div>
         <div class="doc-shell" data-doc-shell>
           <iframe class="doc-frame" id="doc-frame" data-doc-frame title="${esc(frameTitle)}" sandbox=""></iframe>
