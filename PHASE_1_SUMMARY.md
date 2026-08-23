@@ -1,3 +1,33 @@
+> # ⚠️ ARCHIVED — HISTORICAL PLAN, NOT THE AS-BUILT SYSTEM
+>
+> **Archived 2026-08-17 (Workstream 0, repo hygiene). Do not use this file to understand
+> how PetPro Connect works — large parts of it describe a stack that was abandoned before
+> a line of the current system was written.**
+>
+> This is the summary of the **original scaffold package**, which was lost (the `files.zip`
+> referenced in `ROADMAP.md` Week 1 no longer exists). The project was rebuilt from
+> scratch against a different, deliberately chosen stack. It is kept only as a record of
+> the original plan and of the requirements thinking behind it.
+>
+> **Where it contradicts reality:**
+>
+> | This file says | Actually shipped |
+> |---|---|
+> | Custom JWT auth, bcrypt | **Supabase Auth** (email/password + magic link) |
+> | AWS S3 for PDFs/images | **Supabase Storage** |
+> | Heroku / DigitalOcean / AWS ECS | **Render** |
+> | Firebase | not used |
+> | 10 migrations | **25** (`001`–`025`) |
+> | `README.md`, `IMPLEMENTATION_GUIDE.md`, paths under `/home/claude/…` | never existed in this repo |
+> | Open questions ("Hosting preference?") | long since decided — see `CLAUDE.md` |
+>
+> **Read these instead:**
+> - **`ARCHITECTURE.md`** — the as-built system (added 2026-08-17)
+> - **`CLAUDE.md`** — hard constraints, locked decisions, current stack
+> - **`ROADMAP.md`** / **`PHASE_2_ROADMAP.md`** — what shipped and what is next
+
+---
+
 # PetPro Connect Phase 1 — Complete Build Package
 
 ## What You Have
