@@ -59,6 +59,28 @@ authRouter.post('/login', async (req, res, next) => {
   }
 });
 
+/**
+ * POST /api/auth/refresh — exchange a refresh token for a new session (M0.5).
+ *
+ * Unauthenticated by design: the refresh token IS the credential, and the
+ * caller reaches here precisely because its access token has expired. Inherits
+ * the /api/auth `authLimiter` bucket, which is the right one — this is a
+ * credential exchange on an unauthenticated surface.
+ */
+authRouter.post('/refresh', async (req, res, next) => {
+  try {
+    const parsed = z.object({ refresh_token: z.string().min(1) }).safeParse(req.body);
+    if (!parsed.success) {
+      res.status(422).json({ ok: false, error: { code: 'validation', message: 'A refresh token is required.' } });
+      return;
+    }
+    const session = await accountService.refreshSession(parsed.data.refresh_token);
+    res.json({ ok: true, data: session });
+  } catch (err) {
+    next(err);
+  }
+});
+
 /** POST /api/auth/forgot-password — sends a Supabase recovery email.
  *  Always answers ok so the endpoint can't be used to probe which emails exist. */
 authRouter.post('/forgot-password', async (req, res, next) => {

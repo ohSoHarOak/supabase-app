@@ -72,6 +72,25 @@ export const authLimiter = rateLimit({
 });
 
 /**
+ * Session-refresh limiter (M0.5).
+ *
+ * Refresh is NOT brute-forceable — the refresh token is a high-entropy secret,
+ * so guessing is not the threat model — but it is called routinely (hourly, and
+ * on any 401), so it must not share the 20/15min credential budget. Putting it
+ * there caused a real lockout: a spent budget makes refresh fail, which logs the
+ * user out, and the login that follows is throttled too. Generous ceiling that
+ * still bounds a runaway client.
+ */
+export const refreshLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 60,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  skip: skipLocalDev,
+  handler: tooMany,
+});
+
+/**
  * Stripe webhook limiter — generous (Stripe stays well under this) but caps a
  * flood of forged calls. Dropped events are retried by Stripe, so a ceiling is
  * safe. Signature verification already rejects forgeries cheaply; this bounds

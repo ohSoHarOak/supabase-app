@@ -162,6 +162,38 @@ export class AccountService {
   }
 
   /**
+   * M0.5: exchange a refresh token for a fresh session, so a walker isn't
+   * logged out mid-round when the ~1h access token expires.
+   *
+   * Two things callers must know:
+   *  - Supabase **rotates** the refresh token on every use, so the response's
+   *    refresh_token replaces the old one. Storing only the access token here
+   *    would break the *next* refresh.
+   *  - Deactivation is re-checked, not assumed from the original login: without
+   *    this, refresh would quietly resurrect a session for an account closed
+   *    after that login. Same generic message as a bad login so the endpoint
+   *    can't be used to probe account state.
+   */
+  async refreshSession(refreshToken: string): Promise<AuthSession> {
+    const { data, error } = await supabaseAnon.auth.refreshSession({ refresh_token: refreshToken });
+    if (error || !data.session || !data.user) {
+      throw new ServiceError('invalid_refresh_token', 'Your session has expired — please log in again.', 401);
+    }
+
+    const account = await this.getAccountByAuthUserId(data.user.id);
+    if (!account || account.status !== 'active') {
+      throw new ServiceError('invalid_refresh_token', 'Your session has expired — please log in again.', 401);
+    }
+
+    return {
+      access_token: data.session.access_token,
+      refresh_token: data.session.refresh_token,
+      expires_at: data.session.expires_at ?? null,
+      account,
+    };
+  }
+
+  /**
    * Kick off Supabase Auth's built-in recovery flow. The email link lands the
    * user back on our app (`redirectTo`) with a recovery token in the URL hash,
    * where the UI shows a "set new password" form. Always resolves — whether

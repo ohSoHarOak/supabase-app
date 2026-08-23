@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { accountService } from '../../services/AccountService';
 import { contractService } from '../../services/ContractService';
 import { renderContractDocument } from '../../services/contractDocument';
-import { requireAuth, requireAccountType } from '../middleware/auth';
+import { requireAuth, requireAccountType, requireCompleteProfile } from '../middleware/auth';
 import {
   billingCadenceEnum,
   durationMinutes,
@@ -146,7 +146,7 @@ export const contractsRouter = Router();
 contractsRouter.use(requireAuth, requireAccountType('professional'));
 
 /** POST /api/contracts — generate from a template + live CRM data. */
-contractsRouter.post('/', async (req, res, next) => {
+contractsRouter.post('/', requireCompleteProfile, async (req, res, next) => {
   try {
     const parsed = generateSchema.safeParse(req.body);
     if (!parsed.success) return validationError(res, parsed.error.issues);
@@ -217,7 +217,7 @@ contractsRouter.get('/:id/document', async (req, res, next) => {
 });
 
 /** PATCH /api/contracts/:id — draft-stage edits; 409 once signed (DB trigger). */
-contractsRouter.patch('/:id', async (req, res, next) => {
+contractsRouter.patch('/:id', requireCompleteProfile, async (req, res, next) => {
   try {
     const parsed = updateContractSchema.safeParse(req.body);
     if (!parsed.success) return validationError(res, parsed.error.issues);
@@ -229,7 +229,7 @@ contractsRouter.patch('/:id', async (req, res, next) => {
 });
 
 /** POST /api/contracts/:id/sign — in-person signing; locks the contract. */
-contractsRouter.post('/:id/sign', async (req, res, next) => {
+contractsRouter.post('/:id/sign', requireCompleteProfile, async (req, res, next) => {
   try {
     const parsed = signSchema.safeParse(req.body);
     if (!parsed.success) return validationError(res, parsed.error.issues);
@@ -242,7 +242,7 @@ contractsRouter.post('/:id/sign', async (req, res, next) => {
 
 /** POST /api/contracts/:id/send — email the client a link to review and sign
  *  in their portal, for when they aren't present to sign in person (#6). */
-contractsRouter.post('/:id/send', async (req, res, next) => {
+contractsRouter.post('/:id/send', requireCompleteProfile, async (req, res, next) => {
   try {
     const origin = `${req.protocol}://${req.get('host')}`;
     const contract = await contractService.sendToClient(req.account!.id, req.params.id, origin);
