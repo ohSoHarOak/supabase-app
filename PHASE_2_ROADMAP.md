@@ -197,6 +197,12 @@ Pricing tiers (**Workstream S**) will later decide free vs. paid. Build every Ph
 ### Phase 3 — iOS port + Biometric Login *(deferred, scoped when Phase 2 is testing)*
 The **iOS port** is the main Phase 3 driver — it's what needs a **Mac or cloud build environment** and re-entry into **Apple's review** (where Phase 2's native-feature depth pays off against guideline 4.2). **Biometric Login** rides here too (it's small and also works on Android — cheap to pull into the Android build later if wanted; kept in Phase 3 per founder call 2026-07-19). Rough size when picked up: **~5–8 weeks**.
 
+- [ ] **Add `.gitattributes` when the second build machine appears** *(noted 2026-08-17)* — the repo is currently clean (all 142 tracked text files are stored **LF**; `core.autocrlf=true` gives the Windows working copy CRLF, which is correct and harmless). But that behaviour lives in local git config, not in the repo, so it only holds while there's **one** machine. A Mac or cloud build env is the moment it can diverge: a contributor with `autocrlf=false` puts CRLF into the index, producing whole-file phantom diffs — and `android/gradlew`, the repo's only shebang script, **breaks outright if it lands with CRLF on Unix**. Pin it then (a no-op renormalisation today, since everything is already LF):
+  ```
+  printf '* text=auto\ngradlew text eol=lf\n*.sh text eol=lf\n*.bat text eol=crlf\n' > .gitattributes
+  ```
+  Deliberately *not* done now: it would put an unrelated file into a security-focused review, and there is no second machine to diverge from yet.
+
 ## Workstream U — UI/UX Polish & Modernization
 
 *The Phase 1 UI was built to be demoable, not delightful. This workstream is a deliberate design pass — informed by real feedback from the Week 8 demo and the owner-portal cold tester.*
