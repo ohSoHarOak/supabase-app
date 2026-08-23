@@ -162,7 +162,15 @@ h1, h2, h3 { line-height: 1.25; text-wrap: balance; margin: 0; }
    the five destinations to a fixed bottom bar (thumb-reachable, all visible at
    once); the brand + Log out stay in the top header. */
 @media (max-width: 620px) {
-  .app-header .inner { gap: 12px; }
+  /* On phones the five tabs live in the fixed bottom bar, so the top header is
+     just brand + Log out. Center the brand and pin Log out to the right edge
+     (Log out is taken out of flow so the brand centres on the full width). */
+  .app-header .inner { gap: 12px; position: relative; justify-content: center; }
+  .logout-link {
+    position: absolute; right: 20px; top: 0; bottom: 0;
+    display: flex; align-items: center;
+    margin: 0; padding: 0;
+  }
   .app-nav {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
     margin: 0; gap: 0;
