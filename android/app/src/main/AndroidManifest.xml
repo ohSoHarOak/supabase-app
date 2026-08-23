@@ -1,8 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- M0.5 (token-storage review): allowBackup defaults to "true" in the
+         Capacitor template, which sweeps the WebView's localStorage — where the
+         Supabase access token lives — into Google Auto Backup (the user's Drive)
+         and into `adb backup` extraction. An auth token must not leave the
+         device that way, so backup is off. Cost is nil: the only local state is
+         the session, cached profile, and queued message drafts, so a restored
+         device just asks the walker to log in again. -->
     <application
-        android:allowBackup="true"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"

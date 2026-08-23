@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  M0.5 (on-device auth-token storage review).
+
+  `android:allowBackup="false"` already turns off Google cloud backup, but on
+  Android 12+ (targetSdk is 36) device-to-device transfer is governed by THIS
+  file instead — so without it, a phone-to-phone migration would still copy the
+  app's data directory, including the WebView localStorage that holds the
+  Supabase access token.
+
+  Everything is excluded from both channels. The app keeps no local state worth
+  preserving across devices: just the session, a cached account/profile, and
+  queued offline message drafts. A new or restored device simply asks the
+  walker to log in again, which is the behaviour we want for an app that
+  reaches contracts and payments.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" />
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+        <exclude domain="external" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" />
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+        <exclude domain="external" />
+    </device-transfer>
+</data-extraction-rules>
