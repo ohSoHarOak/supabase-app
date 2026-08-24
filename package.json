@@ -25,6 +25,7 @@
   },
   "dependencies": {
     "@capacitor/android": "^8.5.0",
+    "@capacitor/camera": "^8.2.3",
     "@capacitor/core": "^8.5.0",
     "@supabase/supabase-js": "^2.45.0",
     "cors": "^2.8.6",

@@ -19,6 +19,18 @@ Two things:
 
 ---
 
+## Carried Into the iOS Port — do not rediscover these
+
+*Things Phase 2 built that leave an unfinished edge on iOS. Logged when they were created, so the port does not find them under Apple review.*
+
+- [ ] **iOS `Info.plist` usage strings for `@capacitor/camera`** *(created 2026-08-24 by the M0-IMG fix)* — Phase 2 added `@capacitor/camera` to fix HEIC profile-photo upload (`PHASE_2_ROADMAP.md` → Workstream M → M0-IMG). The Android half is done and verified in the merged manifest. **The iOS half could not be done: there is no `ios/` project in the repo yet** — it arrives with this port. When it does, add all three strings or **the app hard-crashes on first camera or library access** (iOS kills the process rather than throwing a catchable error):
+  - `NSCameraUsageDescription` — the "Take Photo" branch of the picker.
+  - `NSPhotoLibraryUsageDescription` — the "Choose from Library" branch.
+  - `NSPhotoLibraryAddUsageDescription` — required if anything ever saves back to the library.
+  - ⚠️ **The HEIC problem is worse on iOS, not better.** Every iPhone since iOS 11 defaults to HEIC, so the code path this plugin fixes is the *normal* path there, not an edge case. The fix is already written and platform-agnostic (`Capacitor.isNativePlatform()` gates it, not a platform check), so the port inherits working behavior as soon as the plist strings exist.
+
+---
+
 ## Backlog Moved From Phase 2 (relocated 2026-07-19)
 
 *These six were part of `ROADMAP.md`'s "Phase 2 Backlog" and tiered into `PHASE_2_ROADMAP.md`'s Workstream F. The founder moved them to Phase 3 on 2026-07-19. Their `ROADMAP.md` entries are now redirect stubs pointing here. **P2-2 was explicitly kept in Phase 2** — Workstream M's QR check-in + GPS native features depend on it.*
