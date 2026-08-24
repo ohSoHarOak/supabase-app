@@ -53,13 +53,78 @@ export function isUsingWebBackend() {
 }
 
 /**
+ * T-3: install the Keystore-backed backend on native builds.
+ *
+ * Must be awaited BEFORE the first `load()` — the seam's contract above — so
+ * boot calls it ahead of restoring the session.
+ *
+ * The plugin's `StorageLikeAsync` trio (`getItem`/`setItem`/`removeItem`) maps
+ * one-to-one onto this seam. Deliberately NOT its `get`/`set` pair: those
+ * JSON-serialize and would hand back a non-string for a token that merely looks
+ * numeric.
+ *
+ * ⚠️ **Falls back to localStorage rather than failing closed.** A device whose
+ * Keystore is unavailable would otherwise be unable to log in at all, which is
+ * worse than the at-rest exposure this closes — the tokens are a ~1h access
+ * token plus a rotating refresh token, not a password. The fallback is loud
+ * (console.error + `isUsingWebBackend()`) so it can't pass for success on a
+ * device test.
+ */
+export async function initSecureStorage() {
+  if (!window.Capacitor?.isNativePlatform?.()) return { secure: false, reason: 'web build' };
+  try {
+    const { SecureStorage } = await import('@aparajita/capacitor-secure-storage');
+    setSecureBackend({
+      get: (key) => SecureStorage.getItem(key),
+      set: (key, value) => SecureStorage.setItem(key, value),
+      remove: (key) => SecureStorage.removeItem(key),
+    });
+    console.info('[tokenStore] Keystore-backed secure storage active.');
+    return { secure: true };
+  } catch (err) {
+    const reason = err?.message ?? String(err);
+    console.error('[tokenStore] secure storage unavailable — tokens staying in localStorage:', reason);
+    return { secure: false, reason };
+  }
+}
+
+/**
  * One store per surface: the professional app and the owner portal keep
  * separate sessions, so they get separate keys but share this machinery.
  */
 export function createTokenStore({ accessKey, refreshKey }) {
   return {
     async load() {
-      const [access, refresh] = await Promise.all([backend.get(accessKey), backend.get(refreshKey)]);
+      let [access, refresh] = await Promise.all([backend.get(accessKey), backend.get(refreshKey)]);
+
+      // T-3 migration. A phone upgrading from a pre-Keystore build still has
+      // its tokens in localStorage. Two things have to happen, and the second
+      // matters more than the first:
+      //   1. Adopt them, so the upgrade doesn't silently log the walker out.
+      //   2. PURGE the plaintext copy. Moving tokens to Keystore while leaving
+      //      a readable duplicate behind would close nothing at all.
+      // Guarded on the native backend: on web, `backend` IS localStorage, so
+      // this would read and delete the very values it just returned.
+      if (!isUsingWebBackend()) {
+        if (!access && !refresh) {
+          const legacyAccess = localStorage.getItem(accessKey);
+          const legacyRefresh = localStorage.getItem(refreshKey);
+          if (legacyAccess || legacyRefresh) {
+            access = legacyAccess;
+            refresh = legacyRefresh;
+            await Promise.all([
+              legacyAccess ? backend.set(accessKey, legacyAccess) : Promise.resolve(),
+              legacyRefresh ? backend.set(refreshKey, legacyRefresh) : Promise.resolve(),
+            ]);
+            console.info('[tokenStore] migrated tokens from localStorage into secure storage.');
+          }
+        }
+        // Unconditional: also clears a stale plaintext pair left behind when
+        // secure storage already held the live session.
+        localStorage.removeItem(accessKey);
+        localStorage.removeItem(refreshKey);
+      }
+
       return { access: access ?? null, refresh: refresh ?? null };
     },
 

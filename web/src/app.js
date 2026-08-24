@@ -5,7 +5,7 @@ import { PetPro } from './shared.js';
 import { API_BASE } from './config.js';
 import { createClient } from '@supabase/supabase-js';
 import { registerPWA } from './pwa.js';
-import { createTokenStore } from './tokenStore.js';
+import { createTokenStore, initSecureStorage } from './tokenStore.js';
 
 registerPWA();
 
@@ -3134,5 +3134,7 @@ registerPWA();
   // M0.5: the token store is async, so the first render waits for the restore.
   // Without this the app would paint the login screen before the session
   // loaded and bounce an already-signed-in walker back to the password form.
-  restoreSession().then(render);
+  // T-3: the Keystore backend must be installed BEFORE that first read, or the
+  // restore comes back empty and logs the walker out. No-op on the web build.
+  initSecureStorage().then(restoreSession).then(render);
 })();
