@@ -149,7 +149,7 @@ export class NotificationService {
         })
         .select()
         .single();
-      if (error) throw new Error(error.message);
+      if (error) throw new ServiceError('notification_enqueue_failed', error.message, 500);
       const row = data as QueuedNotification;
 
       // Nudge: immediate notifications go out now, not on the next tick.
@@ -172,7 +172,7 @@ export class NotificationService {
       .eq('category', category)
       .eq('channel', 'email')
       .maybeSingle();
-    if (error) throw new Error(error.message);
+    if (error) throw new ServiceError('notification_preference_lookup_failed', error.message, 500);
     return data ? Boolean(data.enabled) : true;
   }
 
@@ -203,7 +203,7 @@ export class NotificationService {
         .eq('status', 'pending')
         .eq('category', 'appointment_reminder')
         .contains('payload', { appointment_id: appointmentId });
-      if (error) throw new Error(error.message);
+      if (error) throw new ServiceError('notification_reminder_reschedule_failed', error.message, 500);
     } catch (err) {
       console.error('[notifications] reminder reschedule failed:', err);
     }
@@ -219,7 +219,7 @@ export class NotificationService {
           .eq('status', 'pending')
           .eq('category', 'appointment_reminder')
           .contains('payload', { appointment_id: id });
-        if (error) throw new Error(error.message);
+        if (error) throw new ServiceError('notification_reminder_cancel_failed', error.message, 500);
       } catch (err) {
         console.error('[notifications] reminder cancel failed:', err);
       }
