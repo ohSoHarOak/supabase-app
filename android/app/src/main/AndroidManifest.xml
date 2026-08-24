@@ -46,4 +46,23 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <!--
+      M0-IMG: @capacitor/camera. CAMERA is for the "Take Photo" branch of the
+      picker prompt. The "Choose from Library" branch needs no permission on
+      Android 13+ (it goes through the system Photo Picker); READ_EXTERNAL_STORAGE
+      is capped at API 32 for older devices, where it did.
+    -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+
+    <!--
+      Declared not-required so the Play listing does not filter out devices
+      without a camera. Choosing an existing photo still works on those.
+    -->
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false" />
 </manifest>
