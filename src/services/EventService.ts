@@ -1,4 +1,5 @@
 import { supabaseAdmin } from '../config/supabase';
+import { ServiceError } from './errors';
 import { DomainEvent, EventType } from '../types';
 
 export interface PublishEventInput {
@@ -32,7 +33,7 @@ export class EventService {
       .select()
       .single();
 
-    if (error) throw new Error(`Failed to publish event: ${error.message}`);
+    if (error) throw new ServiceError('event_publish_failed', error.message, 500);
     const event = data as DomainEvent;
 
     const audience = new Set(input.visibleTo ?? []);
@@ -43,7 +44,7 @@ export class EventService {
         visible_to_account_id: accountId,
       }));
       const { error: audienceError } = await supabaseAdmin.from('event_audience').insert(rows);
-      if (audienceError) throw new Error(`Failed to record event audience: ${audienceError.message}`);
+      if (audienceError) throw new ServiceError('event_audience_failed', audienceError.message, 500);
     }
 
     return event;
@@ -57,7 +58,7 @@ export class EventService {
       .eq('visible_to_account_id', accountId)
       .limit(limit);
 
-    if (error) throw new Error(`Failed to fetch events: ${error.message}`);
+    if (error) throw new ServiceError('event_list_failed', error.message, 500);
     return (data ?? []).flatMap((row: Record<string, unknown>) => {
       const e = row.events;
       return e ? [e as DomainEvent] : [];
@@ -72,7 +73,7 @@ export class EventService {
       .order('occurred_at', { ascending: false })
       .limit(limit);
 
-    if (error) throw new Error(`Failed to fetch events: ${error.message}`);
+    if (error) throw new ServiceError('event_list_failed', error.message, 500);
     return (data ?? []) as DomainEvent[];
   }
 }
