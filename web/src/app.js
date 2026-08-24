@@ -455,12 +455,14 @@ registerPWA();
   // profile only needs a small square, and this keeps every payload well under
   // the API body limit. Logos stay PNG to preserve transparency; photos become
   // JPEG (smaller, and a headshot has nothing transparent to lose).
-  function downscaleImage(file, maxDim, mime) {
+  // Takes any src an <img> can load. Split out from downscaleImage so the
+  // native pick path (M0-IMG, below) shares the same resize + re-encode rules
+  // rather than growing a second copy that can drift.
+  function downscaleFromSrc(src, maxDim, mime, cleanup) {
     return new Promise((resolve, reject) => {
-      const url = URL.createObjectURL(file);
       const img = new Image();
       img.onload = () => {
-        URL.revokeObjectURL(url);
+        cleanup?.();
         const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
         const w = Math.max(1, Math.round(img.width * scale));
         const h = Math.max(1, Math.round(img.height * scale));
@@ -471,12 +473,50 @@ registerPWA();
         resolve(canvas.toDataURL(mime, 0.85));
       };
       img.onerror = () => {
-        URL.revokeObjectURL(url);
+        cleanup?.();
         reject(new Error('That image could not be read — try a PNG or JPEG.'));
       };
-      img.src = url;
+      img.src = src;
     });
   }
+
+  function downscaleImage(file, maxDim, mime) {
+    const url = URL.createObjectURL(file);
+    return downscaleFromSrc(url, maxDim, mime, () => URL.revokeObjectURL(url));
+  }
+
+  // M0-IMG: in the native shell a raw <input type=file> is a dead end for phone
+  // photos. Android and iOS both save camera shots as HEIC/HEIF, which the
+  // WebView cannot decode in an <img> — so the downscale step above rejects
+  // before anything reaches the server. That blocks *onboarding*, because a
+  // profile photo is required to finish setup.
+  //
+  // @capacitor/camera does the decode in native code and hands back a JPEG, so
+  // the canvas only ever sees a format it can read. The server needs no change
+  // (it already accepts JPEG by magic bytes).
+  //
+  // Web deliberately keeps the file input: desktop HEIC is rare and there is no
+  // plugin to fall back on there, so the error message above stays load-bearing.
+  const isNativeShell = () => Boolean(window.Capacitor?.isNativePlatform?.());
+
+  async function pickNativeImage() {
+    const { Camera, CameraResultType, CameraSource } = await import('@capacitor/camera');
+    const photo = await Camera.getPhoto({
+      quality: 90,
+      allowEditing: false,
+      correctOrientation: true,
+      resultType: CameraResultType.DataUrl,
+      // Prompt = "Take Photo" / "Choose from Library". On Android 13+ the
+      // library route uses the system Photo Picker, which needs no permission.
+      source: CameraSource.Prompt,
+    });
+    return photo.dataUrl;
+  }
+
+  // Capacitor rejects on cancel rather than resolving empty. Backing out of the
+  // picker is a normal thing to do, so it must not surface as an error toast.
+  const isPickerCancel = (err) =>
+    /cancel/i.test(err?.message || '') || /cancel/i.test(err?.errorMessage || '');
 
   // A file picker with a live preview. Uploads immediately (so the URL is saved
   // to the profile before the form is submitted), updating local `profile`.
@@ -507,22 +547,43 @@ registerPWA();
     const fileInput = document.getElementById(`${id}-file`);
     const preview = document.getElementById(`${id}-preview`);
     if (!btn || !fileInput) return;
-    btn.onclick = () => fileInput.click();
+
+    const maxDim = kind === 'logo' ? 600 : 512;
+    const outMime = kind === 'logo' ? 'image/png' : 'image/jpeg';
+    const noun = kind === 'logo' ? 'Logo' : 'Photo';
+
+    // Everything after "we have pixels" is identical for both pick paths.
+    async function upload(dataUrl) {
+      preview.innerHTML = `<img src="${dataUrl}" alt="" />`; // optimistic
+      await withBusy(btn, async () => {
+        const updated = await api('POST', '/api/auth/profile/image', { kind, image: dataUrl });
+        profile = updated;
+        localStorage.setItem('petpro_profile', JSON.stringify(profile));
+      });
+      // withBusy restores the button's label, so set "Change" after it returns.
+      btn.textContent = 'Change';
+      toast(`${noun} saved.`, 'ok');
+    }
+
+    btn.onclick = async () => {
+      if (!isNativeShell()) {
+        fileInput.click();
+        return;
+      }
+      try {
+        const picked = await pickNativeImage();
+        await upload(await downscaleFromSrc(picked, maxDim, outMime));
+      } catch (err) {
+        if (isPickerCancel(err)) return;
+        toast(err.message || `That ${noun.toLowerCase()} could not be added.`);
+      }
+    };
+
     fileInput.onchange = async () => {
       const file = fileInput.files?.[0];
       if (!file) return;
       try {
-        const maxDim = kind === 'logo' ? 600 : 512;
-        const dataUrl = await downscaleImage(file, maxDim, kind === 'logo' ? 'image/png' : 'image/jpeg');
-        preview.innerHTML = `<img src="${dataUrl}" alt="" />`; // optimistic
-        await withBusy(btn, async () => {
-          const updated = await api('POST', '/api/auth/profile/image', { kind, image: dataUrl });
-          profile = updated;
-          localStorage.setItem('petpro_profile', JSON.stringify(profile));
-        });
-        // withBusy restores the button's label, so set "Change" after it returns.
-        btn.textContent = 'Change';
-        toast(`${kind === 'logo' ? 'Logo' : 'Photo'} saved.`, 'ok');
+        await upload(await downscaleImage(file, maxDim, outMime));
       } catch (err) {
         toast(err.message);
         fileInput.value = '';
