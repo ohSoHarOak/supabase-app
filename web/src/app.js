@@ -5,7 +5,7 @@ import { PetPro } from './shared.js';
 import { API_BASE } from './config.js';
 import { createClient } from '@supabase/supabase-js';
 import { registerPWA } from './pwa.js';
-import { createTokenStore, initSecureStorage } from './tokenStore.js';
+import { createTokenStore, initSecureStorage, isUsingWebBackend } from './tokenStore.js';
 
 registerPWA();
 
@@ -2632,6 +2632,33 @@ registerPWA();
   }
 
   // ------------------------------------------------------------ profile ----
+  /* T-3 observability. `loggingBehavior: 'none'` (capacitor.config.ts) stops the
+     Capacitor bridge writing plugin results -- tokens included -- to logcat, but
+     it also silences our own boot log. That left NO way to tell on-device
+     whether Keystore actually took effect, and a silent fallback to localStorage
+     looks identical to success. So the answer lives on a screen instead of in a
+     log: no cable, no adb, no debug build required.
+
+     Native only -- on the web build localStorage is the correct and only
+     option, so reporting it there would read as a warning about nothing. */
+  function storageStatusCard() {
+    if (!window.Capacitor?.isNativePlatform?.()) return '';
+    const secure = !isUsingWebBackend();
+    return `
+      <div class="eyebrow" style="margin-top:28px">Security</div>
+      <div class="card fieldset">
+        <p class="page-sub" style="margin-top:0">
+          <strong>Sign-in storage:</strong>
+          ${secure ? 'Secure (Android Keystore)' : 'Device storage (not encrypted)'}
+        </p>
+        <p class="preview-note" style="margin:6px 0 0">
+          ${secure
+            ? 'Your sign-in details are held in the encrypted Android keystore.'
+            : 'Secure storage was unavailable, so sign-in details are kept in ordinary app storage. Reinstalling the app usually fixes this.'}
+        </p>
+      </div>`;
+  }
+
   async function renderProfile() {
     appEl.innerHTML = header('profile') + `<div class="page loading">Loading profile…</div>`;
     try {
@@ -2746,6 +2773,7 @@ registerPWA();
           <button class="btn btn-danger" type="submit">Close my account</button>
         </div>
         </form>
+        ${storageStatusCard()}
       </div>`;
 
     wireImageField('pf-photo', 'photo');

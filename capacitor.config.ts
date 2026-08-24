@@ -16,6 +16,22 @@ const config: CapacitorConfig = {
   appId: 'com.petpro.connect',
   appName: 'PetPro Connect',
   webDir: 'dist-web',
+
+  // T-3 follow-up. Capacitor's native bridge echoes every plugin call RESULT to
+  // the console, and Capacitor forwards console output to Android's logcat. With
+  // secure storage in the call path that means the access AND refresh tokens get
+  // written to a system log in plaintext -- observed on-device 2026-08-24 as
+  // `I/Capacitor/Console: {"data":"<access token>"}`.
+  //
+  // That is the same threat model T-3 just closed (rooted / forensically-imaged
+  // device, or anyone with adb), so moving tokens into Keystore while logging
+  // them would have been self-defeating.
+  //
+  // The default is 'debug' (log only in debug builds), which would probably
+  // spare release APKs -- but debug APKs are exactly what gets sideloaded for
+  // testing, against a REAL production account. Pinned to 'none' so neither
+  // build type can leak a credential, rather than trusting a default.
+  loggingBehavior: 'none',
 };
 
 export default config;
