@@ -26,6 +26,23 @@ The wiring is deliberately boring: **there is no `SUPABASE_TEST_URL` vs `SUPABAS
 
 > `.env`, `.env.prod`, and any other `.env.*` are gitignored (only `.env.example` is tracked) — credentials never get committed.
 
+## Current schema state — update this when you migrate
+
+*The one place that says what the databases are actually at right now. **Dated changelog entries elsewhere are history, not state** — they were true when written and go stale silently.*
+
+| Project | Ref | At migration | Confirmed |
+|---|---|---|---|
+| **PROD** | `tlfcilvsycjidmyrpsxi` | **025** (`profile_business_logo`) | 2026-08-24 |
+| **TEST** | `dzejaycyjjaqajmatmjs` | **025** | 2026-08-24 |
+
+**Update the row and the date every time you apply a migration to prod.** A stale entry here is worse than none — on 2026-08-24 a roadmap changelog line from 2026-08-01 ("migration 024 applied to the test project only; not yet applied to prod") was read as current state and produced a false "prod is two migrations behind" alarm, plus a needless `npm run migrate` against production.
+
+**To check without changing anything**, run this in the Supabase SQL editor for the project (read-only — unlike `npm run migrate`, which applies whatever is pending as a side effect):
+
+```sql
+SELECT filename, applied_at FROM schema_migrations ORDER BY filename DESC LIMIT 5;
+```
+
 ## Running a migration
 
 **Against TEST (the default — and where you rehearse):**
@@ -38,7 +55,13 @@ Keep a gitignored `.env.prod` holding the prod project's values (same shape as `
 ```powershell
 $env:DOTENV_CONFIG_PATH = ".env.prod"; npm run migrate; Remove-Item Env:\DOTENV_CONFIG_PATH
 ```
-`dotenv` loads `.env.prod` instead of `.env` for that run. The `Target database:` line will show your **prod** ref — read it before letting it proceed. After migrating prod, deploy the app code that depends on the new schema.
+`dotenv` loads `.env.prod` instead of `.env` for that run. The `Target database:` line will show your **prod** ref — read it before letting it proceed. After migrating prod, deploy the app code that depends on the new schema, **and update the schema-state table above**.
+
+⚠️ **The runner has no confirmation prompt.** It prints the target and then applies every pending migration. So `npm run migrate` is not a way to *check* prod — pointing it at prod to "see what's pending" applies whatever it finds. Use the read-only `SELECT` above for that. Verify the target ref before the command, not after:
+
+```powershell
+node -e "require('dotenv').config({path:'.env.prod'}); console.log(new URL(process.env.DATABASE_URL).username)"
+```
 
 ## Rehearsing migration 022 (PH-2) — the current task
 
