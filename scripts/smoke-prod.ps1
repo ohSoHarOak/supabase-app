@@ -1,5 +1,10 @@
 <#
-  smoke-prod.ps1 — Post-deploy smoke test for PetPro Connect (Workstream M / M0).
+  smoke-prod.ps1 - Post-deploy smoke test for PetPro Connect (Workstream M / M0).
+
+  NOTE: keep this file pure ASCII. Windows PowerShell 5.1 reads BOM-less files as
+  ANSI (CP1252), so a UTF-8 em-dash decodes to a smart quote that PowerShell treats
+  as a string delimiter - which breaks parsing of the whole script. See the 2026-08-24
+  fix; do not reintroduce em-dashes or curly quotes here.
 
   SAFE BY DEFAULT. With no switches it only does read-only checks + login:
     - GET  /health
@@ -84,7 +89,7 @@ if ($TestLogo) {
           -ContentType "application/json" `
           -Body (@{ kind = "logo"; image = "data:image/png;base64,$png" } | ConvertTo-Json) -TimeoutSec 30
     if ($r.ok) { Ok "logo uploaded -> $($r.data.business_logo_url)" } else { Fail "logo upload ok=false" }
-    Warn "your business logo is now the 1x1 test image — restore it in the Profile tab (or re-upload the real one)."
+    Warn "your business logo is now the 1x1 test image - restore it in the Profile tab (or re-upload the real one)."
   } catch { Fail "logo upload failed: $($_.Exception.Message)" }
 } else { Info "logo step skipped (pass -TestLogo to run it)" }
 
@@ -94,7 +99,7 @@ if ($SendContractId) {
   if ((Read-Host "Type YES to proceed") -eq "YES") {
     try {
       $r = Invoke-RestMethod -Method Post -Uri "$BaseUrl/api/contracts/$SendContractId/send" -Headers $auth -TimeoutSec 30
-      if ($r.ok) { Ok "sent — contract status now '$($r.data.status)'" } else { Fail "send ok=false" }
+      if ($r.ok) { Ok "sent - contract status now '$($r.data.status)'" } else { Fail "send ok=false" }
     } catch { Fail "send failed: $($_.Exception.Message)" }
   } else { Info "send cancelled" }
 }
