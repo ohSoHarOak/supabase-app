@@ -19,7 +19,11 @@ android {
     buildTypes {
         release {
             minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            // AGP 9 removed 'proguard-android.txt' (it bundles -dontoptimize).
+            // The Capacitor template still generated the old name, which fails
+            // project evaluation outright; '-optimize' is the documented
+            // replacement. minifyEnabled is false, so this only has to resolve.
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
 }

@@ -2,7 +2,7 @@ import { Router, raw } from 'express';
 import { z } from 'zod';
 import { paymentService } from '../../services/PaymentService';
 import { eventService } from '../../services/EventService';
-import { requireAuth, requireAccountType } from '../middleware/auth';
+import { requireAuth, requireAccountType, requireCompleteProfile } from '../middleware/auth';
 
 // ----------------------------------------------------------- validation ----
 
@@ -63,7 +63,7 @@ billableItemsRouter.get('/', async (req, res, next) => {
 });
 
 /** POST /api/billable-items — creates the Stripe Product + Price behind it. */
-billableItemsRouter.post('/', async (req, res, next) => {
+billableItemsRouter.post('/', requireCompleteProfile, async (req, res, next) => {
   try {
     const parsed = billableItemSchema.safeParse(req.body);
     if (!parsed.success) return validationError(res, parsed.error.issues);
@@ -80,7 +80,7 @@ export const invoicesRouter = Router();
 invoicesRouter.use(requireAuth, requireAccountType('professional'));
 
 /** POST /api/invoices — from a billable item (× quantity) or a custom amount. */
-invoicesRouter.post('/', async (req, res, next) => {
+invoicesRouter.post('/', requireCompleteProfile, async (req, res, next) => {
   try {
     const parsed = createInvoiceSchema.safeParse(req.body);
     if (!parsed.success) return validationError(res, parsed.error.issues);
@@ -129,7 +129,7 @@ invoicesRouter.get('/:id/transactions', async (req, res, next) => {
 });
 
 /** POST /api/invoices/:id/checkout — returns the Stripe-hosted payment URL. */
-invoicesRouter.post('/:id/checkout', async (req, res, next) => {
+invoicesRouter.post('/:id/checkout', requireCompleteProfile, async (req, res, next) => {
   try {
     // Send Stripe back to wherever the app is being served from (works for
     // localhost and Render alike; trust proxy makes req.protocol correct).
@@ -144,7 +144,7 @@ invoicesRouter.post('/:id/checkout', async (req, res, next) => {
 /** POST /api/invoices/:id/send — email the invoice to the client (R-17).
  *  Explicit rather than automatic on creation: walks auto-invoice on
  *  completion, so auto-sending would email a daily client every day. */
-invoicesRouter.post('/:id/send', async (req, res, next) => {
+invoicesRouter.post('/:id/send', requireCompleteProfile, async (req, res, next) => {
   try {
     const origin = `${req.protocol}://${req.get('host')}`;
     const invoice = await paymentService.sendInvoice(req.account!.id, req.params.id, origin);

@@ -60,6 +60,16 @@ Split out of O-1 step 2 (2026-07-18) because nothing stores it. `services` rows 
 
 ---
 
+## Related: Phase 4 — App Design & Brand Identity
+
+Design and logo work is tracked separately in **`PHASE_4_ROADMAP.md`** (created 2026-08-23) — the mark, the design language, the app redesign, app icon/splash/store creative, and branded email/print surfaces. Two touchpoints with this file:
+
+- **P2-7 (branded invoices)** puts *the walker's* logo on *their* invoices; Phase 4's E-2 designs the same document's PetPro-side branding and the print stylesheet it needs. Design them together, build them separately.
+- **P2-11 (pet photos)** feeds Phase 4's A-4 (photo-based pet cards, per `SPEC.md`), and the **iOS port** carries Phase 4's N-6 (App Store icon, launch screen, screenshots).
+
+---
+
 ## Changelog
 
+- **2026-08-23** — Added the pointer above to the new `PHASE_4_ROADMAP.md` (app design + logo) and its two overlaps with items in this file: P2-7 shares the invoice/print surface with Phase 4's E-2, and P2-11's pet photos feed A-4. No Phase 3 scope changed.
 - **2026-07-19** — Document created at founder direction. Six items moved out of the Phase 2 backlog into Phase 3: **P2-1** (walker ratings), **P2-7** (branded invoices), **P2-9** (record outside-Stripe payments), **P2-11** (full pet profile + vaccination UI), **P2-12** (bring-your-own contract upload), **P2-14** (default price/duration per service type). They keep their `P2-x` IDs as stable references. **P2-2 was explicitly kept in Phase 2** because Workstream M's QR check-in + GPS native features are built on it. The iOS port + Biometric Login (already scoped in `PHASE_2_ROADMAP.md` Workstream M) is noted here as the other Phase 3 driver but not duplicated.

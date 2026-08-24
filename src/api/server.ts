@@ -15,7 +15,7 @@ import { messagesRouter, threadsRouter } from './routes/messaging';
 import { notificationsRouter } from './routes/notifications';
 import { portalRouter } from './routes/portal';
 import { errorHandler } from './middleware/errorHandler';
-import { securityHeaders, corsMiddleware, authLimiter, webhookLimiter } from './middleware/security';
+import { securityHeaders, corsMiddleware, authLimiter, refreshLimiter, webhookLimiter } from './middleware/security';
 import { env } from '../config/env';
 
 export function createServer(): express.Express {
@@ -72,7 +72,23 @@ export function createServer(): express.Express {
     });
   });
 
-  app.use('/api/auth', authLimiter, authRouter);
+  // Rate-limit the CREDENTIAL surfaces only — not the whole auth router.
+  //
+  // `/api/auth` also carries routine authenticated traffic: `GET /me` fires on
+  // every Profile view, and profile saves/photo uploads live here too. Sharing
+  // one 20/15min bucket with login meant ordinary use exhausted the budget and
+  // then locked the user out of logging back in (hit on-device 2026-08-17).
+  // These are the endpoints where guessing is the actual threat:
+  app.use('/api/auth/login', authLimiter);
+  app.use('/api/auth/signup', authLimiter);
+  app.use('/api/auth/forgot-password', authLimiter);
+  app.use('/api/auth/reset-password', authLimiter);
+  app.use('/api/auth/change-password', authLimiter);
+  app.use('/api/auth/deactivate', authLimiter);
+  // Frequent but unguessable — its own headroom (see refreshLimiter).
+  app.use('/api/auth/refresh', refreshLimiter);
+  // Everything else under /api/auth sits behind requireAuth already.
+  app.use('/api/auth', authRouter);
   app.use('/api/clients', clientsRouter);
   app.use('/api/pets', petsRouter);
   app.use('/api/contract-templates', contractTemplatesRouter);

@@ -5,6 +5,7 @@ import { PetPro } from './shared.js';
 import { API_BASE } from './config.js';
 import { createClient } from '@supabase/supabase-js';
 import { registerPWA } from './pwa.js';
+import { createTokenStore } from './tokenStore.js';
 
 registerPWA();
 
@@ -12,7 +13,12 @@ registerPWA();
   'use strict';
 
   // ------------------------------------------------------------ state ----
-  let token = localStorage.getItem('petpro_token');
+  // M0.5: the tokens come from the storage seam (async — see tokenStore.js) and
+  // are restored during boot, so they start null rather than being read here.
+  // The non-secret cache stays in localStorage and can load synchronously.
+  const tokens = createTokenStore({ accessKey: 'petpro_token', refreshKey: 'petpro_refresh' });
+  let token = null;
+  let refreshToken = null;
   let account = safeParse(localStorage.getItem('petpro_account'));
   let profile = safeParse(localStorage.getItem('petpro_profile'));
 
@@ -23,8 +29,44 @@ registerPWA();
     try { return JSON.parse(json); } catch { return null; }
   }
 
+  // ---------------------------------------------------- session refresh ----
+  // M0.5: Supabase access tokens last ~1h. Without this a walker gets thrown
+  // back to the login screen mid-round. On a 401 we refresh once and retry the
+  // original request; only if the refresh itself fails do we actually log out.
+  //
+  // Single-flight: a screen that fires several requests at once would otherwise
+  // start N refreshes, and since Supabase ROTATES the refresh token, the first
+  // one to land invalidates the rest — turning a recoverable expiry into a
+  // logout. Everyone awaits the same in-flight promise instead.
+  let refreshInFlight = null;
+
+  function refreshSession() {
+    if (!refreshToken) return Promise.resolve(false);
+    if (!refreshInFlight) {
+      refreshInFlight = (async () => {
+        try {
+          // Raw fetch, not api() — going through api() would recurse on 401.
+          const res = await fetch(API_BASE + '/api/auth/refresh', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ refresh_token: refreshToken }),
+          });
+          const json = await res.json().catch(() => null);
+          if (!json || json.ok !== true) return false;
+          await saveSession(json.data);
+          return true;
+        } catch {
+          return false; // offline: keep the session, let the caller surface it
+        } finally {
+          refreshInFlight = null;
+        }
+      })();
+    }
+    return refreshInFlight;
+  }
+
   // -------------------------------------------------------- api client ----
-  async function api(method, path, body) {
+  async function api(method, path, body, isRetry = false) {
     let res;
     try {
       res = await fetch(API_BASE + path, {
@@ -37,6 +79,11 @@ registerPWA();
       });
     } catch {
       throw new Error('Could not reach the server. Check your connection and try again.');
+    }
+    if (res.status === 401 && token && !isRetry) {
+      if (await refreshSession()) return api(method, path, body, true);
+      logout(false);
+      throw new Error('Your session expired — please log in again.');
     }
     if (res.status === 401 && token) {
       logout(false);
@@ -279,19 +326,31 @@ registerPWA();
   const PAW_LOGIN = PAW.replace('width="26" height="26"', 'width="44" height="44"').replace('#1C4C64', '#2B7192');
 
   function logout(navigate = true) {
-    token = null; account = null; profile = null;
-    localStorage.removeItem('petpro_token');
+    // In-memory state clears synchronously — that's what gates the UI. The
+    // secure-store wipe is async, so it's fired off rather than awaited; no
+    // caller needs to block on it, and every logout path stays sync.
+    token = null; refreshToken = null; account = null; profile = null;
+    void tokens.clear();
     localStorage.removeItem('petpro_account');
     localStorage.removeItem('petpro_profile');
     if (navigate) location.hash = '#/login';
     else render();
   }
 
-  function saveSession(session) {
+  async function saveSession(session) {
     token = session.access_token;
-    account = session.account;
-    localStorage.setItem('petpro_token', token);
+    // Refresh tokens rotate on every use, so always take the newest one.
+    refreshToken = session.refresh_token ?? refreshToken;
+    account = session.account ?? account;
+    await tokens.save({ access: token, refresh: refreshToken });
     localStorage.setItem('petpro_account', JSON.stringify(account));
+  }
+
+  /** Boot: pull the session out of the storage seam before the first render. */
+  async function restoreSession() {
+    const { access, refresh } = await tokens.load();
+    token = access;
+    refreshToken = refresh;
   }
 
   async function loadProfile() {
@@ -380,7 +439,7 @@ registerPWA();
             if (biz) body.businessName = biz;
           }
           const session = await api('POST', isSignup ? '/api/auth/signup' : '/api/auth/login', body);
-          saveSession(session);
+          await saveSession(session);
           await loadProfile();
           // O-1: new professionals land in setup; returning ones go to work.
           location.hash = isSignup ? '#/setup' : '#/today';
@@ -483,6 +542,19 @@ registerPWA();
       profile?.profile_photo_url &&
       profile?.offered_service_types?.length
     );
+
+  // M0.5: the onboarding gate rides on the capability itself rather than a
+  // list of route shapes mirrored in the dispatcher — every entry point into a
+  // gated screen calls this first, so a newly added contract/payment route
+  // can't silently skip the gate. The server enforces the same rule
+  // (requireCompleteProfile); this is the UX half that redirects instead of
+  // showing a 403.
+  function requireSetup() {
+    if (setupDone()) return true;
+    toast('Finish setting up your profile to use contracts and payments.');
+    location.hash = '#/setup/1';
+    return false;
+  }
 
   const SETUP_STEPS = 4;
 
@@ -1127,6 +1199,63 @@ registerPWA();
     const petFormOpen = Boolean(opts.addpet);
     const invFormOpen = invoices.length === 0;
 
+    // M0-GATE: contracts + payments are locked until onboarding is complete
+    // (skippable setup, but these need a real business profile behind them).
+    // The router blocks the routes; here we hide the entry points so nothing
+    // dangles. Existing records can't exist pre-onboarding, so replacing the
+    // whole section with a prompt loses nothing.
+    const onboarded = setupDone();
+    const gateCard = (action) =>
+      `<div class="card empty">Finish <a href="#/setup/1">setting up your profile</a> to ${action}.</div>`;
+
+    const contractsSection = onboarded
+      ? `<div class="stack">${contractRows.join('') || '<div class="card empty">No contracts yet — generate the first one with the button above.</div>'}</div>`
+      : gateCard('generate and send contracts');
+
+    const billingSection = onboarded
+      ? `
+        <div class="stack">${invoiceRows.join('') || '<div class="card empty">No invoices yet — create the first one below.</div>'}</div>
+
+        ${invFormOpen ? '' : `
+        <div class="row-actions" style="margin-top:10px" id="newinv-toggle-row">
+          <div class="spacer"></div>
+          <button class="btn btn-ghost" id="newinv-toggle">＋ New invoice</button>
+        </div>`}
+        <div class="card fieldset" style="margin-top:12px" id="newinv-card" ${invFormOpen ? '' : 'hidden'}>
+          <strong style="font-size:14px">New invoice</strong>
+          <form id="inv-form"><div class="form-grid">
+            <div><label for="inv-item">Bill for</label>
+              <select id="inv-item">
+                ${billItems.map((i) => `<option value="${i.id}">${esc(i.name)} — ${fmtMoney(i.unit_amount_cents)}${i.billing_period === 'one_time' ? '' : ` / ${esc(i.billing_period)}`}</option>`).join('')}
+                <option value="">Custom amount…</option>
+              </select></div>
+            <div id="inv-qty-wrap"><label for="inv-qty">Quantity <span class="hint">e.g. number of visits</span></label>
+              <input id="inv-qty" type="number" min="1" max="1000" value="1" class="num" /></div>
+            <div id="inv-amount-wrap" hidden><label for="inv-amount">Amount</label>
+              <input id="inv-amount" class="money" placeholder="$30.00" /></div>
+            <div class="full" id="inv-desc-wrap" hidden><label for="inv-desc">Description <span class="hint">— appears on the payment page</span></label>
+              <input id="inv-desc" placeholder="e.g. Week of July 14 — 3 private walks" /></div>
+            <div class="full" id="inv-save-wrap" hidden><label style="display:flex; gap:8px; align-items:center; text-transform:none; letter-spacing:0">
+              <input type="checkbox" id="inv-save" style="width:auto" /> Save as a reusable billable item</label></div>
+            <!-- R-2/R-3: prepay a package of visits. Once this invoice is
+                 paid, completing a walk on that service draws one down and
+                 bills nothing, instead of invoicing all over again. -->
+            <div><label for="inv-service">Prepays which service? <span class="hint">optional</span></label>
+              <select id="inv-service">
+                <option value="">Not a prepaid package</option>
+                ${services.filter((s) => s.status === 'active').map((s) =>
+                  `<option value="${s.id}">${esc(s.name)} — ${fmtMoney(s.price_cents)} ${esc(CADENCES[s.billing_cadence] ?? '')}</option>`).join('')}
+              </select></div>
+            <div id="inv-sessions-wrap" hidden><label for="inv-sessions">Visits this prepays</label>
+              <input id="inv-sessions" type="number" min="1" max="1000" value="10" class="num" /></div>
+          </div>
+          <div class="form-foot" style="margin-top:0">
+            <div class="spacer"></div>
+            <button class="btn btn-quiet" type="submit">Create invoice</button>
+          </div></form>
+        </div>`
+      : gateCard('create invoices and collect payment');
+
     appEl.innerHTML = header('clients') + `
       <div class="page">
         <a class="backlink" href="#/clients">‹ All clients</a>
@@ -1144,7 +1273,7 @@ registerPWA();
             ${opts.edit ? '' : `<button class="btn btn-ghost" data-nav="#/client/${client.id}?edit=1">✎ Edit</button>`}
             <button class="btn btn-quiet" id="msg-client-btn">✉ Message</button>
             <button class="btn btn-quiet" data-nav="#/appointment-new?client=${client.id}">📅 Schedule</button>
-            <button class="btn btn-primary" data-nav="#/client/${client.id}/new-contract">Generate contract</button>
+            ${onboarded ? `<button class="btn btn-primary" data-nav="#/client/${client.id}/new-contract">Generate contract</button>` : ''}
           </div>
         </div>
 
@@ -1224,49 +1353,10 @@ registerPWA();
         </div>
 
         <div class="eyebrow">Contracts</div>
-        <div class="stack">${contractRows.join('') || '<div class="card empty">No contracts yet — generate the first one with the button above.</div>'}</div>
+        ${contractsSection}
 
         <div class="eyebrow">Billing</div>
-        <div class="stack">${invoiceRows.join('') || '<div class="card empty">No invoices yet — create the first one below.</div>'}</div>
-
-        ${invFormOpen ? '' : `
-        <div class="row-actions" style="margin-top:10px" id="newinv-toggle-row">
-          <div class="spacer"></div>
-          <button class="btn btn-ghost" id="newinv-toggle">＋ New invoice</button>
-        </div>`}
-        <div class="card fieldset" style="margin-top:12px" id="newinv-card" ${invFormOpen ? '' : 'hidden'}>
-          <strong style="font-size:14px">New invoice</strong>
-          <form id="inv-form"><div class="form-grid">
-            <div><label for="inv-item">Bill for</label>
-              <select id="inv-item">
-                ${billItems.map((i) => `<option value="${i.id}">${esc(i.name)} — ${fmtMoney(i.unit_amount_cents)}${i.billing_period === 'one_time' ? '' : ` / ${esc(i.billing_period)}`}</option>`).join('')}
-                <option value="">Custom amount…</option>
-              </select></div>
-            <div id="inv-qty-wrap"><label for="inv-qty">Quantity <span class="hint">e.g. number of visits</span></label>
-              <input id="inv-qty" type="number" min="1" max="1000" value="1" class="num" /></div>
-            <div id="inv-amount-wrap" hidden><label for="inv-amount">Amount</label>
-              <input id="inv-amount" class="money" placeholder="$30.00" /></div>
-            <div class="full" id="inv-desc-wrap" hidden><label for="inv-desc">Description <span class="hint">— appears on the payment page</span></label>
-              <input id="inv-desc" placeholder="e.g. Week of July 14 — 3 private walks" /></div>
-            <div class="full" id="inv-save-wrap" hidden><label style="display:flex; gap:8px; align-items:center; text-transform:none; letter-spacing:0">
-              <input type="checkbox" id="inv-save" style="width:auto" /> Save as a reusable billable item</label></div>
-            <!-- R-2/R-3: prepay a package of visits. Once this invoice is
-                 paid, completing a walk on that service draws one down and
-                 bills nothing, instead of invoicing all over again. -->
-            <div><label for="inv-service">Prepays which service? <span class="hint">optional</span></label>
-              <select id="inv-service">
-                <option value="">Not a prepaid package</option>
-                ${services.filter((s) => s.status === 'active').map((s) =>
-                  `<option value="${s.id}">${esc(s.name)} — ${fmtMoney(s.price_cents)} ${esc(CADENCES[s.billing_cadence] ?? '')}</option>`).join('')}
-              </select></div>
-            <div id="inv-sessions-wrap" hidden><label for="inv-sessions">Visits this prepays</label>
-              <input id="inv-sessions" type="number" min="1" max="1000" value="10" class="num" /></div>
-          </div>
-          <div class="form-foot" style="margin-top:0">
-            <div class="spacer"></div>
-            <button class="btn btn-quiet" type="submit">Create invoice</button>
-          </div></form>
-        </div>
+        ${billingSection}
       </div>`;
 
     // ------------------------------------------------------ client edit --
@@ -1567,7 +1657,9 @@ registerPWA();
     // ---------------------------------------------------------- billing --
     // "Bill for" select: a saved item shows quantity; a custom amount shows
     // description + amount + the save-as-item checkbox.
+    // Only wire the invoice form when it's present (absent until onboarded).
     const invItem = document.getElementById('inv-item');
+    if (invItem) {
     function syncInvoiceFields() {
       const custom = invItem.value === '';
       document.getElementById('inv-qty-wrap').hidden = custom;
@@ -1633,6 +1725,7 @@ registerPWA();
         }
       });
     };
+    } // if (invItem)
 
     document.querySelectorAll('[data-checkout-invoice]').forEach((btn) => {
       btn.onclick = () =>
@@ -1720,6 +1813,7 @@ registerPWA();
 
   // -------------------------------------------------------- new contract ----
   async function renderNewContract(clientId, replaceId) {
+    if (!requireSetup()) return;
     appEl.innerHTML = header('clients') + `<div class="page loading">Preparing contract…</div>`;
     let client, templates;
     try {
@@ -1935,6 +2029,7 @@ registerPWA();
 
   // ------------------------------------------------------------ signing ----
   async function renderSign(contractId) {
+    if (!requireSetup()) return;
     appEl.innerHTML = header('clients') + `<div class="page loading">Loading contract…</div>`;
     let contract, client;
     try {
@@ -2975,5 +3070,8 @@ registerPWA();
   }
 
   window.addEventListener('hashchange', render);
-  render();
+  // M0.5: the token store is async, so the first render waits for the restore.
+  // Without this the app would paint the login screen before the session
+  // loaded and bounce an already-signed-in walker back to the password form.
+  restoreSession().then(render);
 })();

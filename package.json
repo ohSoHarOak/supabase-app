@@ -10,7 +10,7 @@
     "build": "tsc && vite build",
     "build:api": "tsc",
     "build:web": "vite build",
-    "build:native": "vite build && cap sync android",
+    "build:native": "node scripts/check-native-env.mjs && vite build && cap sync android",
     "cap:sync": "cap sync android",
     "cap:open": "cap open android",
     "preview:web": "vite preview",

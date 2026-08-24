@@ -55,6 +55,9 @@ interface ApiResult {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   data: any;
   errorMessage: string;
+  /** Machine-readable `error.code` — assert on this rather than the prose
+   *  message, which is user-facing copy and free to change. */
+  errorCode: string;
 }
 
 async function api(method: string, path: string, body?: unknown, auth?: string): Promise<ApiResult> {
@@ -70,12 +73,13 @@ async function api(method: string, path: string, body?: unknown, auth?: string):
   const json = (await res.json().catch(() => null)) as {
     ok?: boolean;
     data?: unknown;
-    error?: { message?: string };
+    error?: { code?: string; message?: string };
   } | null;
   return {
     status: res.status,
     data: json?.data ?? null,
     errorMessage: json?.error?.message ?? '',
+    errorCode: json?.error?.code ?? '',
   };
 }
 
@@ -118,7 +122,59 @@ async function main(): Promise<void> {
 
     const me = await ok('GET', '/api/auth/me', undefined, '1. Session');
     assert(me.data.account?.account_type === 'professional', '1. Session', 'auth/me did not return a professional account');
-    pass('1. Health + signup + login + session');
+
+    // M0.5 onboarding gate: contracts + payments are refused until the profile
+    // is complete (requireCompleteProfile). Prove the gate bites on a freshly
+    // signed-up account — the middleware runs before body validation, so an
+    // empty body still reaches it — then finish onboarding so the capability
+    // steps below exercise the real post-onboarding state.
+    const gated = await api('POST', '/api/contracts', {});
+    assert(
+      gated.status === 403 && gated.errorCode === 'profile_incomplete',
+      '1. Onboarding gate',
+      `POST /api/contracts on an incomplete profile → ${gated.status} ${gated.errorCode ?? ''} (expected 403 profile_incomplete)`
+    );
+
+    await ok('POST', '/api/auth/profile/image', { kind: 'photo', image: SIGNATURE }, '1. Onboarding photo');
+    await ok('PATCH', '/api/auth/profile', {
+      business_name: 'E2E Walking Co.',
+      phone: '(555)010-0001',
+      offered_service_types: ['private_walk'],
+    }, '1. Onboarding profile');
+
+    // M0.5 session refresh: without it the ~1h access-token expiry logs a
+    // walker out mid-round. Supabase ROTATES the refresh token on every use,
+    // so the old one must stop working — that rotation is exactly what breaks
+    // if the client ever persists only the access token.
+    const oldRefresh = login.data.refresh_token as string;
+    assert(typeof oldRefresh === 'string' && oldRefresh.length > 0, '1. Refresh', 'login did not return a refresh_token');
+    const refreshed = await ok('POST', '/api/auth/refresh', { refresh_token: oldRefresh }, '1. Refresh');
+    assert(
+      typeof refreshed.data.access_token === 'string' && refreshed.data.access_token.length > 0,
+      '1. Refresh',
+      'refresh returned no access_token'
+    );
+    assert(
+      refreshed.data.refresh_token && refreshed.data.refresh_token !== oldRefresh,
+      '1. Refresh',
+      'refresh_token was not rotated — the client would reuse a spent token on the next refresh'
+    );
+    // The new access token must actually work.
+    const afterRefresh = await api('GET', '/api/auth/me', undefined, refreshed.data.access_token as string);
+    assert(afterRefresh.status === 200, '1. Refresh', `refreshed access token rejected → ${afterRefresh.status}`);
+    // Refreshing AGAIN with the rotated token must work — that's the property
+    // that matters, because it's the loop the app actually runs all day. (We
+    // deliberately don't assert that replaying the OLD token 401s: Supabase has
+    // a ~10s "refresh token reuse interval" that intentionally returns the same
+    // session for concurrent/retried calls, so such an assertion is a race.)
+    const second = await ok('POST', '/api/auth/refresh', {
+      refresh_token: refreshed.data.refresh_token as string,
+    }, '1. Refresh chain');
+    const afterSecond = await api('GET', '/api/auth/me', undefined, second.data.access_token as string);
+    assert(afterSecond.status === 200, '1. Refresh chain', `chained refresh produced a dead token → ${afterSecond.status}`);
+    token = second.data.access_token as string; // carry the fresh session forward
+
+    pass('1. Health + signup + login + session + onboarding gate + token refresh (rotates and chains)');
   }
 
   // --- 2. CRM: client + pets + search ---------------------------------------
@@ -965,6 +1021,11 @@ async function main(): Promise<void> {
     }, '16. C signup');
     const tokenC = cSignup.data.access_token as string;
     const cAccountId = cSignup.data.account.id as string;
+
+    // M0.5: finish C's onboarding — signup covered name/business/phone, so the
+    // photo and service types are what's left before contracts/invoices unlock.
+    await ok('POST', '/api/auth/profile/image', { kind: 'photo', image: SIGNATURE }, '16. C onboarding photo', tokenC);
+    await ok('PATCH', '/api/auth/profile', { offered_service_types: ['private_walk'] }, '16. C onboarding profile', tokenC);
 
     // Capture C's auth user id before deactivation removes it.
     const { data: cBefore } = await supabaseAdmin.from('accounts').select('auth_user_id').eq('id', cAccountId).single();

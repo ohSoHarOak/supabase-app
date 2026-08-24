@@ -42,6 +42,52 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
 }
 
 /**
+ * M0.5: contracts and payments stay locked until onboarding is complete.
+ *
+ * Mirrors the client's `setupDone()` (web/src/app.js) — the UI hides these
+ * entry points, but this is what actually enforces the gate, so a crafted
+ * request can't bypass the front end.
+ *
+ * Applied per-route on the create/issue paths only. Reads stay open (the
+ * client-detail screen fetches contracts + invoices unconditionally), and so
+ * do cleanup/reconciliation (void, sync) so nobody gets trapped mid-flow.
+ * Service-layer callers never pass through here, so walk-completion
+ * auto-invoicing and the billing-cadence worker are unaffected.
+ *
+ * Usage: router.post('/x', requireCompleteProfile, handler) — after requireAuth.
+ */
+export async function requireCompleteProfile(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const account = req.account!;
+    const profile = await accountService.getProfessionalProfile(account.id);
+    const complete = Boolean(
+      profile?.full_name &&
+        profile?.business_name &&
+        account.phone &&
+        profile?.profile_photo_url &&
+        profile?.offered_service_types?.length,
+    );
+    if (!complete) {
+      res.status(403).json({
+        ok: false,
+        error: {
+          code: 'profile_incomplete',
+          message: 'Finish setting up your profile before using contracts and payments.',
+        },
+      });
+      return;
+    }
+    next();
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
  * Seam 1: permission checks key off account_type, never hardcoded roles.
  * Usage: router.get('/x', requireAuth, requireAccountType('professional'), handler)
  */
