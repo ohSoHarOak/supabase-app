@@ -107,6 +107,22 @@ async function main(): Promise<void> {
     const health = await api('GET', '/health');
     assert(health.status === 200, '1. Health', `GET /health → ${health.status}. Is the server running?`);
 
+    // CSP regression guard. `blob:` is NOT covered by `'self'` — dropping it
+    // from img-src silently breaks every profile-photo and logo upload, because
+    // downscaleImage loads the picked file through URL.createObjectURL() into an
+    // <img>. That shipped on 2026-08-01 and went unnoticed for 23 days: the
+    // browser refuses the load, img.onerror fires, and the user sees a generic
+    // "try a PNG or JPEG" message that reads like a format problem. Nothing
+    // else in this suite can catch it, since the failure is in the browser.
+    const cspRes = await fetch(`${baseUrl}/health`);
+    const csp = cspRes.headers.get('content-security-policy') ?? '';
+    const imgSrc = csp.split(';').map((d) => d.trim()).find((d) => d.startsWith('img-src')) ?? '';
+    assert(
+      imgSrc.includes('blob:'),
+      '1. CSP img-src allows blob:',
+      `img-src is "${imgSrc || '(missing)'}" — without blob:, image upload breaks in the browser.`
+    );
+
     const email = `e2e+${stamp}@example.com`;
     const password = 'Test-Password-123!';
     const signup = await ok('POST', '/api/auth/signup', {
