@@ -19,7 +19,19 @@ const supabaseWs = supabaseOrigin.replace(/^https:/, 'wss:'); // wss://<ref>.sup
  * `base-uri 'self'`, and `frame-ancestors 'self'` — and widen only the two
  * directives the frontend actually needs:
  *   - connect-src: add the Supabase REST origin + its wss:// for Realtime
- *   - img-src: add data: (base64 signature images) and https: (pet photo URLs)
+ *   - img-src: add data: (base64 signature images), https: (pet photo URLs),
+ *     and blob: — see below.
+ *
+ * ⚠️ `blob:` is NOT covered by `'self'`. CSP matches blob: as its own scheme,
+ * so a same-origin `URL.createObjectURL()` result is blocked unless `blob:` is
+ * listed explicitly. Omitting it broke **every** profile-photo and logo upload
+ * on the web app from 2026-08-01 (when this CSP landed) until 2026-08-24:
+ * `downscaleImage` loads the picked file via `createObjectURL` into an <img>
+ * to resize it, the browser refused the load, and `img.onerror` surfaced the
+ * generic "try a PNG or JPEG" message — which read like a format problem and
+ * sent the M0-IMG investigation at HEIC. Verified empirically against the live
+ * policy: the same 1x1 PNG loads as a data: URL and is blocked as a blob:.
+ * Do not remove blob: without changing that upload path first.
  * script-src stays 'self': M0-b bundles @supabase/supabase-js into the app, so
  * the old jsdelivr CDN allowance is gone. helmet's default
  * `style-src 'self' https: 'unsafe-inline'` already covers the inline <style>
@@ -33,7 +45,7 @@ export const securityHeaders = helmet({
     useDefaults: true,
     directives: {
       'connect-src': ["'self'", supabaseOrigin, supabaseWs],
-      'img-src': ["'self'", 'data:', 'https:'],
+      'img-src': ["'self'", 'data:', 'blob:', 'https:'],
     },
   },
   // HSTS on in production; off locally so it can't pin http://localhost to https.
