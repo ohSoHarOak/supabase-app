@@ -26,7 +26,7 @@ Verified against the live deployment on 2026-07-16: all 11 automated end-to-end 
 
 **Payments run through the platform's own Stripe account.** Each professional is not yet paid into their own account, and the Stripe Checkout page shows the platform's branding rather than theirs. Stripe Connect is the planned path (P2-6) and the payment layer was built so it slots in without rework.
 
-**Card payments only.** Cash, check, and Venmo can't be recorded — an invoice becomes paid only through Stripe. Real walkers get handed cash constantly, so this is a high-priority Phase 2 item (P2-9).
+**Card payments only.** Cash, check, and Venmo can't be recorded — an invoice becomes paid only through Stripe. Real walkers get handed cash constantly, so this stays high priority — but it is **P2-9, scheduled in Phase 3** (`PHASE_3_ROADMAP.md`), moved there 2026-07-19 and deliberately left there on 2026-08-29 when it came up as a pairing for M-Connect's BLOCK decision.
 
 **No-show and late-cancel fees can't be charged.** The data model knows about them and the contract promises them, but the UI offers only Cancel and Mark complete (P2-10).
 
@@ -49,7 +49,7 @@ Verified against the live deployment on 2026-07-16: all 11 automated end-to-end 
 `PHASE_2_ROADMAP.md` organizes this into workstreams. In short:
 
 1. **Closeout & security** — the tenant-isolation audit, RLS, HTTP hardening, and cross-tenant regression tests. Gates everything else.
-2. **The cash-money gaps** — record payments taken outside Stripe (P2-9) and enforce no-show/late-cancel fees (P2-10). Both are things a real walker hits in week one.
+2. **The cash-money gaps** — enforce no-show/late-cancel fees (P2-10). Recording payments taken outside Stripe (P2-9) is the other half of this and is **Phase 3**, not Phase 2. Both are things a real walker hits in week one.
 3. **Mobile-ready, then UI polish** — the demo runs on a laptop; walkers work from a phone.
 4. **The feature backlog** — walker ratings, automatic walk reports with photos, calendar sync, an onboarding wizard, branded invoices, tap-to-pay, and the full pet/vaccination profile (P2-1…P2-11).
 5. **Multi-profession** — the same core already models trainers, groomers, sitters, and boarding; expanding beyond dog walking is configuration plus UI, not a rebuild.
