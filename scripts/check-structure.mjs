@@ -60,6 +60,12 @@ const CONTRACTS = [
     markup: [SHARED],
     why: 'touch-action: none is what lets a finger draw. Without it the browser treats the drag as a page scroll and signing is impossible on phones and tablets — the devices clients actually sign on.',
   },
+  {
+    hook: 'hidden',
+    props: ['display'],
+    markup: [APP, PORTAL],
+    why: 'Every collapsible form in both frontends is collapsed with the `hidden` attribute. The UA stylesheet rule that hides it is beaten by ANY author rule setting `display` — and .fieldset sets `display: grid`, so without an explicit `[hidden] { display: none !important }` the add-a-pet and new-invoice forms render fully expanded while the markup says hidden, and every `.hidden = true` toggle in the JS silently does nothing. (This is the M0-PETFLOW "flow stalls after adding a pet" report, found 2026-08-29.)',
+  },
 ];
 
 /* T-3 moved the sign screen into shared.js so the two frontends can't disagree
