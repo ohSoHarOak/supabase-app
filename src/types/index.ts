@@ -19,8 +19,17 @@ export interface Account {
   phone: string | null;
   status: AccountStatus;
   /** M-Connect seam (024): nullable, replaceable Stripe Connect account id.
-   *  NULLed on deactivation; nothing populates it until Workstream M. */
+   *  NULLed on deactivation. Populated by ConnectService (M-Connect). */
   stripe_connect_account_id: string | null;
+  /** Connect capability cache (026). Having an account id is NOT the same as
+   *  being able to take money — Stripe turns capabilities on only after the
+   *  walker finishes verification. `charges_enabled` is what the BLOCK gate
+   *  reads; Stripe stays the source of truth and these are refreshed by
+   *  webhook, onboarding return, and on demand. */
+  stripe_connect_charges_enabled: boolean;
+  stripe_connect_payouts_enabled: boolean;
+  stripe_connect_details_submitted: boolean;
+  stripe_connect_synced_at: string | null;
   /** When status was flipped to 'deactivated' (024). NULL unless deactivated. */
   deactivated_at: string | null;
   created_at: string;
@@ -309,6 +318,12 @@ export interface Invoice {
   service_id: string | null;
   stripe_invoice_id: string | null;
   stripe_checkout_session_id: string | null; // Checkout Session collecting this invoice (012)
+  /** M-Connect (026): the connected account the Checkout Session was created
+   *  on, captured at charge time. NOT derivable from the walker's current link
+   *  — that one is replaceable, and a session lives on one Stripe account
+   *  forever. Read back by the sync and webhook paths so a disconnect can't
+   *  strand an outstanding invoice. NULL = pre-M-Connect, platform account. */
+  stripe_connect_account_id: string | null;
   description: string | null; // line item shown in the UI and on Stripe Checkout (012)
   amount_cents: number;
   currency: string;

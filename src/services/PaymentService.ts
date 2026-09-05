@@ -13,9 +13,11 @@ import {
   StripeProduct,
 } from '../types';
 import { clientService } from './ClientService';
+import { connectService } from './ConnectService';
 import { ServiceError } from './errors';
 import { eventService } from './EventService';
 import { notificationService } from './NotificationService';
+import { getStripe, platformFeeCents, stripeCall } from './stripe';
 
 // ------------------------------------------------- recurring billing math ----
 // Founder decision 2026-07-17 (resolves the Week 6 [d]): weekly / biweekly /
@@ -107,31 +109,15 @@ interface RecordPaymentInput {
  *   - sync     (retrieve the Checkout Session on return from Stripe)
  */
 export class PaymentService {
-  private stripeClient: Stripe | null = null;
-
+  // The client and the error translation moved to ./stripe when M-Connect
+  // arrived — ConnectService needs the same client. These thin accessors keep
+  // the ~30 existing call sites unchanged; behaviour is identical.
   private get stripe(): Stripe {
-    if (!env.stripeSecretKey) {
-      throw new ServiceError(
-        'stripe_not_configured',
-        'Stripe is not configured — set STRIPE_SECRET_KEY in the environment.',
-        503
-      );
-    }
-    if (!this.stripeClient) this.stripeClient = new Stripe(env.stripeSecretKey);
-    return this.stripeClient;
+    return getStripe();
   }
 
-  /** Surface Stripe failures as readable API errors instead of a bare 500 —
-   *  "Invalid API key" vs "amount too small" matters to whoever is debugging. */
   private async stripeCall<T>(fn: () => Promise<T>): Promise<T> {
-    try {
-      return await fn();
-    } catch (err) {
-      if (err instanceof Stripe.errors.StripeError) {
-        throw new ServiceError('stripe_error', `Stripe: ${err.message}`, 502);
-      }
-      throw err;
-    }
+    return stripeCall(fn);
   }
 
   // ------------------------------------------------------ billable items ----
@@ -362,6 +348,11 @@ export class PaymentService {
       throw new ServiceError('invoice_void', 'A voided invoice cannot be sent.', 409);
     }
 
+    // BLOCK: emailing a client a pay link that will refuse them at the last
+    // step is worse than refusing here — it spends the walker's credibility
+    // with their own client to surface our gate.
+    await connectService.assertCanCollect(professionalAccountId);
+
     const client = await clientService.getClient(professionalAccountId, invoice.client_id);
     if (!client.email) {
       throw new ServiceError(
@@ -503,6 +494,16 @@ export class PaymentService {
       throw new ServiceError('invoice_not_payable', `A ${invoice.status} invoice cannot be paid.`, 409);
     }
 
+    // BLOCK (2026-08-29) — refuse before anything is created at Stripe. Every
+    // surface that can start a checkout funnels through here: the professional
+    // app, the owner portal, and the public pay link.
+    await connectService.assertCanCollect(professionalAccountId);
+    const routing = await connectService.chargeRouting(professionalAccountId);
+
+    // Platform fee is 0 (2026-09-04), so the parameter is omitted rather than
+    // sent as zero — see platformFeeCents. The seam is the call, not the value.
+    const feeCents = platformFeeCents(invoice.amount_cents);
+
     const session = await this.stripeCall(() =>
       this.stripe.checkout.sessions.create({
       mode: 'payment',
@@ -517,7 +518,10 @@ export class PaymentService {
         },
       ],
       metadata: { invoice_id: invoice.id },
-      payment_intent_data: { metadata: { invoice_id: invoice.id } },
+      payment_intent_data: {
+        metadata: { invoice_id: invoice.id },
+        ...(feeCents > 0 ? { application_fee_amount: feeCents } : {}),
+      },
         // Stripe sends the payer back to whichever surface started the
         // checkout — the professional UI, the owner portal, or (021) the
         // public pay link, which has no login to return them to.
@@ -527,14 +531,19 @@ export class PaymentService {
         cancel_url: options.payLinkToken
           ? `${origin}/pay?t=${encodeURIComponent(options.payLinkToken)}&canceled=1`
           : `${origin}${options.portal ? '/portal' : '/'}#/invoice/${invoice.id}/return?canceled=1`,
-      })
+      }, routing)
     );
     if (!session.url) throw new ServiceError('checkout_failed', 'Stripe returned no checkout URL.', 500);
 
-    // Remember the session so the sync path can reconcile without a webhook.
+    // Remember the session AND the account it lives on, so the sync path can
+    // reconcile without a webhook — and can still address the right Stripe
+    // account later even if the walker disconnects in the meantime.
     const { data, error } = await supabaseAdmin
       .from('invoices')
-      .update({ stripe_checkout_session_id: session.id })
+      .update({
+        stripe_checkout_session_id: session.id,
+        stripe_connect_account_id: routing.stripeAccount,
+      })
       .eq('id', invoice.id)
       .select()
       .single();
@@ -552,8 +561,18 @@ export class PaymentService {
     const invoice = await this.getInvoice(professionalAccountId, invoiceId);
     if (invoice.status === 'paid' || !invoice.stripe_checkout_session_id) return invoice;
 
+    // Address the account the session was actually created on. Read from the
+    // invoice, not from the walker's current link — the link is replaceable,
+    // and a disconnect must not strand an outstanding invoice as
+    // unreconcilable. NULL means a pre-M-Connect, platform-account charge.
     const session = await this.stripeCall(() =>
-      this.stripe.checkout.sessions.retrieve(invoice.stripe_checkout_session_id!)
+      this.stripe.checkout.sessions.retrieve(
+        invoice.stripe_checkout_session_id!,
+        undefined,
+        invoice.stripe_connect_account_id
+          ? { stripeAccount: invoice.stripe_connect_account_id }
+          : undefined
+      )
     );
     if (session.payment_status === 'paid') {
       await this.recordPayment(invoice.id, {
@@ -594,6 +613,13 @@ export class PaymentService {
     switch (event.type) {
       case 'checkout.session.completed':
       case 'checkout.session.async_payment_succeeded': {
+        // M-Connect: with direct charges these arrive as CONNECTED-account
+        // events, carrying `event.account`. Nothing else changes — the
+        // invoice_id metadata rides along and recordPayment is unchanged.
+        // ⚠️ The Stripe endpoint must be configured to send Connect events
+        // ("Listen to events on connected accounts"), or these never arrive.
+        // The sync path still reconciles if they don't, which is why payments
+        // kept working through the transition rather than silently stalling.
         const session = event.data.object as Stripe.Checkout.Session;
         const invoiceId = session.metadata?.invoice_id;
         if (session.payment_status === 'paid' && invoiceId) {
@@ -605,6 +631,16 @@ export class PaymentService {
           return { handled: true };
         }
         return { handled: false };
+      }
+      case 'account.updated': {
+        // A walker finished verification, or Stripe changed their capabilities.
+        // This is the only moment the payout gate can flip without anyone
+        // touching our app, so it is what keeps the cached flags honest.
+        const stripeAccount = event.data.object as Stripe.Account;
+        const account = await connectService.findByStripeAccountId(stripeAccount.id);
+        if (!account) return { handled: false };
+        await connectService.refresh(account.id);
+        return { handled: true };
       }
       default:
         // Unhandled event types are acknowledged so Stripe stops retrying.

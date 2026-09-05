@@ -10,6 +10,7 @@ import {
   payLinkRouter,
   stripeWebhookRouter,
 } from './routes/billing';
+import { connectRouter } from './routes/connect';
 import { appointmentsRouter, servicesRouter } from './routes/scheduling';
 import { messagesRouter, threadsRouter } from './routes/messaging';
 import { notificationsRouter } from './routes/notifications';
@@ -96,6 +97,7 @@ export function createServer(): express.Express {
   app.use('/api/services', servicesRouter);
   app.use('/api/appointments', appointmentsRouter);
   app.use('/api/billable-items', billableItemsRouter);
+  app.use('/api/connect', connectRouter);
   app.use('/api/invoices', invoicesRouter);
   // Unauthenticated by design — see the note on payLinkRouter. Rate-limited
   // since it has no session in front of it.
