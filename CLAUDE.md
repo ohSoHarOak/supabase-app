@@ -65,7 +65,9 @@ Only after this should you start building. If `ROADMAP.md` is missing or inconsi
 7. Messaging + email notifications
 8. Owner portal + end-to-end testing
 
-**Currently working on:** Week 1 — Foundation (not yet started)
+**Currently working on:** Phase 2 → **Workstream M / M-Connect**. The 8-week plan above and **Phase 1.5 are complete and deployed** (2026-07-17) — the list is history, not the current queue. M-Connect's backend landed **2026-09-05**: walker-liable Stripe Connect account, payout gate, charge routing, and the embedded account-session endpoint. **The UI is the open half** — `web/src/app.js` has no Connect surface yet.
+
+> ⚠️ For anything Phase 2, `PHASE_2_ROADMAP.md` is the source of truth, not `ROADMAP.md` (which covers Phase 1 weeks 1–8). **Update this line whenever the active workstream changes** — it sat claiming "Week 1, not yet started" until 2026-09-05, roughly seven weeks wrong, and it is the first thing every session reads.
 
 ## Working Preferences
 
