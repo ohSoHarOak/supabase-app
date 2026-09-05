@@ -48,6 +48,7 @@ Owner can add their logo and business name so invoices look like *their* busines
 - 2026-07-18 (tester question F-6): make each invoice row in client Billing (and the owner portal) open a **printable invoice/receipt document** — same print-styled-HTML approach as the signed contract (W-1), branded per this item. Today invoices are list rows only; the paid/open status and history are all there, but there's nothing to hand a client.
 
 ### P2-9: Record payments taken outside Stripe (cash, check, Venmo/Zelle)
+> **Stays in Phase 3 — reaffirmed 2026-08-29.** Raised as a pairing for M-Connect's BLOCK decision (a walker with no platform fallback has no way to record cash) and **deliberately left here** by founder direction. See `PHASE_2_ROADMAP.md` → M-Connect for the accepted consequence.
 Real walkers get handed cash and Venmo constantly, but today the only way an invoice becomes `paid` is through Stripe — there is no "mark as paid" for money collected outside the app, so those invoices sit "awaiting payment" forever (or get voided, losing the revenue record).
 - Build: a "Record payment — cash / check / other" action on the invoice that creates a transaction with a `payment_method` marker and fires the same `payment_received` event, reusing `PaymentService`'s paid-exactly-once guard so a Stripe payment and a manual one can never double-record.
 - ⚠️ Founder decision at pickup: manual mark-paid is trust-based (a mistap says a client paid who didn't) — decide whether it needs an undo window or a confirmation step.
