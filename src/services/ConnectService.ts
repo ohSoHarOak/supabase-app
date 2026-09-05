@@ -5,7 +5,7 @@ import { ServiceError } from './errors';
 import { getStripe, stripeCall } from './stripe';
 
 /**
- * M-Connect — Stripe Connect Express onboarding and the payout gate.
+ * M-Connect — Stripe Connect onboarding and the payout gate.
  *
  * The walker is the merchant. Money moves from the client's card to the
  * walker's own Stripe account without landing in the platform balance
@@ -15,7 +15,7 @@ import { getStripe, stripeCall } from './stripe';
  * Two states that look alike and are not:
  *   - `stripe_connect_account_id` exists  → we have an account
  *   - `charges_enabled`                   → it can actually take money
- * An Express account exists the instant we create it; Stripe enables
+ * A connected account exists the instant we create it; Stripe enables
  * capabilities only after identity and bank verification, which can take
  * minutes or days. Everything here turns on that distinction, because the
  * BLOCK decision (2026-08-29) gates collection on the second, not the first.
@@ -58,31 +58,53 @@ const ACCOUNT_INCLUDE = ['configuration.merchant', 'identity', 'requirements'] a
  * The connected-account shape, in one place because it encodes a decision with
  * money attached.
  *
- * ⚠️ ACCOUNTS V2, not v1. Stripe now refuses `accounts.create({type:'express'})`
- * for new integrations ("Stripe no longer recommends Accounts v1"), so the
- * 2026-07-19 "Stripe Connect Express" decision is implemented as a v2 account
- * with `dashboard: 'express'` — same product (Stripe-hosted onboarding, light
- * dashboard for the walker), current API.
+ * ⚠️ ACCOUNTS V2, not v1. Stripe refuses `accounts.create({type:'express'})`
+ * for new integrations, so the dashboard/liability choice is expressed as a v2
+ * `dashboard` plus `defaults.responsibilities`.
  *
- * ⚠️ `responsibilities` is the liability model, and Stripe forces the choice:
- * `dashboard: 'express'` with `losses_collector: 'stripe'` is REJECTED as an
- * unsupported configuration (verified 2026-09-04). Express means the PLATFORM
- * carries fees and losses — i.e. the founder absorbs chargebacks.
+ * DECIDED 2026-09-05 (founder): the WALKER carries chargebacks and pays
+ * Stripe's processing fees. `losses_collector` and `fees_collector` are both
+ * `'stripe'` — "stripe" here means Stripe collects from the connected account,
+ * i.e. the walker, not from us.
  *
- * That pairs badly with the platform fee being 0 (2026-09-04): the platform
- * would carry refund and chargeback exposure while earning nothing per
- * transaction. The alternative Stripe does support is `dashboard: 'full'` with
- * `losses_collector: 'stripe'`, which puts liability on the walker but gives
- * them a full Stripe account and departs from the recorded Express decision.
+ * This supersedes the 2026-07-19 "Express" decision. Why the shape changed:
+ * `dashboard:'express'` + `losses_collector:'stripe'` is rejected by Stripe as
+ * an unsupported configuration (verified 2026-09-04, re-confirmed as a control
+ * in the 2026-09-05 probe). Express structurally means the PLATFORM absorbs
+ * losses, which paired badly with `platformFeeCents` being 0 — the founder
+ * would have carried chargeback exposure while earning nothing per charge.
  *
- * Left as Express — faithful to what was decided — and flagged for the founder
- * rather than silently switched. Changing it is this constant plus a doc note.
+ * The earlier note here claimed `dashboard:'full'` was the only walker-liable
+ * option Stripe supports. That was wrong: it had only ever tested 'express' and
+ * 'full'. Probed 2026-09-05 against test mode, one account per row:
+ *
+ *   dashboard  losses       fees          result
+ *   none       application  application   accepted
+ *   none       stripe       stripe        accepted  <- this config
+ *   none       stripe       application   accepted
+ *   full       stripe       stripe        accepted
+ *   express    stripe       stripe        REJECTED  (control, as expected)
+ *
+ * `none` is preferred over `full` because it keeps liability on the walker
+ * WITHOUT provisioning them a full Stripe account and login — the walker stays
+ * inside our app, which is what the embedded UI (Workstream M) needs.
+ *
+ * ⚠️ These properties are FIXED AT CREATION. Changing this constant affects
+ * accounts created after the change and silently leaves existing ones on the
+ * old liability model. Safe today only because no live connected account
+ * exists (both .env and .env.prod are still on sk_test as of 2026-09-05). Once
+ * a real walker onboards, changing this is a per-account migration with a
+ * human in the loop, not a constant edit.
+ *
+ * ⚠️ Hosted account links still work on `dashboard:'none'` (probed 2026-09-05),
+ * so the redirect path stays functional while the embedded UI is built. The
+ * two are not a flag-day switch.
  */
 const ACCOUNT_CONFIGURATION = {
-  dashboard: 'express' as const,
+  dashboard: 'none' as const,
   responsibilities: {
-    losses_collector: 'application' as const,
-    fees_collector: 'application' as const,
+    losses_collector: 'stripe' as const,
+    fees_collector: 'stripe' as const,
   },
 };
 
@@ -168,7 +190,7 @@ export class ConnectService {
   /**
    * Start (or resume) hosted onboarding. Returns a single-use Stripe URL.
    *
-   * Creates the Express account on first call and stores the id immediately.
+   * Creates the connected account on first call and stores the id immediately.
    * Account links expire and are single-use by design, so this is called again
    * every time the walker resumes — it is not a one-shot.
    */
@@ -181,7 +203,7 @@ export class ConnectService {
       throw new ServiceError('not_a_professional', 'Only a professional account can set up payouts.', 403);
     }
 
-    const connectedId = account.stripe_connect_account_id ?? (await this.createExpressAccount(account));
+    const connectedId = account.stripe_connect_account_id ?? (await this.createConnectedAccount(account));
 
     const link = await stripeCall(() =>
       getStripe().v2.core.accountLinks.create({
@@ -206,14 +228,96 @@ export class ConnectService {
   }
 
   /**
-   * Create the Express account and persist the link.
+   * Components the embedded UI may mount, in one place so the surface the
+   * walker gets is a decision rather than whatever a component happened to be
+   * passed at a call site.
+   *
+   * `dispute_management` is the point of the exercise: with the walker liable
+   * for chargebacks (see ACCOUNT_CONFIGURATION), they must be able to actually
+   * respond to a dispute from inside our app. Liability without the tooling to
+   * contest is the worst of both worlds.
+   *
+   * All of these were confirmed to issue a session secret on this account
+   * config, probed 2026-09-05.
+   */
+  private static readonly SESSION_COMPONENTS = {
+    account_onboarding: { enabled: true },
+    notification_banner: { enabled: true },
+    payouts: { enabled: true },
+    payments: {
+      enabled: true,
+      features: {
+        dispute_management: true,
+        refund_management: true,
+        capture_payments: true,
+      },
+    },
+  };
+
+  /**
+   * Tier gate on payouts. DECIDED 2026-09-05: receiving money is Paid-tier only.
+   *
+   * ⚠️ Tiers do not exist yet (Workstream S), so there is nothing to read and
+   * this can only evaluate one way today — it lets everyone through. It exists
+   * as a real checkpoint anyway, on purpose: when the tier column lands, turning
+   * this on is this function plus that column, not an archaeology expedition to
+   * find every place onboarding can begin. There are already two (the hosted
+   * link and the embedded session) and that is exactly how gates grow holes.
+   */
+  private async assertCanOnboardToConnect(account: Account): Promise<void> {
+    // TODO(Workstream S): once `accounts` carries a tier, enforce:
+    //   if (account.tier !== 'paid') {
+    //     throw new ServiceError(
+    //       'tier_required',
+    //       'Upgrade to receive payments from clients.',
+    //       402
+    //     );
+    //   }
+    void account;
+  }
+
+  /**
+   * Mint a client secret for the embedded Connect components.
+   *
+   * Replaces the hosted redirect for onboarding, but does NOT remove it —
+   * `startOnboarding` still works on this account config (probed 2026-09-05)
+   * and stays as the fallback for a walker whose browser cannot run the
+   * embedded components.
+   *
+   * ⚠️ Sessions are short-lived and single-account. The client re-requests
+   * rather than caching, same as account links: a stale secret fails at mount
+   * time, which is a worse place to discover it than at request time.
+   */
+  async createAccountSession(
+    accountId: string
+  ): Promise<{ client_secret: string; account_id: string }> {
+    const account = await this.loadAccount(accountId);
+    if (account.account_type !== 'professional') {
+      throw new ServiceError('not_a_professional', 'Only a professional account can set up payouts.', 403);
+    }
+    await this.assertCanOnboardToConnect(account);
+
+    const connectedId = account.stripe_connect_account_id ?? (await this.createConnectedAccount(account));
+
+    const session = await stripeCall(() =>
+      getStripe().accountSessions.create({
+        account: connectedId,
+        components: ConnectService.SESSION_COMPONENTS,
+      })
+    );
+
+    return { client_secret: session.client_secret, account_id: connectedId };
+  }
+
+  /**
+   * Create the connected account and persist the link.
    *
    * ⚠️ Ordering hazard, deliberate: the account is created at Stripe first and
    * stored second. If the store fails we have orphaned a Stripe account, which
    * is why the id is logged loudly — an orphan is recoverable by hand, whereas
    * storing first would mean persisting an id that may not exist.
    */
-  private async createExpressAccount(account: Account): Promise<string> {
+  private async createConnectedAccount(account: Account): Promise<string> {
     // `display_name` is REQUIRED for Checkout, not cosmetic: Stripe refuses a
     // session on a connected account with no account/business name ("In order
     // to use Checkout, you must set an account or business name"). It is also
@@ -272,10 +376,10 @@ export class ConnectService {
    * different Stripe account. Deliberately does NOT delete anything at Stripe:
    * the walker's account, its history and its payouts are theirs, not ours.
    */
-  async disconnect(accountId: string): Promise<ConnectStatus> {
+  async disconnect(accountId: string, reason = 'disconnected_by_user'): Promise<ConnectStatus> {
     const account = await this.loadAccount(accountId);
     if (!account.stripe_connect_account_id) return this.toStatus(account);
-    await this.clearLink(accountId, 'disconnected_by_user');
+    await this.clearLink(accountId, reason);
     return this.status(accountId);
   }
 
@@ -330,9 +434,9 @@ export class ConnectService {
    * merely enforced: with no connected account there is no account to charge on.
    *
    * ⚠️ Routing is NOT the same as liability. Who absorbs a refund or chargeback
-   * is set by `ACCOUNT_CONFIGURATION.responsibilities`, which Stripe ties to the
-   * dashboard type — and for Express that is the PLATFORM, not the walker. See
-   * the note on that constant; it is an open founder question, not a settled one.
+   * is set by `ACCOUNT_CONFIGURATION.responsibilities`, not by where the charge
+   * is created. As of 2026-09-05 that is the WALKER — settled, not open. See the
+   * note on that constant for the decision and the configurations Stripe allows.
    *
    * One operational consequence: the walker's events arrive on the webhook as
    * connected-account events with `event.account` set, so the Stripe endpoint

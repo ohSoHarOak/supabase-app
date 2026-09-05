@@ -3,11 +3,11 @@ import { connectService } from '../../services/ConnectService';
 import { requireAuth, requireAccountType, requireCompleteProfile } from '../middleware/auth';
 
 /**
- * M-Connect — Stripe Connect Express onboarding for the walker's payout account.
+ * M-Connect — Stripe Connect onboarding for the walker's payout account.
  *
  * Read routes stay open to any active professional so the Profile card and the
  * onboarding step can always render their state. Only *starting* onboarding
- * requires a complete profile: the Express account is created with the
+ * requires a complete profile: the connected account is created with the
  * walker's business identity, and creating it from a half-filled profile means
  * an account at Stripe that has to be corrected by hand later.
  */
@@ -50,6 +50,25 @@ connectRouter.post('/onboarding-link', requireCompleteProfile, async (req, res, 
     const origin = `${req.protocol}://${req.get('host')}`;
     const link = await connectService.startOnboarding(req.account!.id, origin);
     res.json({ ok: true, data: link });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/connect/account-session — client secret for the embedded components.
+ *
+ * Same `requireCompleteProfile` guard as the hosted link, and for the same
+ * reason: this call can CREATE the connected account, and creating it from a
+ * half-filled profile leaves an account at Stripe that has to be fixed by hand.
+ *
+ * Returns a fresh secret every time — sessions are short-lived, so the client
+ * asks again rather than holding one.
+ */
+connectRouter.post('/account-session', requireCompleteProfile, async (req, res, next) => {
+  try {
+    const session = await connectService.createAccountSession(req.account!.id);
+    res.json({ ok: true, data: session });
   } catch (err) {
     next(err);
   }
