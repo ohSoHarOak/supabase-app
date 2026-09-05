@@ -214,9 +214,25 @@ export class ConnectService {
    * storing first would mean persisting an id that may not exist.
    */
   private async createExpressAccount(account: Account): Promise<string> {
+    // `display_name` is REQUIRED for Checkout, not cosmetic: Stripe refuses a
+    // session on a connected account with no account/business name ("In order
+    // to use Checkout, you must set an account or business name"). It is also
+    // what the walker's client sees on the hosted payment page, so it should
+    // be the business name rather than anything of ours. `requireCompleteProfile`
+    // guards the onboarding route, so business_name is present by the time we
+    // get here; full_name is a belt-and-braces fallback.
+    const { data: profile } = await supabaseAdmin
+      .from('professional_profiles')
+      .select('business_name, full_name')
+      .eq('account_id', account.id)
+      .maybeSingle();
+    const displayName =
+      (profile?.business_name as string | null) ?? (profile?.full_name as string | null) ?? account.email;
+
     const created = await stripeCall(() =>
       getStripe().v2.core.accounts.create({
         contact_email: account.email,
+        display_name: displayName,
         dashboard: ACCOUNT_CONFIGURATION.dashboard,
         identity: { country: 'us', entity_type: 'individual' },
         defaults: {
