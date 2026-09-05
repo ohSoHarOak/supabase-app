@@ -52,6 +52,20 @@
   display: block;
 }
 
+/* The `hidden` attribute must actually hide. This looks like a no-op that the
+   browser already does for free — it is not. `[hidden] { display: none }`
+   lives in the UA stylesheet, and ANY author rule that sets `display` on a
+   matching element beats it, regardless of specificity. `.fieldset` sets
+   `display: grid`, so every collapsed `.card.fieldset` form in the app —
+   add-a-pet, new-invoice — rendered fully expanded while its markup said
+   `hidden`, and the JS toggles that set `.hidden = true` did nothing visible.
+   Found 2026-08-29 reproducing M0-PETFLOW: the add-pet form never collapsed
+   after adding a pet, which is the "flow stalls" the founder reported.
+   `!important` is the point — it has to outrank author display rules. */
+[hidden] {
+  display: none !important;
+}
+
 /* ===================== END STRUCTURAL CONTRACT ========================== */
 
 :root {
@@ -290,6 +304,13 @@ textarea[data-autogrow] { overflow-y: hidden; }
    step to services & agreement so it isn't buried below the fold. */
 .next-step { border-left: 3px solid var(--orange); margin-top: 12px; cursor: pointer; }
 .next-step .title { font-weight: 600; }
+
+/* M0-SCHED-INV: the invoice a just-completed walk created, surfaced on the
+   appointment card. Same orange cue as .next-step — it is the same idea, "here
+   is what to do next" — but it is a container holding its own buttons rather
+   than one big click target, so no pointer cursor. */
+.fresh-invoice { border-left: 3px solid var(--orange); margin-top: 12px; }
+.fresh-invoice .title { font-weight: 600; }
 
 /* R-4: password requirements, ticking as you type. */
 .pw-rules { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; }

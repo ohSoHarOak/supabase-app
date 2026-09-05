@@ -396,6 +396,14 @@ registerPWA();
   function renderLogin(mode = 'login') {
     document.body.classList.add('login-bg');
     const isSignup = mode === 'signup';
+    // M0-BIZNAME: business name is deliberately NOT asked here. It used to sit
+    // in this form labelled "optional" with no `required` attribute, while
+    // `setupDone()` gates contracts and payments on it (M0-GATE) — so a
+    // professional who believed the label was silently locked out of the two
+    // things the product is for, on a screen that never mentioned it. It is now
+    // asked once, required, in setup step 1. See R-5's note above
+    // `markFieldRequirements`: a label that lies about being optional is worse
+    // than no marker at all.
     appEl.innerHTML = `
       <div class="login-wrap"><div class="login-card">
         <div class="login-brand">
@@ -405,8 +413,7 @@ registerPWA();
         </div>
         <form id="login-form">
           ${isSignup ? `
-          <div><label for="f-name">Your full name</label><input id="f-name" required autocomplete="name" /></div>
-          <div><label for="f-biz">Business name <span class="hint">optional</span></label><input id="f-biz" autocomplete="organization" /></div>` : ''}
+          <div><label for="f-name">Your full name</label><input id="f-name" required autocomplete="name" /></div>` : ''}
           <div><label for="f-email">Email</label><input id="f-email" type="email" required autocomplete="username" /></div>
           <div><label for="f-pass">Password</label>
             <input id="f-pass" type="password" required minlength="${isSignup ? 12 : 1}" autocomplete="${isSignup ? 'new-password' : 'current-password'}" />
@@ -435,8 +442,6 @@ registerPWA();
           };
           if (isSignup) {
             body.fullName = document.getElementById('f-name').value.trim();
-            const biz = document.getElementById('f-biz').value.trim();
-            if (biz) body.businessName = biz;
           }
           const session = await api('POST', isSignup ? '/api/auth/signup' : '/api/auth/login', body);
           await saveSession(session);
@@ -1600,11 +1605,13 @@ registerPWA();
             behavior_notes: val('p-behavior'),
           });
           toast('Pet added.', 'ok');
-          // #3: re-render with the add-pet form collapsed, and scroll back to
-          // the top so the pet and the next step are in view — no hunting down
-          // a long page for what to do next.
+          // #3 / M0-PETFLOW: re-render with the add-pet form collapsed and the
+          // actual next step in view. The scroll now happens inside
+          // renderClient, because only it knows whether a next-step card was
+          // rendered at all. Scrolling to the top from here (the old behavior)
+          // is what produced the reported stall: it put "＋ Add another pet"
+          // under the walker's thumb and left the real next step below the fold.
           await renderClient(clientId, { justAddedPet: true });
-          window.scrollTo({ top: 0, behavior: 'smooth' });
         } catch (err) {
           toast(err.message);
         }
@@ -1830,6 +1837,25 @@ registerPWA();
     wireNav();
     wireContractViews();
     if (opts.addpet) document.getElementById('p-name').focus();
+
+    // M0-PETFLOW: `justAddedPet` was passed from the pet-submit handler and
+    // read nowhere — the intent written at that call site was never actually
+    // implemented, and the form-collapse half only worked by accident because
+    // `opts.addpet` happens to be undefined on that re-render. Implement the
+    // other half: put the next thing that needs an input in front of the
+    // walker. Per W-7/W-8 services are born from a signed contract, so that is
+    // the "Next: set up services & agreement" card when it rendered.
+    if (opts.justAddedPet) {
+      const next = appEl.querySelector('.next-step');
+      if (next) {
+        next.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        next.focus?.();
+      } else {
+        // Client already has a contract — nothing new is being set up, so the
+        // old behavior (pet list in view) is still the right one.
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    }
   }
 
   // ------------------------------------------------- payment return page ----
@@ -2247,6 +2273,13 @@ registerPWA();
   }
 
   // ----------------------------------------------------------- schedule ----
+  // M0-SCHED-INV: a completion that creates an invoice parks it here so the
+  // very next render can surface it on the appointment card. One-shot, on the
+  // same discipline as the ?addpet flag — consumed and cleared by the next
+  // renderSchedule, so navigating away and back can't resurrect a stale
+  // "just invoiced" card for a walk that was billed last Tuesday.
+  let justInvoiced = null;
+
   async function renderSchedule(weekOffset = 0) {
     appEl.innerHTML = header('schedule') + `<div class="page loading">Loading schedule…</div>`;
     const weekStart = new Date(startOfWeek(new Date()).getTime() + weekOffset * 7 * DAY_MS);
@@ -2266,6 +2299,9 @@ registerPWA();
       appEl.innerHTML = header('schedule') + `<div class="page"><div class="empty">Couldn't load the schedule. <a class="backlink" href="#/schedule">Retry</a></div></div>`;
       return;
     }
+
+    const freshInvoice = justInvoiced;
+    justInvoiced = null;
 
     const apptPill = {
       scheduled: '<span class="pill pill-draft">scheduled</span>',
@@ -2301,13 +2337,34 @@ registerPWA();
                 <button class="btn btn-quiet" data-complete-appt="${a.id}">Mark complete</button>` : ''}
             </div>
           </div>
+          <!-- M0-SCHED-INV: completing a walk created an invoice and then said
+               nothing about it — the only way to act was Clients → find the
+               client → scroll to Billing, four-plus taps from the screen where
+               the work was just done. Both actions now sit on the card.
+               "Send to client" leads deliberately: R-17 notes Collect payment
+               needs the client standing there, and a walker is usually at the
+               house while the owner is out, so sending is the common case. -->
+          ${freshInvoice?.apptId === a.id ? `
+          <div class="card contract-row fresh-invoice">
+            <div class="what">
+              <div class="title">Invoice created — ${esc(fmtMoney(freshInvoice.invoice.amount_cents))}</div>
+              <div class="meta">${esc((a.clients?.full_name ?? 'The client').split(' ')[0])} hasn't been billed yet. Send it now, or take payment if they're with you.</div>
+            </div>
+            <div class="row-actions">
+              <button class="btn btn-primary" data-sched-send-invoice="${freshInvoice.invoice.id}">✉ Send to client</button>
+              <button class="btn btn-ghost" data-sched-checkout-invoice="${freshInvoice.invoice.id}">Collect payment</button>
+            </div>
+          </div>` : ''}
           ${a.status === 'scheduled' ? `
           <form class="complete-form" id="cf-${a.id}" hidden>
+            <!-- U-M3: notes and the flags come FIRST. They are what the walker
+                 opened this form to record; the two datetime pickers are a
+                 correction affordance, already pre-filled with the scheduled
+                 times and usually right. With times first, the one-column phone
+                 layout pushed the notes field off-screen and the founder
+                 completed two walks without ever registering it existed. This
+                 is ordering, not a new field — do not add a second notes box. -->
             <div class="form-grid">
-              <div><label for="cf-start-${a.id}">Actually started</label>
-                <input id="cf-start-${a.id}" type="datetime-local" value="${toLocalInput(a.starts_at)}" /></div>
-              <div><label for="cf-end-${a.id}">Actually ended</label>
-                <input id="cf-end-${a.id}" type="datetime-local" value="${toLocalInput(a.ends_at)}" /></div>
               <div class="full"><label for="cf-notes-${a.id}">Walk notes <span class="hint">— goes in the walk report</span></label>
                 <textarea id="cf-notes-${a.id}" rows="3" data-autogrow
                   placeholder="e.g. Full loop around the park, lots of squirrel patrol.&#10;Met another dog at the gate and did great."></textarea></div>
@@ -2315,6 +2372,10 @@ registerPWA();
                 <label class="flag"><input type="checkbox" id="cf-good-${a.id}" checked /> Were they a good dog? 🐶</label>
                 <label class="flag"><input type="checkbox" id="cf-treat-${a.id}" checked /> Did they get a treat? 🦴</label>
               </div>
+              <div><label for="cf-start-${a.id}">Actually started</label>
+                <input id="cf-start-${a.id}" type="datetime-local" value="${toLocalInput(a.starts_at)}" /></div>
+              <div><label for="cf-end-${a.id}">Actually ended</label>
+                <input id="cf-end-${a.id}" type="datetime-local" value="${toLocalInput(a.ends_at)}" /></div>
             </div>
             <div class="form-foot" style="margin-top:12px">
               <button class="btn btn-ghost" type="button" data-close-complete="${a.id}">Back</button>
@@ -2391,6 +2452,9 @@ registerPWA();
               good_dog: document.getElementById(`cf-good-${id}`).checked,
               got_a_treat: document.getElementById(`cf-treat-${id}`).checked,
             });
+            // M0-SCHED-INV: hand the new invoice to the render below so it
+            // lands on the appointment card instead of vanishing into Billing.
+            if (invoice) justInvoiced = { apptId: id, invoice };
             toast(invoice
               ? `Walk completed — ${fmtMoney(invoice.amount_cents)} invoice created automatically.`
               : prepaid_remaining !== null && prepaid_remaining !== undefined
@@ -2402,6 +2466,36 @@ registerPWA();
           }
         });
       };
+    });
+    // M0-SCHED-INV: the same two actions the client screen offers, wired here
+    // so the walker can act on a just-created invoice without leaving the
+    // schedule. Separate data attributes from the client-screen handlers on
+    // purpose — those close over `client`/`clientId` and re-render the client
+    // page, which is not where we are.
+    document.querySelectorAll('[data-sched-send-invoice]').forEach((btn) => {
+      btn.onclick = () =>
+        withBusy(btn, async () => {
+          try {
+            await api('POST', `/api/invoices/${btn.dataset.schedSendInvoice}/send`);
+            toast('Invoice emailed — they can pay from the link without signing in.', 'ok');
+            renderSchedule(weekOffset);
+          } catch (err) {
+            toast(err.message);
+          }
+        });
+    });
+    document.querySelectorAll('[data-sched-checkout-invoice]').forEach((btn) => {
+      btn.onclick = () =>
+        withBusy(btn, async () => {
+          try {
+            const { checkout_url } = await api('POST', `/api/invoices/${btn.dataset.schedCheckoutInvoice}/checkout`);
+            // Off to Stripe's hosted payment page; it redirects back to
+            // #/invoice/:id/return when done.
+            window.location.href = checkout_url;
+          } catch (err) {
+            toast(err.message);
+          }
+        });
     });
     document.querySelectorAll('[data-cancel-appt]').forEach((btn) => {
       btn.onclick = () => {
@@ -3149,7 +3243,18 @@ registerPWA();
       renderNewContract(parts[1], params.get('replace')); return;
     }
     if (parts[0] === 'client' && parts[1]) {
-      renderClient(parts[1], { addpet: params.get('addpet') === '1', edit: params.get('edit') === '1' }); return;
+      const addpet = params.get('addpet') === '1';
+      const edit = params.get('edit') === '1';
+      // M0-PETFLOW (second bug): these are one-shot *transitions* — "you just
+      // arrived from new-client setup", "you just tapped Edit" — not states of
+      // the page. The router re-read them on every hash-driven render and
+      // nothing ever cleared them, so navigating away and back genuinely
+      // re-opened the form. On a phone, where bottom-nav round trips and back
+      // gestures are constant, that fires often. Consume them once, then strip
+      // them from the URL. `replaceState` is deliberate: it rewrites the URL
+      // without firing `hashchange`, so this cannot loop back into the router.
+      if (addpet || edit) history.replaceState(null, '', `#/client/${parts[1]}`);
+      renderClient(parts[1], { addpet, edit }); return;
     }
     if (parts[0] === 'contract' && parts[1] && parts[2] === 'sign') { renderSign(parts[1]); return; }
     if (parts[0] === 'invoice' && parts[1] && parts[2] === 'return') {
