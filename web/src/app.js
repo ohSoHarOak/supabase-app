@@ -6,6 +6,7 @@ import { API_BASE } from './config.js';
 import { createClient } from '@supabase/supabase-js';
 import { registerPWA } from './pwa.js';
 import { createTokenStore, initSecureStorage, isUsingWebBackend } from './tokenStore.js';
+import { renderConnect, resetConnect } from './connect.js';
 
 registerPWA();
 
@@ -330,6 +331,7 @@ registerPWA();
     // secure-store wipe is async, so it's fired off rather than awaited; no
     // caller needs to block on it, and every logout path stays sync.
     token = null; refreshToken = null; account = null; profile = null;
+    resetConnect(); // the Connect instance is bound to the account that just left
     void tokens.clear();
     localStorage.removeItem('petpro_account');
     localStorage.removeItem('petpro_profile');
@@ -2832,6 +2834,13 @@ registerPWA();
         </div>
         </form>
 
+        <!-- M-Connect: the persistent "Getting paid" card the roadmap asks
+             for -- it stays on this page whether or not setup is finished,
+             because a walker who abandoned onboarding needs a way back in.
+             Filled in after render; see renderConnect below. -->
+        <div class="eyebrow" style="margin-top:28px">Getting paid</div>
+        <div id="connect-host"></div>
+
         <div class="eyebrow" style="margin-top:28px">Change password</div>
         <form id="pw-form">
         <div class="card fieldset">
@@ -2872,6 +2881,12 @@ registerPWA();
 
     wireImageField('pf-photo', 'photo');
     wireImageField('pf-logo', 'logo');
+
+    // Mounted into a live node *after* the page HTML lands, deliberately not
+    // awaited: Stripe's components are real elements, so any later innerHTML
+    // pass over this page would destroy them. Everything below wires up
+    // immediately rather than waiting on a network round trip to Stripe.
+    renderConnect(document.getElementById('connect-host'), { api, toast, setupComplete: setupDone() });
 
     document.getElementById('pf-form').onsubmit = async (e) => {
       e.preventDefault();

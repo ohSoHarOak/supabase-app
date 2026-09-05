@@ -28,6 +28,7 @@
     "@capacitor/android": "^8.5.0",
     "@capacitor/camera": "^8.2.3",
     "@capacitor/core": "^8.5.0",
+    "@stripe/connect-js": "^3.4.6",
     "@supabase/supabase-js": "^2.45.0",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",

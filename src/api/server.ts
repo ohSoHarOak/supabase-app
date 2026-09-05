@@ -69,7 +69,15 @@ export function createServer(): express.Express {
   app.get('/api/config', (_req, res) => {
     res.json({
       ok: true,
-      data: { supabase_url: env.supabaseUrl, supabase_anon_key: env.supabaseAnonKey },
+      data: {
+        supabase_url: env.supabaseUrl,
+        supabase_anon_key: env.supabaseAnonKey,
+        // Publishable key, not the secret one. The embedded Connect components
+        // need it in the browser; it identifies the platform and authorises
+        // nothing on its own. Null when unset so the client can fall back to
+        // the hosted redirect rather than failing to mount.
+        stripe_publishable_key: env.stripePublishableKey ?? null,
+      },
     });
   });
 

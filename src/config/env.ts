@@ -32,6 +32,10 @@ export const env = {
    *  without them — payment endpoints return 503 until keys are set. */
   stripeSecretKey: optional('STRIPE_SECRET_KEY'),
   stripeWebhookSecret: optional('STRIPE_WEBHOOK_SECRET'),
+  /** Publishable key. Safe to serve to the browser by design — it is the key
+   *  the embedded Connect components initialise with. Optional like the rest:
+   *  without it the Profile card degrades to the hosted redirect. */
+  stripePublishableKey: optional('STRIPE_PUBLISHABLE_KEY'),
   /** Email (Week 7). Optional so the app boots without it — notifications
    *  queue as pending and send once the key is added. */
   resendApiKey: optional('RESEND_API_KEY'),
