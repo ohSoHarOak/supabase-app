@@ -252,7 +252,14 @@ export class ConnectService {
    * walker gets is a decision rather than whatever a component happened to be
    * passed at a call site.
    *
-   * `dispute_management` is the point of the exercise: with the walker liable
+   * ⚠️ `account_onboarding` is deliberately ABSENT. Onboarding goes through
+ * Stripe's hosted page (decided 2026-09-05) because the embedded onboarding
+ * component cannot complete the Stripe user authentication this liability
+ * config forces. Enabling a component we never mount would only widen the
+ * session's scope for nothing. Re-add it here and in `web/src/connect.js`
+ * together, or not at all.
+ *
+ * `dispute_management` is the point of the exercise: with the walker liable
    * for chargebacks (see ACCOUNT_CONFIGURATION), they must be able to actually
    * respond to a dispute from inside our app. Liability without the tooling to
    * contest is the worst of both worlds.
@@ -276,14 +283,12 @@ export class ConnectService {
    * shapes being one object someone assumes is portable.
    */
   private static readonly SESSION_COMPONENTS_V2 = {
-    account_onboarding: { enabled: true },
     notification_banner: { enabled: true },
     payouts: { enabled: true },
     payments: { enabled: true },
   };
 
   private static readonly SESSION_COMPONENTS = {
-    account_onboarding: { enabled: true },
     notification_banner: { enabled: true },
     payouts: { enabled: true },
     payments: {

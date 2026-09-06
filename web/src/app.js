@@ -2755,7 +2755,13 @@ registerPWA();
       </div>`;
   }
 
-  async function renderProfile() {
+  async function renderProfile(params) {
+    // Returning from Stripe's hosted onboarding. Strip the marker before
+    // anything can re-read it, so a reload doesn't re-trigger the refresh, and
+    // the walker doesn't sit on a URL that lies about where they came from.
+    const justReturned = params?.get('connect') === 'return';
+    if (params?.get('connect')) history.replaceState(null, '', '#/profile');
+
     appEl.innerHTML = header('profile') + `<div class="page loading">Loading profile…</div>`;
     try {
       await loadProfile(); // always fresh — this page edits it
@@ -2886,7 +2892,7 @@ registerPWA();
     // awaited: Stripe's components are real elements, so any later innerHTML
     // pass over this page would destroy them. Everything below wires up
     // immediately rather than waiting on a network round trip to Stripe.
-    renderConnect(document.getElementById('connect-host'), { api, toast, setupComplete: setupDone() });
+    renderConnect(document.getElementById('connect-host'), { api, toast, setupComplete: setupDone(), justReturned });
 
     document.getElementById('pf-form').onsubmit = async (e) => {
       e.preventDefault();
@@ -3250,7 +3256,7 @@ registerPWA();
     if (parts[0] === 'schedule') { renderSchedule(Number(params.get('w')) || 0); return; }
     if (parts[0] === 'messages' && parts[1]) { renderThread(parts[1]); return; }
     if (parts[0] === 'messages') { renderMessages(); return; }
-    if (parts[0] === 'profile') { renderProfile(); return; }
+    if (parts[0] === 'profile') { renderProfile(params); return; }
     if (parts[0] === 'appointment-new') { renderNewAppointment(params); return; }
     if (parts[0] === 'setup') { renderSetup(Math.min(SETUP_STEPS, Math.max(1, Number(parts[1]) || 1))); return; }
     if (parts[0] === 'client-new') { renderNewClient(); return; }
