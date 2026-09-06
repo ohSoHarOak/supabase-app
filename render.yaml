@@ -26,3 +26,17 @@ services:
         sync: false
       - key: PORT
         value: 10000
+
+  # Marketing site for the root domain (sitstayplay.pro). Separate from the app
+  # service on purpose: the app's "/" is its login screen, and Stripe's business
+  # URL review wants a page that says what the business does. Keeping them apart
+  # means the marketing page cannot break the app, and vice versa.
+  #
+  # Static: no build step, no runtime, nothing to redeploy when the app changes.
+  # Attach the custom domain in the Render dashboard, then point DNS at it.
+  - type: web
+    name: sitstayplay-landing
+    runtime: static
+    staticPublishPath: ./landing
+    buildCommand: ""
+    pullRequestPreviewsEnabled: false
