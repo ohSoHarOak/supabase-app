@@ -1,4 +1,4 @@
-# PetPro Connect - Week 3 manual test: contracts (templates, generation, in-person signing, immutability)
+# Sit.Stay.Play - Week 3 manual test: contracts (templates, generation, in-person signing, immutability)
 #
 # Usage (local):    .\scripts\week3-test.ps1
 # Usage (Render):   .\scripts\week3-test.ps1 -BaseUrl "https://YOUR-SERVICE.onrender.com"

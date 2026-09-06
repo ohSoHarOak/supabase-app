@@ -1,8 +1,14 @@
-# Render Blueprint — creates the PetPro Connect web service.
+# Render Blueprint — creates the Sit.Stay.Play web service.
 # In Render: New -> Blueprint -> connect this repo. Then add the environment
 # variables listed below in the Render dashboard (never commit secrets).
 services:
   - type: web
+    # ⚠️ NOT renamed with the rest of the 2026-09-05 Sit.Stay.Play rename.
+    # This is the Render SERVICE name, and it is what produces
+    # petpro-connect.onrender.com. Changing it points the blueprint at a
+    # different service: the old URL stops resolving and every reference to it
+    # (docs, smoke tests, VITE_API_BASE) breaks at once. Rename only as a
+    # deliberate migration with the DNS cutover planned.
     name: petpro-connect
     runtime: node
     plan: free

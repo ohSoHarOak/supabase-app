@@ -1,4 +1,4 @@
-# PetPro Connect - Week 7 manual test: messaging + notifications
+# Sit.Stay.Play - Week 7 manual test: messaging + notifications
 #
 # Usage (local):    .\scripts\week7-test.ps1
 # Usage (Render):   .\scripts\week7-test.ps1 -BaseUrl "https://petpro-app.onrender.com"

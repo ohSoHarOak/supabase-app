@@ -1,5 +1,5 @@
 <#
-  smoke-prod.ps1 - Post-deploy smoke test for PetPro Connect (Workstream M / M0).
+  smoke-prod.ps1 - Post-deploy smoke test for Sit.Stay.Play (Workstream M / M0).
 
   NOTE: keep this file pure ASCII. Windows PowerShell 5.1 reads BOM-less files as
   ANSI (CP1252), so a UTF-8 em-dash decodes to a smart quote that PowerShell treats
@@ -40,7 +40,7 @@ function Info($m) { Write-Host "  ..   $m"    -ForegroundColor Cyan }
 function Warn($m) { Write-Host "  [!]  $m"    -ForegroundColor Yellow }
 function Fail($m) { Write-Host "  [X]  $m"    -ForegroundColor Red }
 
-Write-Host "`n== PetPro prod smoke test ==  $BaseUrl`n" -ForegroundColor White
+Write-Host "`n== Sit.Stay.Play prod smoke test ==  $BaseUrl`n" -ForegroundColor White
 
 # 1) Health -----------------------------------------------------------------
 try {

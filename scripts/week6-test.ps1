@@ -1,4 +1,4 @@
-# PetPro Connect - Week 6 manual test: scheduling end to end
+# Sit.Stay.Play - Week 6 manual test: scheduling end to end
 #
 # Usage (local):    .\scripts\week6-test.ps1
 # Usage (Render):   .\scripts\week6-test.ps1 -BaseUrl "https://petpro-app.onrender.com"
@@ -8,7 +8,7 @@
 # walk-report data -> invoice generated automatically -> walk_completed in
 # the event log -> series cancel ends the remaining walks.
 #
-# No Stripe interaction needed: the auto-invoice is a plain PetPro invoice
+# No Stripe interaction needed: the auto-invoice is a plain Sit.Stay.Play invoice
 # (you'd collect it via Checkout like any Week 5 invoice).
 
 param(

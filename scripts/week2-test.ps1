@@ -1,4 +1,4 @@
-# PetPro Connect - Week 2 manual test: CRM (clients, pets, search, validation)
+# Sit.Stay.Play - Week 2 manual test: CRM (clients, pets, search, validation)
 #
 # Usage (local):    .\scripts\week2-test.ps1
 # Usage (Render):   .\scripts\week2-test.ps1 -BaseUrl "https://YOUR-SERVICE.onrender.com"

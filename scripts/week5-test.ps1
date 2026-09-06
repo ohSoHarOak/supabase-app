@@ -1,4 +1,4 @@
-# PetPro Connect - Week 5 manual test: Stripe payments end to end
+# Sit.Stay.Play - Week 5 manual test: Stripe payments end to end
 #
 # Usage (local):    .\scripts\week5-test.ps1
 # Usage (Render):   .\scripts\week5-test.ps1 -BaseUrl "https://petpro-app.onrender.com"
