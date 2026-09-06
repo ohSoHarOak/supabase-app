@@ -127,7 +127,7 @@ export class PaymentService {
     const product = await this.stripeCall(() =>
       this.stripe.products.create({
         name: input.name,
-        metadata: { petpro_account_id: accountId },
+        metadata: { sitstayplay_account_id: accountId },
       })
     );
     const price = await this.stripeCall(() =>

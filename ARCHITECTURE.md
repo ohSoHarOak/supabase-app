@@ -1,4 +1,4 @@
-# PetPro Connect — Architecture (as built)
+# Sit.Stay.Play — Architecture (as built)
 
 *Written 2026-08-17 from the shipped code, closing the Workstream 0 "repo hygiene" gap.
 `CLAUDE.md` has always referenced this file, but it had never actually existed in this
@@ -91,7 +91,7 @@ them as load-bearing:
 
 Three middlewares compose, in this order:
 
-- `requireAuth` — verifies the Supabase access token, loads the PetPro account, rejects
+- `requireAuth` — verifies the Supabase access token, loads the Sit.Stay.Play account, rejects
   non-active accounts.
 - `requireAccountType('professional' | 'owner')` — seam 1.
 - `requireCompleteProfile` — M0.5. Contracts and payments stay locked until onboarding is

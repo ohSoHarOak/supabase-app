@@ -6,7 +6,7 @@ import { startRecurringInvoiceWorker } from './services/PaymentService';
 const app = createServer();
 
 app.listen(env.port, () => {
-  console.log(`PetPro Connect API listening on port ${env.port}`);
+  console.log(`Sit.Stay.Play API listening on port ${env.port}`);
   if (!env.resendApiKey) {
     console.log('[notifications] RESEND_API_KEY not set — emails queue as pending until it is.');
   }

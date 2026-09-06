@@ -1,4 +1,4 @@
-# PetPro Connect — Known Issues & What's Next
+# Sit.Stay.Play — Known Issues & What's Next
 
 *Phase 1 demo build, as of 2026-07-16. Companion to `ROADMAP.md` (what was built) and `PHASE_2_ROADMAP.md` (what comes next, in detail).*
 

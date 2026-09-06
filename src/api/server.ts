@@ -61,7 +61,7 @@ export function createServer(): express.Express {
   });
 
   app.get('/health', (_req, res) => {
-    res.json({ ok: true, data: { service: 'petpro-connect', status: 'healthy' } });
+    res.json({ ok: true, data: { service: 'sitstayplay', status: 'healthy' } });
   });
 
   // Public config for the browser: the anon key is designed to be public

@@ -1,4 +1,4 @@
-# PetPro Connect — Walker Interview Script
+# Sit.Stay.Play — Walker Interview Script
 
 **Format:** 30 minutes, one-on-one, video call or in person with the prototype on your screen/phone.
 **Who:** 5–10 working dog walkers. Aim for a mix: solo walkers with under 10 clients, established solo walkers (15–30 clients), and at least one small team (2+ walkers) for the Business-tier questions.

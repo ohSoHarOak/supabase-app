@@ -1,4 +1,4 @@
-/* PetPro Connect — PWA service worker (Workstream M / M0-d).
+/* Sit.Stay.Play — PWA service worker (Workstream M / M0-d).
 
    Safe caching, deliberately conservative:
    - /api/*            NEVER cached. A stale schedule or invoice is worse than a
@@ -15,15 +15,15 @@
    baseline satisfies the roadmap's "never cache API" rule and gives an offline
    message instead of a browser error. */
 
-const SHELL = 'petpro-shell-v1';
+const SHELL = 'sitstayplay-shell-v1';
 const OFFLINE_HTML =
   '<!doctype html><meta charset="utf-8">' +
   '<meta name="viewport" content="width=device-width,initial-scale=1">' +
-  '<title>Offline — PetPro Connect</title>' +
+  '<title>Offline — Sit.Stay.Play</title>' +
   '<body style="font-family:system-ui,sans-serif;margin:0;display:grid;place-items:center;min-height:100vh;background:#F7F2EB;color:#333">' +
   '<div style="text-align:center;padding:2rem;max-width:22rem">' +
   '<h1 style="color:#2B7192;margin:0 0 .5rem">You\'re offline</h1>' +
-  '<p>PetPro needs a connection to load. Reconnect and try again.</p></div>';
+  '<p>Sit.Stay.Play needs a connection to load. Reconnect and try again.</p></div>';
 
 self.addEventListener('install', () => self.skipWaiting());
 

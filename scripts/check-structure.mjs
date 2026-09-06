@@ -69,10 +69,10 @@ const CONTRACTS = [
 ];
 
 /* T-3 moved the sign screen into shared.js so the two frontends can't disagree
-   about it. M0-b made shared.js an ES module that *exports* PetPro, imported by
+   about it. M0-b made shared.js an ES module that *exports* Sit.Stay.Play, imported by
    each frontend — that import is the handshake the old load-order check guarded
    (now enforced by the bundler). What's still worth a static check: the import
-   is actually present. A frontend that drops it gets an undefined PetPro and
+   is actually present. A frontend that drops it gets an undefined Sit.Stay.Play and
    throws on first render — otherwise a silent blank screen. */
 const IMPORT_HANDSHAKE = [
   { file: APP, name: 'app.js' },
@@ -124,15 +124,15 @@ for (const c of CONTRACTS) {
   }
 }
 
-// Module handshake: each frontend must import PetPro from shared.js. Without it
-// PetPro is undefined at startup and the page throws on first render (blank
+// Module handshake: each frontend must import Sit.Stay.Play from shared.js. Without it
+// Sit.Stay.Play is undefined at startup and the page throws on first render (blank
 // screen). The bundler guarantees execution order once the import is present.
-const IMPORTS_SHARED = /import\s*\{[^}]*\bPetPro\b[^}]*\}\s*from\s*['"]\.\/shared(?:\.js)?['"]/;
+const IMPORTS_SHARED = /import\s*\{[^}]*\bSitStayPlay\b[^}]*\}\s*from\s*['"]\.\/shared(?:\.js)?['"]/;
 for (const { file, name } of IMPORT_HANDSHAKE) {
   if (!IMPORTS_SHARED.test(sources.get(file))) {
     failures.push({
-      contract: { why: `${name} reads PetPro at startup; without the import it is undefined and the page throws on first render, showing a blank screen.` },
-      problem: `${file} does not import { PetPro } from './shared.js'.`,
+      contract: { why: `${name} reads Sit.Stay.Play at startup; without the import it is undefined and the page throws on first render, showing a blank screen.` },
+      problem: `${file} does not import { Sit.Stay.Play } from './shared.js'.`,
     });
   }
 }

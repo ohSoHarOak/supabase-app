@@ -1,9 +1,9 @@
-/* PetPro Connect — pet owner portal (Week 8).
+/* Sit.Stay.Play — pet owner portal (Week 8).
    Magic-link login, then: upcoming walks, contracts (view + sign), invoices
    (view + pay via Stripe Checkout), and messaging the professional.
    Same vanilla hash-routed pattern as app.js, deliberately smaller.
    M0-b: bundled by Vite as an ES module (was a classic <script>). */
-import { PetPro } from './shared.js';
+import { SitStayPlay } from './shared.js';
 import { API_BASE } from './config.js';
 import { registerPWA } from './pwa.js';
 
@@ -13,8 +13,8 @@ registerPWA();
   'use strict';
 
   // ------------------------------------------------------------ state ----
-  let token = localStorage.getItem('petpro_portal_token');
-  let account = safeParse(localStorage.getItem('petpro_portal_account'));
+  let token = localStorage.getItem('sitstayplay_portal_token');
+  let account = safeParse(localStorage.getItem('sitstayplay_portal_account'));
 
   const appEl = document.getElementById('app');
   const toastEl = document.getElementById('toast');
@@ -25,21 +25,21 @@ registerPWA();
   function saveSession(session) {
     token = session.access_token;
     account = session.account;
-    localStorage.setItem('petpro_portal_token', token);
-    localStorage.setItem('petpro_portal_account', JSON.stringify(account));
+    localStorage.setItem('sitstayplay_portal_token', token);
+    localStorage.setItem('sitstayplay_portal_account', JSON.stringify(account));
   }
   function logout(redirect = true) {
     token = null; account = null;
-    localStorage.removeItem('petpro_portal_token');
-    localStorage.removeItem('petpro_portal_account');
+    localStorage.removeItem('sitstayplay_portal_token');
+    localStorage.removeItem('sitstayplay_portal_account');
     if (redirect) { location.hash = ''; render(); }
   }
-  window.petproPortalLogout = () => logout();
+  window.sitStayPlayPortalLogout = () => logout();
   // CSP-safe logout: a delegated listener replaces an inline onclick handler.
   document.addEventListener('click', (e) => {
     if (e.target.closest('[data-action="logout"]')) {
       e.preventDefault();
-      window.petproPortalLogout();
+      window.sitStayPlayPortalLogout();
     }
   });
 
@@ -72,12 +72,12 @@ registerPWA();
   }
 
   // ------------------------------------------------------------- toast ----
-  const toast = PetPro.createToast(toastEl);
+  const toast = SitStayPlay.createToast(toastEl);
 
   // ------------------------------------------------------------ helpers ----
   // Formatters, withBusy and the sign-screen pieces come from shared.js so
   // this portal and the professional app cannot drift — see T-3 in ROADMAP.md.
-  const { esc, fmtDate, fmtTime, fmtDateOnly, fmtMoney, fmtPhone, withBusy } = PetPro;
+  const { esc, fmtDate, fmtTime, fmtDateOnly, fmtMoney, fmtPhone, withBusy } = SitStayPlay;
 
   function fmtDay(iso) {
     return new Date(iso).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
@@ -113,7 +113,7 @@ registerPWA();
       }</a>`;
     return `
       <header class="app-header"><div class="inner">
-        <a class="brand" href="#/home">🐾 PetPro Connect</a>
+        <a class="brand" href="#/home">🐾 Sit.Stay.Play</a>
         <nav class="app-nav">
           ${tab('home', 'Home')}
           ${tab('billing', 'Billing')}
@@ -131,7 +131,7 @@ registerPWA();
       <div class="login-wrap"><div class="login-card">
         <div class="login-brand">
           ${PAW_LOGIN}
-          <div class="wordmark">PetPro Connect</div>
+          <div class="wordmark">Sit.Stay.Play</div>
           <div class="tag">Pet owner portal</div>
         </div>
         <!-- C-6: said before the field, not after it — a cold tester went
@@ -370,8 +370,8 @@ registerPWA();
         ${signable ? `<p class="page-sub">Read the agreement, then sign below. Questions? <a href="#/messages">Message your professional</a> before signing.</p>` : ''}
 
         <div class="sign-layout">
-          ${PetPro.contractPane({ frameTitle: 'Agreement document' })}
-          ${signable ? PetPro.signPadCard({
+          ${SitStayPlay.contractPane({ frameTitle: 'Agreement document' })}
+          ${signable ? SitStayPlay.signPadCard({
             nameLabel: 'Your full name',
             nameError: 'Please enter your name.',
             lockNote: 'Signing locks this agreement permanently — neither side can alter it afterwards.',
@@ -380,7 +380,7 @@ registerPWA();
         </div>
       </div>`;
 
-    PetPro.wireContractPane(docHtml);
+    SitStayPlay.wireContractPane(docHtml);
 
     if (signed) {
       document.getElementById('doc-print').onclick = (e) =>
@@ -409,7 +409,7 @@ registerPWA();
     if (!signable) { wireNav(); return; }
 
     // Signature canvas — same pad as the professional app's in-person flow.
-    const sigPad = PetPro.createSignaturePad();
+    const sigPad = SitStayPlay.createSignaturePad();
 
     document.getElementById('sig-submit').onclick = async (e) => {
       const name = sigPad.validate();

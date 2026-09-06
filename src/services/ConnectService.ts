@@ -443,7 +443,7 @@ export class ConnectService {
         configuration: {
           merchant: { capabilities: { card_payments: { requested: true } } },
         },
-        metadata: { petpro_account_id: account.id },
+        metadata: { sitstayplay_account_id: account.id },
         include: [...ACCOUNT_INCLUDE],
       });
 

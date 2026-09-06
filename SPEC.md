@@ -1,8 +1,8 @@
-# AI Development Prompt: PetPro Connect (v2)
+# AI Development Prompt: Sit.Stay.Play (v2)
 
 ## Project Overview
 
-Design and develop a modern, secure, cloud-based mobile and web application called **PetPro Connect** — a business management platform for pet care professionals, launching with **professional dog walkers**.
+Design and develop a modern, secure, cloud-based mobile and web application called **Sit.Stay.Play** — a business management platform for pet care professionals, launching with **professional dog walkers**.
 
 The architecture must support future expansion into trainers, groomers, sitters, boarding facilities, rescues, and veterinary referral partners **without redesign**. Achieve this through a service-type abstraction in the data model (a "service" has a type, duration model, and billing model) rather than walker-specific assumptions — not through premature microservices.
 
@@ -92,7 +92,7 @@ Each pet gets a printable QR tag; each professional has a unique QR identity.
 * Map markers show dog photo, dog name, walker name — **visible only to that pet's owner and the professional; never on any public or shared map**.
 * **Offline-first requirement:** GPS points buffer on-device during signal loss and upload on reconnect. Battery-efficient location sampling. GPS capture itself is satellite-based and independent of cell service; only upload, live view, and tile loading are network-dependent.
 * **Owner-facing signal-gap state (required):** when the server stops receiving points mid-walk, the owner portal shows the last known location with an explicit status ("low-signal area — tracking continues on-device"), never a silently frozen marker. On reconnect, the route backfills and the live marker resumes. Walker-side map falls back to the API-free route trace if tiles can't load.
-* **Walk report cards:** auto-generated post-walk summary (route, duration, distance, photos taken during the walk, notes, bathroom breaks) sent to the owner. Owners can share them; each shared card carries light PetPro branding (organic acquisition channel). **Report-card routes render API-free:** draw the recorded GPS trace as an SVG/canvas polyline on a stylized background — no basemap tile or map-load call. Report cards are the highest-volume map-shaped surface (generated per walk, re-opened and shared by owners), so keeping them off the metered map API removes the platform's largest map-cost multiplier.
+* **Walk report cards:** auto-generated post-walk summary (route, duration, distance, photos taken during the walk, notes, bathroom breaks) sent to the owner. Owners can share them; each shared card carries light Sit.Stay.Play branding (organic acquisition channel). **Report-card routes render API-free:** draw the recorded GPS trace as an SVG/canvas polyline on a stylized background — no basemap tile or map-load call. Report cards are the highest-volume map-shaped surface (generated per walk, re-opened and shared by owners), so keeping them off the metered map API removes the platform's largest map-cost multiplier.
 
 ### 8. Messaging (Phase 1)
 

@@ -143,7 +143,7 @@ export class AccountService {
 
     const account = await this.getAccountByAuthUserId(data.user.id);
     if (!account) {
-      throw new ServiceError('no_account', 'Auth user has no PetPro account.', 404);
+      throw new ServiceError('no_account', 'Auth user has no Sit.Stay.Play account.', 404);
     }
     // A deactivated account must never get a fresh session — even in the edge
     // case where its auth user outlived deactivation (auth-delete is

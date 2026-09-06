@@ -1,4 +1,4 @@
-/* PetPro Connect — shared frontend module (T-3).
+/* Sit.Stay.Play — shared frontend module (T-3).
 
    The professional app (app.js) and the pet-owner portal (portal.js) are two
    independent hash-routed frontends that share one styles.css. Everything in
@@ -17,12 +17,53 @@
 
    scripts/check-structure.mjs verifies the [data-*] hooks below survive.
 
-   M0-b: this is now an ES module. Instead of assigning window.PetPro and
-   relying on <script> load order, it exports the PetPro object; app.js and
-   portal.js/pay.js `import { PetPro }` from it, so the bundler guarantees the
+   M0-b: this is now an ES module. Instead of assigning window.SitStayPlay and
+   relying on <script> load order, it exports the SitStayPlay object; app.js and
+   portal.js/pay.js `import { SitStayPlay }` from it, so the bundler guarantees the
    handshake that the old load-order check used to protect. */
 
-export const PetPro = (() => {
+/**
+ * One-time key migration for the 2026-09-05 rename (PetPro Connect ->
+ * Sit.Stay.Play).
+ *
+ * The rename changed every `petpro_*` browser storage key to `sitstayplay_*`.
+ * Without this, the rename would silently sign out every existing user and
+ * discard any unsent message drafts sitting in the offline queue -- a cosmetic
+ * change with a data-loss side effect.
+ *
+ * Generic on purpose (any `petpro_` key, not a hardcoded list) so a key missed
+ * during the rename still carries over. Runs at module load, before app.js or
+ * portal.js read anything. Never overwrites a value already under the new name.
+ *
+ * ⚠️ Covers the WEB backend only. On the native Android shell, tokens live in
+ * Keystore via capacitor-secure-storage, which this cannot reach -- those users
+ * get signed out once on the update after the rename. Acceptable while the
+ * Android build is unpublished (debug sideloads only); revisit if that changes
+ * before the rename ships to a real installed base.
+ *
+ * Safe to delete once no active browser can still be holding the old keys.
+ */
+(function migrateRenamedStorageKeys() {
+  try {
+    const stale = [];
+    for (let i = 0; i < localStorage.length; i += 1) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith('petpro_')) stale.push(key);
+    }
+    for (const key of stale) {
+      const renamed = 'sitstayplay_' + key.slice('petpro_'.length);
+      if (localStorage.getItem(renamed) === null) {
+        localStorage.setItem(renamed, localStorage.getItem(key));
+      }
+      localStorage.removeItem(key);
+    }
+  } catch {
+    // Private mode, blocked storage, quota. Losing the migration costs a
+    // re-login; throwing here would break boot entirely.
+  }
+})();
+
+export const SitStayPlay = (() => {
   'use strict';
 
   // ------------------------------------------------------------ format ----

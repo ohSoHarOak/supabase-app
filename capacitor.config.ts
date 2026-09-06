@@ -14,7 +14,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
  */
 const config: CapacitorConfig = {
   appId: 'com.petpro.connect',
-  appName: 'PetPro Connect',
+  appName: 'Sit.Stay.Play',
   webDir: 'dist-web',
 
   // T-3 follow-up. Capacitor's native bridge echoes every plugin call RESULT to

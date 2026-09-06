@@ -109,7 +109,7 @@ export class PortalService {
           // address. Friendlier than the raw Postgres duplicate-key error.
           throw new ServiceError(
             'email_in_use',
-            'This email already belongs to another PetPro account, so it can\'t open an owner portal. Use a different email for the portal.',
+            'This email already belongs to another Sit.Stay.Play account, so it can\'t open an owner portal. Use a different email for the portal.',
             409
           );
         }

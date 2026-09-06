@@ -1,5 +1,5 @@
 /**
- * PetPro Connect — source of truth for all data shapes.
+ * Sit.Stay.Play — source of truth for all data shapes.
  * These mirror the SQL schema in src/db/migrations/ (001–013).
  * If a field isn't here, it isn't in the database — add it deliberately.
  */

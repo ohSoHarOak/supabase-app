@@ -18,7 +18,9 @@ const COMMON_BASES = new Set([
   'letmein', 'welcome', 'iloveyou', 'sunshine', 'princess', 'dragon', 'monkey',
   'football', 'baseball', 'superman', 'batman', 'trustno', 'whatever',
   'admin', 'administrator', 'root', 'login', 'starwars', 'pokemon',
-  'abcdefghijkl', 'petpro', 'petproconnect',
+  // Both brands stay banned: the product was renamed 2026-09-05, and walkers
+  // who signed up as Sit.Stay.Play are no less likely to reach for the old name.
+  'abcdefghijkl', 'sitstayplay', 'sitstayplayconnect', 'petpro', 'petproconnect',
 ]);
 
 /** Returns a human-readable problem, or null when the password passes. */

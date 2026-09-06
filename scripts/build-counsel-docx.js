@@ -14,7 +14,7 @@ const {
   Table, TableRow, TableCell, WidthType, ShadingType, BorderStyle,
 } = require('docx');
 
-const OUT = 'C:/Users/itchy/OneDrive/Desktop/PetPro/templates/contracts';
+const OUT = 'C:/Users/itchy/OneDrive/Desktop/Sit.Stay.Play/templates/contracts';
 
 const LETTER = { size: { width: 12240, height: 15840 }, margin: { top: 1080, right: 1080, bottom: 1080, left: 1080 } };
 const TABLE_W = 10080; // 12240 - 2*1080 margins

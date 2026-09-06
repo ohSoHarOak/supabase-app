@@ -1,4 +1,4 @@
-# PetPro Connect — Android app (Workstream M)
+# Sit.Stay.Play — Android app (Workstream M)
 
 The Android app is the **same web app**, wrapped in a native shell with
 [Capacitor](https://capacitorjs.com). One codebase, one backend. Native device
@@ -34,7 +34,7 @@ From the repo root (PowerShell):
 #    trailing slash. For founder-only local testing you can use your machine's
 #    LAN address instead, e.g. http://192.168.1.20:3000
 #    Live URL (confirmed): https://petpro-app.onrender.com  (the Render service
-#    is named "petpro-app" — note this differs from render.yaml's "petpro-connect").
+#    is named "sitstayplay-app" — note this differs from render.yaml's "sitstayplay").
 $env:VITE_API_BASE = "https://petpro-app.onrender.com"
 
 # 2. Build the web app with that API base and copy it into the Android project
@@ -68,7 +68,7 @@ browser origins.
 ## Open item — auth token storage (M0-f review)
 
 Today the web app stores the login JWT in **`localStorage`**
-(`petpro_token` in `web/src/app.js`, `petpro_portal_token` in
+(`sitstayplay_token` in `web/src/app.js`, `sitstayplay_portal_token` in
 `web/src/portal.js`). In the Android webview that maps to the app's private
 WebView storage — not readable by other apps, but **not OS-encrypted at rest**
 and cleared if the user clears app data.

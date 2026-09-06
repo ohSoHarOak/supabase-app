@@ -1,4 +1,4 @@
-# PetPro Connect — Project Brief for Claude Code
+# Sit.Stay.Play — Project Brief for Claude Code
 
 *Place this file as `CLAUDE.md` in the root of your repo. Claude Code reads it automatically for project context at the start of sessions.*
 
@@ -6,7 +6,7 @@
 
 ## What This Project Is
 
-PetPro Connect is a business management platform for professional dog walkers (Phase 1), architected to expand to trainers, groomers, sitters, and boarding facilities later without redesign. Solo founder project, currently in Phase 1 build (8-week timeline).
+Sit.Stay.Play is a business management platform for professional dog walkers (Phase 1), architected to expand to trainers, groomers, sitters, and boarding facilities later without redesign. Solo founder project, currently in Phase 1 build (8-week timeline).
 
 ## Hard Constraints — Do Not Violate
 
