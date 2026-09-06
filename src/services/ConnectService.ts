@@ -48,6 +48,26 @@ export interface ConnectStatus {
   requirements_due?: string[];
 }
 
+/**
+ * API version for the preview v2 account-session endpoint. Pinned, not floating:
+ * a preview version string is the only thing making that endpoint reachable, so
+ * it belongs somewhere obvious rather than inline at the call site.
+ */
+const SESSION_PREVIEW_VERSION = '2026-06-24.preview';
+
+/**
+ * US phone to E.164, which is the only shape Stripe accepts. Profiles store
+ * them as `(555)010-0100`. Returns null rather than guessing when the digits
+ * do not look like a US number — a rejected account creation is worse than an
+ * account without a phone.
+ */
+function toE164(phone: string | null | undefined): string | null {
+  const digits = (phone ?? '').replace(/\D/g, '');
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`;
+  return null;
+}
+
 /** Re-check with Stripe before refusing a charge if the cache is older than this. */
 const STALE_CACHE_MS = 60_000;
 
@@ -240,6 +260,28 @@ export class ConnectService {
    * All of these were confirmed to issue a session secret on this account
    * config, probed 2026-09-05.
    */
+  /**
+   * The same surface in the shape the **v2** endpoint wants.
+   *
+   * ⚠️ v2 is not v1 with a different URL. It rejects `features` outright
+   * ("components.payments.features: Unknown field") and calls the same idea
+   * `scopes`, which it sets itself — the defaults already include
+   * `payment_dispute_management`, `payment_refund_management` and
+   * `capture_payments`, so nothing is lost by omitting them. It also has no
+   * `disputes_list` component at all.
+   *
+   * Sending the v1 payload here does not error loudly; it fails the v2 call,
+   * which silently falls back to v1 and looks like it worked. That happened
+   * once already — hence this constant existing separately rather than the two
+   * shapes being one object someone assumes is portable.
+   */
+  private static readonly SESSION_COMPONENTS_V2 = {
+    account_onboarding: { enabled: true },
+    notification_banner: { enabled: true },
+    payouts: { enabled: true },
+    payments: { enabled: true },
+  };
+
   private static readonly SESSION_COMPONENTS = {
     account_onboarding: { enabled: true },
     notification_banner: { enabled: true },
@@ -299,14 +341,55 @@ export class ConnectService {
 
     const connectedId = account.stripe_connect_account_id ?? (await this.createConnectedAccount(account));
 
+    const clientSecret = await this.mintSessionSecret(connectedId);
+    return { client_secret: clientSecret, account_id: connectedId };
+  }
+
+  /**
+   * Mint the embedded-components secret, preferring the v2 session endpoint.
+   *
+   * ⚠️ Our connected accounts are **v2**, but the Stripe SDK only exposes the
+   * **v1** `accountSessions` endpoint, so that is what this used at first. The
+   * v1 endpoint happily returns a secret for a v2 account -- and the embedded
+   * `account_onboarding` component then failed to authenticate against it
+   * ("An error occurred while authenticating your account"), while hosted
+   * onboarding on the same account worked. Matching the session's API version
+   * to the account's is the leading explanation.
+   *
+   * ⚠️ `/v2/core/account_sessions` is a **PREVIEW** API — it 404s unless the
+   * `Stripe-Version` header ends in `.preview`, and preview APIs can change
+   * without the usual deprecation window. That is why this falls back to v1
+   * rather than depending on it: if the preview version stops being accepted,
+   * onboarding degrades to the behaviour we already had instead of breaking.
+   * Revisit when Stripe promotes this out of preview and into the SDK.
+   */
+  private async mintSessionSecret(connectedId: string): Promise<string> {
+    try {
+      const v2 = (await stripeCall(() =>
+        getStripe().rawRequest(
+          'POST',
+          '/v2/core/account_sessions',
+          { account: connectedId, components: ConnectService.SESSION_COMPONENTS_V2 },
+          { apiVersion: SESSION_PREVIEW_VERSION }
+        )
+      )) as { client_secret?: string };
+      if (v2?.client_secret) return v2.client_secret;
+      console.warn('[connect] v2 account session returned no client_secret; falling back to v1');
+    } catch (err) {
+      // Preview API withdrawn, version rejected, or a transient failure. None
+      // of those should stop a walker onboarding, so fall through to v1.
+      console.warn(
+        `[connect] v2 account session failed, falling back to v1: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+
     const session = await stripeCall(() =>
       getStripe().accountSessions.create({
         account: connectedId,
         components: ConnectService.SESSION_COMPONENTS,
       })
     );
-
-    return { client_secret: session.client_secret, account_id: connectedId };
+    return session.client_secret;
   }
 
   /**
@@ -333,9 +416,18 @@ export class ConnectService {
     const displayName =
       (profile?.business_name as string | null) ?? (profile?.full_name as string | null) ?? account.email;
 
-    const created = await stripeCall(() =>
+    // ⚠️ `contact_phone` is not decoration. Because the walker carries losses,
+    // Stripe collects their requirements, which means Stripe makes them
+    // authenticate as a Stripe user — and that verification uses one-time
+    // codes. Creating the account without a phone gives that flow nothing to
+    // send a code to. `requireCompleteProfile` guarantees a phone exists by the
+    // time we get here, so there is no reason to withhold it.
+    const contactPhone = toE164(account.phone);
+
+    const createWith = (phone: string | null) =>
       getStripe().v2.core.accounts.create({
         contact_email: account.email,
+        ...(phone ? { contact_phone: phone } : {}),
         display_name: displayName,
         dashboard: ACCOUNT_CONFIGURATION.dashboard,
         identity: { country: 'us', entity_type: 'individual' },
@@ -348,8 +440,23 @@ export class ConnectService {
         },
         metadata: { petpro_account_id: account.id },
         include: [...ACCOUNT_INCLUDE],
-      })
-    );
+      });
+
+    // ⚠️ Stripe's phone validation is STRICTER than ours. It rejects numbers
+    // that are correctly E.164-formatted but not real — 555 area codes, for
+    // one — and our profile form happily accepts those. A phone Stripe
+    // dislikes must never cost the walker their payout account, so a
+    // phone-specific rejection retries without it: worse authentication
+    // ergonomics beats no account at all.
+    let created;
+    try {
+      created = await stripeCall(() => createWith(contactPhone));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!contactPhone || !/phone/i.test(msg)) throw err;
+      console.warn(`[connect] Stripe rejected contact_phone for account ${account.id}; retrying without it: ${msg}`);
+      created = await stripeCall(() => createWith(null));
+    }
 
     try {
       await this.patchAccount(account.id, { stripe_connect_account_id: created.id });
