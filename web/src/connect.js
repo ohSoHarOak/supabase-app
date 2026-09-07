@@ -20,6 +20,15 @@
  * The walker only leaves the app once, to get set up, and never again to
  * contest a chargeback they are liable for.
  *
+ * RETESTED 2026-09-06 and still broken. The platform's own Connect profile had
+ * been the one eliminated hypothesis resting on inference rather than proof --
+ * it was incomplete when the split was decided, and hosted onboarding worked
+ * anyway, but nobody had shown embedded had the same requirements. The founder
+ * then submitted the profile (`details_submitted: true`), so the component was
+ * temporarily re-enabled and driven in a real browser against a fresh
+ * walker-liable account: identical error, same click. The hypothesis is now
+ * closed by experiment rather than argument, and the change was reverted.
+ *
  * Revisit the onboarding half if Stripe fixes that authentication path; the
  * account config already supports it and only this file would change.
  *
