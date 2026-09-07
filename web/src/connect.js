@@ -127,6 +127,16 @@ export async function renderConnect(host, deps) {
   // --- not set up yet: hosted redirect, no embedded components -------------
   if (status.state !== 'ready') {
     card.appendChild(hostedAction(api, toast, host, deps, status.state, copy.cta));
+    // `pending_review` is inferred server-side from "nothing is awaiting the
+    // walker", which is also true of an account Stripe has not computed
+    // requirements for yet. If that inference is ever wrong, the walker is
+    // told they are under review while holding a form they never submitted —
+    // and "Check again" would be the only control on the card. So always keep
+    // a route back into onboarding open. Cheap insurance against a state we
+    // derive rather than observe.
+    if (status.state === 'pending_review') {
+      card.appendChild(resumeLink(api, toast));
+    }
     if (status.state !== 'not_started') card.appendChild(disconnectRow(api, toast, host, deps));
     return;
   }
@@ -241,6 +251,30 @@ function hostedAction(api, toast, host, deps, state, label) {
   });
   foot.appendChild(btn);
   return foot;
+}
+
+/**
+ * Secondary escape hatch shown under `pending_review` — see the call site.
+ * Deliberately quiet: if the review really is in progress, tapping this just
+ * returns the walker to a Stripe page that says so.
+ */
+function resumeLink(api, toast) {
+  const wrap = el('div', '');
+  wrap.style.textAlign = 'right';
+  const link = el('button', 'btn btn-ghost', 'Still need to add details?');
+  link.type = 'button';
+  link.addEventListener('click', async () => {
+    link.disabled = true;
+    try {
+      const l = await api('POST', '/api/connect/onboarding-link');
+      window.location.href = l.url;
+    } catch (err) {
+      toast(err.message);
+      link.disabled = false;
+    }
+  });
+  wrap.appendChild(link);
+  return wrap;
 }
 
 function disconnectRow(api, toast, host, deps) {

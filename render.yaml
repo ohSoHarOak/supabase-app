@@ -3,13 +3,18 @@
 # variables listed below in the Render dashboard (never commit secrets).
 services:
   - type: web
-    # ⚠️ NOT renamed with the rest of the 2026-09-05 Sit.Stay.Play rename.
-    # This is the Render SERVICE name, and it is what produces
-    # petpro-connect.onrender.com. Changing it points the blueprint at a
-    # different service: the old URL stops resolving and every reference to it
-    # (docs, smoke tests, VITE_API_BASE) breaks at once. Rename only as a
+    # ⚠️ NOT renamed with the rest of the 2026-09-05 Sit.Stay.Play rename, and
+    # corrected 2026-09-06: this said `petpro-connect`, which is not the live
+    # service. Verified against Render: petpro-app.onrender.com/health answers
+    # 200, petpro-connect.onrender.com/health answers 404. Applying the old
+    # value would have created a second, empty service while the running API
+    # sat untouched — a deploy that reports success and changes nothing.
+    #
+    # This is the Render SERVICE name and it produces the hostname. Every
+    # reference to that host (docs, scripts/smoke-prod.ps1, the native build's
+    # VITE_API_BASE) breaks at once if it changes, so rename only as a
     # deliberate migration with the DNS cutover planned.
-    name: petpro-connect
+    name: petpro-app
     runtime: node
     plan: free
     # --include=dev: Render sets NODE_ENV=production, which would otherwise

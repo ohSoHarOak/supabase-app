@@ -52,8 +52,13 @@
     }
     for (const key of stale) {
       const renamed = 'sitstayplay_' + key.slice('petpro_'.length);
-      if (localStorage.getItem(renamed) === null) {
-        localStorage.setItem(renamed, localStorage.getItem(key));
+      const value = localStorage.getItem(key);
+      // Keys were enumerated first, so a null here means another tab removed
+      // this key in between. setItem would coerce that to the STRING "null",
+      // which safeParse turns back into null — signing the user out, which is
+      // the one thing this migration exists to prevent.
+      if (value !== null && localStorage.getItem(renamed) === null) {
+        localStorage.setItem(renamed, value);
       }
       localStorage.removeItem(key);
     }

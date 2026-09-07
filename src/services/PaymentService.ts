@@ -538,6 +538,15 @@ export class PaymentService {
     // Remember the session AND the account it lives on, so the sync path can
     // reconcile without a webhook — and can still address the right Stripe
     // account later even if the walker disconnects in the meantime.
+    //
+    // ⚠️ Ordering hazard, same shape as ConnectService.createConnectedAccount:
+    // the session is created at Stripe FIRST and recorded here SECOND. If this
+    // write fails, a live Checkout Session exists on the walker's connected
+    // account that we have no record of, and `sync()` cannot address it —
+    // exactly the unreconcilable invoice migration 026 exists to prevent. The
+    // webhook still recovers the payment through `invoice_id` metadata, so
+    // this degrades rather than loses money. Logged loudly because the
+    // recovery is by hand and needs the two ids.
     const { data, error } = await supabaseAdmin
       .from('invoices')
       .update({
@@ -547,7 +556,12 @@ export class PaymentService {
       .eq('id', invoice.id)
       .select()
       .single();
-    if (error) throw new ServiceError('invoice_update_failed', error.message, 500);
+    if (error) {
+      console.error(
+        `[payments] ORPHANED Checkout Session ${session.id} on account ${routing.stripeAccount} for invoice ${invoice.id} — created at Stripe but not recorded. The webhook can still settle it via invoice_id metadata; sync() cannot address it.`
+      );
+      throw new ServiceError('invoice_update_failed', error.message, 500);
+    }
 
     return { invoice: data as Invoice, checkout_url: session.url };
   }

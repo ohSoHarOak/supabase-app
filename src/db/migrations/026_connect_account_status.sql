@@ -2,9 +2,15 @@
 --
 -- 024 added accounts.stripe_connect_account_id as the seam — the nullable,
 -- replaceable link to the walker's connected account. Having the id is NOT the
--- same as being able to take money: an Express account exists the moment we
+-- same as being able to take money: the connected account exists the moment we
 -- create it, but Stripe only turns on capabilities once the walker has finished
 -- identity/bank verification, which can take minutes or days.
+--
+-- (Wording corrected 2026-09-06: this said "an Express account". Accounts are
+-- no longer Express — since the 2026-09-05 liability decision they are v2
+-- accounts with dashboard:'none' and the WALKER carrying losses, a combination
+-- Stripe rejects for Express. The gate's reasoning is unchanged; only the
+-- account type it describes was superseded.)
 --
 -- The BLOCK decision (2026-08-29) rides on that difference: card collection is
 -- refused until the connected account can actually accept a charge. These
