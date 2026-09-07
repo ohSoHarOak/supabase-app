@@ -410,6 +410,10 @@ The **iOS port** is the main Phase 3 driver — it's what needs a **Mac or cloud
   - **Why it matters that it changed.** Express + `platformFeeCents = 0` meant the founder carried chargeback exposure while earning nothing per transaction. Combined with the tier decision below, the model is now coherent: revenue is subscription, not a cut, and the merchant of record bears merchant risk.
   - ⚠️ **Fixed at account creation.** Changing this constant only affects accounts created afterwards. Free to do on 2026-09-05 because no live connected account existed (both `.env` and `.env.prod` were still on `sk_test`). Once a real walker onboards it becomes a per-account migration.
   - ⚠️ **Hosted account links still work on `dashboard: 'none'`** (probed 2026-09-05), so the redirect path stays as a fallback and this was not a flag-day switch.
+- [x] **When to move Stripe from test to live** — **DECIDED 2026-09-06: NOT YET. Stay in test mode until the remaining components are built.** The point is to test the whole product end to end without touching real accounts or real money.
+  - **This is cheaper than cutting over early, not just safer.** Connected accounts do **not** migrate between test and live, so any walker onboarded before the cutover has to onboard again afterwards. Staying in test until the product is complete means that never happens to a real walker.
+  - **Accepted consequence:** production is currently pointed at the sandbox (`.env.prod` holds `sk_test`), so the deployed app cannot take real money. That is deliberate, not a defect. Do not "fix" it by swapping keys without working the go-live checklist below.
+  - The live Stripe account is already configured (website, business name, support email and phone) — see the 2026-09-06 changelog. Support address is deliberately left until go-live, since it becomes customer-facing then.
 - [x] **Tier matrix** (Workstream S) — **DECIDED 2026-09-05: two tiers, Free (ad-supported) and Paid, on BOTH walkers and pet owners.** Features are being built ungated now and gated later.
   - ⚠️ **Walker payouts are Paid-tier only** — a walker must be on Paid to onboard to Connect and receive money. The checkpoint exists today as `ConnectService.assertCanOnboardToConnect()`, which lets everyone through because no tier column exists yet; turning it on is that function plus the column. It is written as a real gate rather than omitted because onboarding already has **two** entry points (hosted link and embedded session), and a list of entry points is exactly the thing that grows a hole.
   - ⚠️ **Open product risk, flagged not resolved:** a new walker now pays a subscription *before* earning anything, while also carrying chargebacks and Stripe's per-transaction fee. Defensible individually; stacked, it is a cold-start problem. Raised with the founder 2026-09-05 and confirmed.
@@ -429,6 +433,29 @@ The **iOS port** is the main Phase 3 driver — it's what needs a **Mac or cloud
 - [ ] **Which professions launch first** in Workstream X (affects which contract templates to source)
 - [ ] *(carried from Phase 1, still open)* Invoice timing for weekly/monthly-billed services
 
+## Go-live checklist (Stripe test → live)
+
+*Consolidated 2026-09-06 because these items were scattered across three changelog entries. **Nothing here is
+scheduled** — the founder decided on 2026-09-06 to stay in test until the remaining components are built. This is the
+list to work when that changes, in order.*
+
+- [ ] **Live keys into Render**, not just `.env.prod`: `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`,
+      `STRIPE_WEBHOOK_SECRET`. Render's dashboard values are what actually run; both are `sync: false` in
+      `render.yaml`, so setting one says nothing about the other (same trap as the 2026-08-29 key rotation).
+- [ ] **Create a LIVE webhook endpoint** and enable **"listen to events on connected accounts."** The sandbox endpoint
+      does not carry over and its signing secret will not validate live events. Disputes arrive as connected-account
+      events, and the walker is liable for them — this is the notification path that matters most.
+- [ ] ⚠️ **Every walker onboarded in test must onboard again.** Connected accounts do not migrate. Free today (no real
+      connected accounts exist); expensive after the first real walker. Do the cutover *before* demoing to walkers.
+- [ ] **Update the live support address.** It appears on receipts and card statements, so it is customer-facing —
+      a home address becomes visible to every client of every walker. Deferred deliberately until go-live.
+- [ ] **Verify with a real card, then refund it.** The test-mode loop proves the code path, not the live account's
+      capabilities.
+- [ ] **Re-check `platformFeeCents`.** Still 0, still deliberate. Raising it later is a pricing change to walkers
+      onboarded on a 0% promise, not a config tweak.
+- [ ] **Move the Render landing-page service off `feat/m-connect`.** It is pinned to that branch; when the branch
+      merges and is deleted the site silently freezes — no error, no notification.
+
 ## Status at a Glance
 
 | Workstream | Status |
@@ -445,6 +472,8 @@ The **iOS port** is the main Phase 3 driver — it's what needs a **Mac or cloud
 *Phase 3 work (iOS port + Biometric Login, and the six backlog items moved 2026-07-19) is tracked in **`PHASE_3_ROADMAP.md`**. Design + brand work (logo, design language, app redesign, icon/splash/store creative) is tracked in **`PHASE_4_ROADMAP.md`** — note its overlap with Workstream U (D4-1) and the two items proposed to pull forward into Workstream M.*
 
 ## Changelog
+
+- **2026-09-06 (decision)** — **Staying in Stripe TEST mode until the remaining components are built** (founder). The goal is full end-to-end testing without touching real accounts or real money. Recorded as a decision rather than a delay because it inverts a priority stated earlier the same day: the test→live cutover was being treated as the top blocker, and it is not — it is a launch task. **It is also the cheaper order.** Connected accounts do not migrate between test and live, so cutting over early would mean asking every already-onboarded walker to onboard again; waiting means that never happens to a real one. ⚠️ **Accepted consequence:** the deployed app is pointed at the sandbox and cannot take real money today. Deliberate, not a defect — do not "fix" it by swapping keys outside the go-live checklist now consolidated above the status table.
 
 - **2026-09-06 (later still)** — **Live Stripe account confirmed configured; earlier "live-mode gaps" were a sandbox misreading.** Business website `https://sitstayplay.pro/`, public business name `Sit.Stay.Play`, support email `support@sitstayplay.pro`, and a real +1 (510) support phone are all set on the **live** account (founder-verified in the dashboard; not machine-checked, because no live key exists in this repo). ⚠️ **The remaining Stripe blocker is not configuration — it is the cutover.** `.env.prod` still holds `sk_test`, so the DEPLOYED app talks to the sandbox regardless of how well live is configured. A walker onboarding through prod today gets a sandbox Connect account and cannot receive real money. The cutover needs: live `STRIPE_SECRET_KEY` / `STRIPE_PUBLISHABLE_KEY` / `STRIPE_WEBHOOK_SECRET` in Render, a **live** webhook endpoint with connected-account events enabled (the sandbox endpoint does not carry over), and awareness that **connected accounts do not migrate between test and live** — every walker onboarded in test must onboard again. Harmless today (no real connected accounts exist); not harmless after the first real walker.
 
