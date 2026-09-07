@@ -106,7 +106,7 @@ function emailLayout(businessName: string, bodyHtml: string): string {
   </div>
   <div style="padding:18px;line-height:1.55">${bodyHtml}</div>
   <div style="padding:10px 18px;border-top:1px solid #e2e8f0;font-size:0.78rem;color:#64748b">
-    Sent by PetPro Connect on behalf of ${escapeHtml(businessName)}.
+    Sent by Sit.Stay.Play on behalf of ${escapeHtml(businessName)}.
   </div>
 </div>`;
 }
@@ -350,10 +350,10 @@ export class NotificationService {
       kind: 'send',
       email: {
         to: recipient,
-        subject: 'PetPro Connect — test email',
+        subject: 'Sit.Stay.Play — test email',
         html: emailLayout(
-          'PetPro Connect',
-          '<p>Email notifications are working. 🎉</p><p>This test was sent from your PetPro Connect account.</p>'
+          'Sit.Stay.Play',
+          '<p>Email notifications are working. 🎉</p><p>This test was sent from your Sit.Stay.Play account.</p>'
         ),
       },
     };
@@ -668,7 +668,7 @@ export class NotificationService {
         html: emailLayout(
           businessName,
           `<p>Hi ${escapeHtml(client.full_name)},</p>
-           <p>${escapeHtml(businessName)} has added you to PetPro Connect. Your portal is where you can review and sign agreements, pay invoices, see upcoming visits, and message ${escapeHtml(businessName)} directly.</p>
+           <p>${escapeHtml(businessName)} has added you to Sit.Stay.Play. Your portal is where you can review and sign agreements, pay invoices, see upcoming visits, and message ${escapeHtml(businessName)} directly.</p>
            <p><a href="${escapeHtml(origin)}/portal">Open your portal</a></p>
            <p>There's no account to create and no password to remember — enter this email address and we'll send you a secure link.</p>`
         ),

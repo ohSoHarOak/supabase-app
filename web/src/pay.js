@@ -1,4 +1,4 @@
-/* PetPro Connect — public pay page (R-17, decisions D6/D7).
+/* Sit.Stay.Play — public pay page (R-17, decisions D6/D7).
 
    The smallest of the three frontends on purpose. A pet owner who isn't
    standing next to their walker gets an emailed link and pays here, with no
@@ -9,7 +9,7 @@
    reachable from here. Formatters come from shared.js so this page can't
    drift from the other two (T-3 / PH-3).
    M0-b: bundled by Vite as an ES module (was a classic <script>). */
-import { PetPro } from './shared.js';
+import { SitStayPlay } from './shared.js';
 import { API_BASE } from './config.js';
 import { registerPWA } from './pwa.js';
 
@@ -20,8 +20,8 @@ registerPWA();
 
   const appEl = document.getElementById('app');
   const toastEl = document.getElementById('toast');
-  const toast = PetPro.createToast(toastEl);
-  const { esc, fmtMoney, fmtDate, fmtDateOnly, withBusy } = PetPro;
+  const toast = SitStayPlay.createToast(toastEl);
+  const { esc, fmtMoney, fmtDate, fmtDateOnly, withBusy } = SitStayPlay;
 
   const params = new URLSearchParams(location.search);
   const token = params.get('t') || '';
@@ -54,7 +54,7 @@ registerPWA();
   function renderInvalid(message) {
     appEl.innerHTML = shell(`
       <div class="login-brand">
-        <div class="wordmark">PetPro Connect</div>
+        <div class="wordmark">Sit.Stay.Play</div>
         <div class="tag">Invoice</div>
       </div>
       <div class="card empty" style="margin-top:8px">${esc(message)}</div>

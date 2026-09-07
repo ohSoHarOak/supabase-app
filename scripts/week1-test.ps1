@@ -1,4 +1,4 @@
-# PetPro Connect - Week 1 manual test: signup -> login -> get session
+# Sit.Stay.Play - Week 1 manual test: signup -> login -> get session
 #
 # Usage (local):    .\scripts\week1-test.ps1
 # Usage (Render):   .\scripts\week1-test.ps1 -BaseUrl "https://petpro-connect.onrender.com"

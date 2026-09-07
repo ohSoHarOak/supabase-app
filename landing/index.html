@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sit.Stay.Play — business software for professional dog walkers</title>
+<meta name="description" content="Sit.Stay.Play is business management software for professional dog walkers: client and pet records, service agreements with signatures, scheduling, invoicing, card payments, and a portal for pet owners." />
+<link rel="canonical" href="https://sitstayplay.pro/" />
+<meta property="og:title" content="Sit.Stay.Play — business software for professional dog walkers" />
+<meta property="og:description" content="Client records, signed service agreements, scheduling, invoicing, and card payments in one place." />
+<meta property="og:type" content="website" />
+<meta property="og:url" content="https://sitstayplay.pro/" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 44 44'%3E%3Ccircle cx='22' cy='22' r='22' fill='%232B7192'/%3E%3Cg fill='%23F7F2EB'%3E%3Cellipse cx='15' cy='16' rx='3.4' ry='4.4' transform='rotate(-18 15 16)'/%3E%3Cellipse cx='29' cy='16' rx='3.4' ry='4.4' transform='rotate(18 29 16)'/%3E%3Cellipse cx='9.5' cy='23.5' rx='2.8' ry='3.6' transform='rotate(-38 9.5 23.5)'/%3E%3Cellipse cx='34.5' cy='23.5' rx='2.8' ry='3.6' transform='rotate(38 34.5 23.5)'/%3E%3Cpath d='M22 21c4.4 0 8.4 3.5 8.4 7.6 0 2.9-2.2 4.6-4.7 4.6-1.5 0-2.6-0.6-3.7-0.6s-2.2 0.6-3.7 0.6c-2.5 0-4.7-1.7-4.7-4.6C13.6 24.5 17.6 21 22 21z'/%3E%3C/g%3E%3C/svg%3E" />
+<style>
+  /* Palette lifted from web/public/styles.css so the marketing page and the
+     app are visibly the same product. */
+  :root {
+    --steel: #2B7192;
+    --steel-deep: #1C4C64;
+    --orange: #F58941;
+    --on-orange: #4B2508;
+    --sage: #6D9280;
+    --paper: #F7F2EB;
+    --hairline: #E5E0D6;
+    --ink: #1E2B33;
+    --ink-soft: #5A6B75;
+    --card: #FFFFFF;
+    --on-steel: #F7F2EB;
+    --shadow: 0 1px 3px rgba(30, 43, 51, 0.08), 0 4px 14px rgba(30, 43, 51, 0.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #12262F;
+      --hairline: #2C4653;
+      --ink: #EDE7DC;
+      --ink-soft: #9FB0B8;
+      --card: #1C4C64;
+      --shadow: 0 1px 3px rgba(0, 0, 0, 0.3), 0 4px 14px rgba(0, 0, 0, 0.25);
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color: var(--ink);
+    background: var(--paper);
+    -webkit-text-size-adjust: 100%;
+  }
+  a { color: var(--steel); }
+  .wrap { max-width: 940px; margin: 0 auto; padding: 0 20px; }
+
+  header { background: var(--steel-deep); color: var(--on-steel); }
+  .bar { display: flex; align-items: center; gap: 10px; padding: 16px 0; }
+  .bar svg { width: 30px; height: 30px; flex: none; }
+  .bar b { font-size: 1.1rem; letter-spacing: .01em; }
+  .bar .spacer { flex: 1; }
+  .bar a { color: var(--on-steel); text-decoration: none; font-weight: 600; font-size: .95rem; }
+  .bar a:hover { text-decoration: underline; }
+
+  .hero { padding: 56px 0 64px; }
+  .hero h1 { margin: 0 0 14px; font-size: clamp(1.9rem, 5vw, 2.9rem); line-height: 1.15; letter-spacing: -.02em; }
+  .hero p { margin: 0 0 26px; font-size: clamp(1.02rem, 2.2vw, 1.18rem); color: rgba(247,242,235,.88); max-width: 46ch; }
+  .btn {
+    display: inline-block; background: var(--orange); color: var(--on-orange);
+    text-decoration: none; font-weight: 700; padding: 13px 26px; border-radius: 10px;
+  }
+  .btn:hover { filter: brightness(1.05); }
+  .btn.ghost { background: transparent; color: var(--on-steel); border: 1px solid rgba(247,242,235,.5); margin-left: 10px; }
+
+  section { padding: 52px 0; }
+  h2 { font-size: 1.5rem; margin: 0 0 8px; letter-spacing: -.01em; }
+  .lede { color: var(--ink-soft); margin: 0 0 28px; max-width: 60ch; }
+
+  .grid { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+  .card {
+    background: var(--card); border: 1px solid var(--hairline); border-radius: 12px;
+    padding: 20px; box-shadow: var(--shadow);
+  }
+  .card h3 { margin: 0 0 6px; font-size: 1.05rem; }
+  .card p { margin: 0; color: var(--ink-soft); font-size: .95rem; }
+
+  .plans { background: rgba(109,146,128,.10); border-top: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline); }
+  .plan-note { color: var(--ink-soft); font-size: .92rem; margin-top: 18px; }
+
+  footer { padding: 34px 0 44px; color: var(--ink-soft); font-size: .92rem; }
+  footer a { color: var(--steel); }
+  .contact { margin: 0 0 10px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <div class="bar">
+      <svg viewBox="0 0 44 44" aria-hidden="true"><circle cx="22" cy="22" r="22" fill="#2B7192"/><g fill="#F7F2EB"><ellipse cx="15" cy="16" rx="3.4" ry="4.4" transform="rotate(-18 15 16)"/><ellipse cx="29" cy="16" rx="3.4" ry="4.4" transform="rotate(18 29 16)"/><ellipse cx="9.5" cy="23.5" rx="2.8" ry="3.6" transform="rotate(-38 9.5 23.5)"/><ellipse cx="34.5" cy="23.5" rx="2.8" ry="3.6" transform="rotate(38 34.5 23.5)"/><path d="M22 21c4.4 0 8.4 3.5 8.4 7.6 0 2.9-2.2 4.6-4.7 4.6-1.5 0-2.6-0.6-3.7-0.6s-2.2 0.6-3.7 0.6c-2.5 0-4.7-1.7-4.7-4.6C13.6 24.5 17.6 21 22 21z"/></g></svg>
+      <b>Sit.Stay.Play</b>
+      <span class="spacer"></span>
+      <a href="#contact">Contact</a>
+    </div>
+
+    <div class="hero">
+      <h1>Run your dog-walking business from one place.</h1>
+      <p>
+        Sit.Stay.Play is business management software for professional dog walkers and
+        pet-care providers. Keep client and pet records, send service agreements for
+        signature, schedule visits, invoice, and get paid by card — without stitching
+        together a notebook, a calendar, and a payment app.
+      </p>
+      <a class="btn" href="#features">See what it does</a>
+      <a class="btn ghost" href="#contact">Get in touch</a>
+    </div>
+  </div>
+</header>
+
+<section id="features">
+  <div class="wrap">
+    <h2>What it does</h2>
+    <p class="lede">Everything below is built and in use. This is a working product, not a waitlist.</p>
+    <div class="grid">
+      <div class="card">
+        <h3>Clients and pets</h3>
+        <p>Every client, their pets, breeds, and the details you need on a walk — searchable, in one record instead of five places.</p>
+      </div>
+      <div class="card">
+        <h3>Service agreements</h3>
+        <p>Generate a pet services agreement, have the client sign it, and keep the signed copy locked and on file.</p>
+      </div>
+      <div class="card">
+        <h3>Scheduling</h3>
+        <p>Book one-off visits or repeating weekly work. Double-bookings are refused rather than discovered later.</p>
+      </div>
+      <div class="card">
+        <h3>Invoicing and card payments</h3>
+        <p>Completed walks turn into invoices. Clients pay by card through Stripe, and the money goes to your own account.</p>
+      </div>
+      <div class="card">
+        <h3>Messaging</h3>
+        <p>Talk to clients in the app, with a record of what was agreed. Messages written offline send when you reconnect.</p>
+      </div>
+      <div class="card">
+        <h3>A portal for pet owners</h3>
+        <p>Clients get their own view to review and sign agreements, pay invoices, see upcoming visits, and message you.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="plans">
+  <div class="wrap">
+    <h2>Plans</h2>
+    <p class="lede">
+      A free, ad-supported plan and a paid plan without ads. Full pricing is still being
+      finalised — get in touch and we will tell you exactly where it lands before you commit
+      to anything.
+    </p>
+    <p class="plan-note">
+      Card payments are processed by <a href="https://stripe.com" rel="noopener">Stripe</a>.
+      Sit.Stay.Play never sees or stores your clients' card numbers, and your bank details
+      are entered on Stripe's own secure pages rather than ours.
+    </p>
+  </div>
+</section>
+
+<section id="contact">
+  <div class="wrap">
+    <h2>Contact</h2>
+    <p class="lede">Questions about the product, billing, or your account — this reaches a person.</p>
+    <p class="contact">
+      <!-- Live mailbox, confirmed 2026-09-06. Stripe's review contacts this
+           address, so it must keep receiving mail; change it in both the href
+           and the visible text together. -->
+      <strong>Email:</strong> <a href="mailto:support@sitstayplay.pro">support@sitstayplay.pro</a>
+    </p>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <p>&copy; <span id="y">2026</span> Sit.Stay.Play. Business management software for professional pet-care providers.</p>
+  </div>
+</footer>
+
+<script>document.getElementById('y').textContent = new Date().getFullYear();</script>
+</body>
+</html>

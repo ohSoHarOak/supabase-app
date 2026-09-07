@@ -15,7 +15,7 @@ The wiring is deliberately boring: **there is no `SUPABASE_TEST_URL` vs `SUPABAS
 
 ## One-time setup
 
-1. **Create a second Supabase project** (e.g. "petpro-test") in the Supabase dashboard.
+1. **Create a second Supabase project** (e.g. "sitstayplay-test") in the Supabase dashboard.
 2. **Copy `.env.example` to `.env`** and fill in the TEST project's values (Project Settings → API for the keys; Connect → Session pooler URI for `DATABASE_URL`).
 3. **Bring the TEST schema up to date** — apply every migration to the empty project:
    ```powershell

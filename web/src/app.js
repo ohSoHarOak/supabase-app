@@ -1,11 +1,12 @@
-/* PetPro Connect — professional UI (Week 4, extended with Week 5 billing).
+/* Sit.Stay.Play — professional UI (Week 4, extended with Week 5 billing).
    Vanilla JS single-page app, hash-routed, talking to the REST API.
    M0-b: bundled by Vite as an ES module (was a classic <script>). */
-import { PetPro } from './shared.js';
+import { SitStayPlay } from './shared.js';
 import { API_BASE } from './config.js';
 import { createClient } from '@supabase/supabase-js';
 import { registerPWA } from './pwa.js';
 import { createTokenStore, initSecureStorage, isUsingWebBackend } from './tokenStore.js';
+import { renderConnect, resetConnect } from './connect.js';
 
 registerPWA();
 
@@ -16,11 +17,11 @@ registerPWA();
   // M0.5: the tokens come from the storage seam (async — see tokenStore.js) and
   // are restored during boot, so they start null rather than being read here.
   // The non-secret cache stays in localStorage and can load synchronously.
-  const tokens = createTokenStore({ accessKey: 'petpro_token', refreshKey: 'petpro_refresh' });
+  const tokens = createTokenStore({ accessKey: 'sitstayplay_token', refreshKey: 'sitstayplay_refresh' });
   let token = null;
   let refreshToken = null;
-  let account = safeParse(localStorage.getItem('petpro_account'));
-  let profile = safeParse(localStorage.getItem('petpro_profile'));
+  let account = safeParse(localStorage.getItem('sitstayplay_account'));
+  let profile = safeParse(localStorage.getItem('sitstayplay_profile'));
 
   const appEl = document.getElementById('app');
   const toastEl = document.getElementById('toast');
@@ -98,12 +99,12 @@ registerPWA();
   }
 
   // ------------------------------------------------------------- toast ----
-  const toast = PetPro.createToast(toastEl);
+  const toast = SitStayPlay.createToast(toastEl);
 
   // ------------------------------------------------------------ helpers ----
   // Formatters, withBusy and the sign-screen pieces live in shared.js so the
   // owner portal uses the same code — see T-3 in ROADMAP.md.
-  const { esc, fmtDate, fmtTime, fmtDateOnly, fmtMoney, fmtPhone, withBusy } = PetPro;
+  const { esc, fmtDate, fmtTime, fmtDateOnly, fmtMoney, fmtPhone, withBusy } = SitStayPlay;
   function initials(name) {
     return name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('') || '?';
   }
@@ -155,7 +156,7 @@ registerPWA();
   }
   // fmtDateOnly moved to shared.js when the portal needed it too (R-15) —
   // copying it would have recreated the F-8 divergence PH-3 warns about.
-  PetPro.installPhoneFormatting();
+  SitStayPlay.installPhoneFormatting();
 
   // R-1: a [data-autogrow] textarea grows with its content instead of making
   // the walker scroll a 3-line box. Delegated, so re-rendered forms (the
@@ -330,9 +331,10 @@ registerPWA();
     // secure-store wipe is async, so it's fired off rather than awaited; no
     // caller needs to block on it, and every logout path stays sync.
     token = null; refreshToken = null; account = null; profile = null;
+    resetConnect(); // the Connect instance is bound to the account that just left
     void tokens.clear();
-    localStorage.removeItem('petpro_account');
-    localStorage.removeItem('petpro_profile');
+    localStorage.removeItem('sitstayplay_account');
+    localStorage.removeItem('sitstayplay_profile');
     if (navigate) location.hash = '#/login';
     else render();
   }
@@ -343,7 +345,7 @@ registerPWA();
     refreshToken = session.refresh_token ?? refreshToken;
     account = session.account ?? account;
     await tokens.save({ access: token, refresh: refreshToken });
-    localStorage.setItem('petpro_account', JSON.stringify(account));
+    localStorage.setItem('sitstayplay_account', JSON.stringify(account));
   }
 
   /** Boot: pull the session out of the storage seam before the first render. */
@@ -356,12 +358,12 @@ registerPWA();
   async function loadProfile() {
     const me = await api('GET', '/api/auth/me');
     profile = me.profile;
-    localStorage.setItem('petpro_profile', JSON.stringify(profile));
+    localStorage.setItem('sitstayplay_profile', JSON.stringify(profile));
     // PH-1: phone lives on the account, not the profile, so refresh both —
     // otherwise a saved phone number re-renders from a stale cached account.
     if (me.account) {
       account = me.account;
-      localStorage.setItem('petpro_account', JSON.stringify(account));
+      localStorage.setItem('sitstayplay_account', JSON.stringify(account));
     }
   }
 
@@ -371,7 +373,7 @@ registerPWA();
       `<a href="#/${id}" class="${active === id ? 'active' : ''}">${label}</a>`;
     return `
       <header class="app-header"><div class="inner">
-        <a class="brand" href="#/today">${PAW} PetPro Connect</a>
+        <a class="brand" href="#/today">${PAW} Sit.Stay.Play</a>
         <nav class="app-nav">
           ${tab('today', 'Today')}
           ${tab('schedule', 'Schedule')}
@@ -382,13 +384,13 @@ registerPWA();
         <a class="logout-link" href="#/login" data-action="logout">Log out</a>
       </div></header>`;
   }
-  window.petproLogout = () => logout();
+  window.sitStayPlayLogout = () => logout();
   // CSP-safe logout: a delegated listener replaces an inline onclick handler,
   // so script-src can stay strict (no 'unsafe-inline').
   document.addEventListener('click', (e) => {
     if (e.target.closest('[data-action="logout"]')) {
       e.preventDefault();
-      window.petproLogout();
+      window.sitStayPlayLogout();
     }
   });
 
@@ -408,7 +410,7 @@ registerPWA();
       <div class="login-wrap"><div class="login-card">
         <div class="login-brand">
           ${PAW_LOGIN}
-          <div class="wordmark">PetPro Connect</div>
+          <div class="wordmark">Sit.Stay.Play</div>
           <div class="tag">Your business, in one place</div>
         </div>
         <form id="login-form">
@@ -563,7 +565,7 @@ registerPWA();
       await withBusy(btn, async () => {
         const updated = await api('POST', '/api/auth/profile/image', { kind, image: dataUrl });
         profile = updated;
-        localStorage.setItem('petpro_profile', JSON.stringify(profile));
+        localStorage.setItem('sitstayplay_profile', JSON.stringify(profile));
       });
       // withBusy restores the button's label, so set "Change" after it returns.
       btn.textContent = 'Change';
@@ -763,7 +765,7 @@ registerPWA();
       <div class="login-wrap"><div class="login-card">
         <div class="login-brand">
           ${PAW_LOGIN}
-          <div class="wordmark">PetPro Connect</div>
+          <div class="wordmark">Sit.Stay.Play</div>
           <div class="tag">Reset your password</div>
         </div>
         <form id="forgot-form">
@@ -796,7 +798,7 @@ registerPWA();
       <div class="login-wrap"><div class="login-card">
         <div class="login-brand">
           ${PAW_LOGIN}
-          <div class="wordmark">PetPro Connect</div>
+          <div class="wordmark">Sit.Stay.Play</div>
           <div class="tag">Choose a new password</div>
         </div>
         <form id="reset-form">
@@ -2150,8 +2152,8 @@ registerPWA();
           : 'Still a draft — every term can be edited until the moment it\'s signed. Hand the device to your client to sign in person, or send it for them to sign online.'}</p>` : ''}
 
         <div class="sign-layout">
-          ${PetPro.contractPane({ frameTitle: 'Contract document' })}
-          ${signable ? PetPro.signPadCard({
+          ${SitStayPlay.contractPane({ frameTitle: 'Contract document' })}
+          ${signable ? SitStayPlay.signPadCard({
             nameLabel: "Signer's full name",
             nameValue: client.full_name,
             nameError: "Please enter the signer's name.",
@@ -2161,7 +2163,7 @@ registerPWA();
         </div>
       </div>`;
 
-    PetPro.wireContractPane(contract.generated_html);
+    SitStayPlay.wireContractPane(contract.generated_html);
 
     // W-1: the copy the client keeps. The document endpoint needs the auth
     // header, so fetch it first, then print or download the result.
@@ -2230,7 +2232,7 @@ registerPWA();
       });
 
     // ------------------------------------------------- signature canvas --
-    const sigPad = PetPro.createSignaturePad();
+    const sigPad = SitStayPlay.createSignaturePad();
 
     document.getElementById('sig-submit').onclick = async (e) => {
       const name = sigPad.validate();
@@ -2753,7 +2755,13 @@ registerPWA();
       </div>`;
   }
 
-  async function renderProfile() {
+  async function renderProfile(params) {
+    // Returning from Stripe's hosted onboarding. Strip the marker before
+    // anything can re-read it, so a reload doesn't re-trigger the refresh, and
+    // the walker doesn't sit on a URL that lies about where they came from.
+    const justReturned = params?.get('connect') === 'return';
+    if (params?.get('connect')) history.replaceState(null, '', '#/profile');
+
     appEl.innerHTML = header('profile') + `<div class="page loading">Loading profile…</div>`;
     try {
       await loadProfile(); // always fresh — this page edits it
@@ -2832,6 +2840,13 @@ registerPWA();
         </div>
         </form>
 
+        <!-- M-Connect: the persistent "Getting paid" card the roadmap asks
+             for -- it stays on this page whether or not setup is finished,
+             because a walker who abandoned onboarding needs a way back in.
+             Filled in after render; see renderConnect below. -->
+        <div class="eyebrow" style="margin-top:28px">Getting paid</div>
+        <div id="connect-host"></div>
+
         <div class="eyebrow" style="margin-top:28px">Change password</div>
         <form id="pw-form">
         <div class="card fieldset">
@@ -2872,6 +2887,12 @@ registerPWA();
 
     wireImageField('pf-photo', 'photo');
     wireImageField('pf-logo', 'logo');
+
+    // Mounted into a live node *after* the page HTML lands, deliberately not
+    // awaited: Stripe's components are real elements, so any later innerHTML
+    // pass over this page would destroy them. Everything below wires up
+    // immediately rather than waiting on a network round trip to Stripe.
+    renderConnect(document.getElementById('connect-host'), { api, toast, setupComplete: setupDone(), justReturned });
 
     document.getElementById('pf-form').onsubmit = async (e) => {
       e.preventDefault();
@@ -2964,8 +2985,8 @@ registerPWA();
 
   // Offline drafts: messages that failed to send wait in localStorage and
   // sync (idempotently, via client_draft_id) when the connection returns.
-  function draftQueue() { return safeParse(localStorage.getItem('petpro_drafts')) || []; }
-  function saveDraftQueue(q) { localStorage.setItem('petpro_drafts', JSON.stringify(q)); }
+  function draftQueue() { return safeParse(localStorage.getItem('sitstayplay_drafts')) || []; }
+  function saveDraftQueue(q) { localStorage.setItem('sitstayplay_drafts', JSON.stringify(q)); }
   async function syncDraftQueue() {
     const q = draftQueue();
     if (!q.length || !token) return false;
@@ -3235,7 +3256,7 @@ registerPWA();
     if (parts[0] === 'schedule') { renderSchedule(Number(params.get('w')) || 0); return; }
     if (parts[0] === 'messages' && parts[1]) { renderThread(parts[1]); return; }
     if (parts[0] === 'messages') { renderMessages(); return; }
-    if (parts[0] === 'profile') { renderProfile(); return; }
+    if (parts[0] === 'profile') { renderProfile(params); return; }
     if (parts[0] === 'appointment-new') { renderNewAppointment(params); return; }
     if (parts[0] === 'setup') { renderSetup(Math.min(SETUP_STEPS, Math.max(1, Number(parts[1]) || 1))); return; }
     if (parts[0] === 'client-new') { renderNewClient(); return; }

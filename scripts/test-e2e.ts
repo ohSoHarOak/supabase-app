@@ -1,5 +1,5 @@
 /**
- * PetPro Connect — end-to-end API test, runnable from any command line.
+ * Sit.Stay.Play — end-to-end API test, runnable from any command line.
  *
  * Usage (local):    npm test
  * Usage (Render):   npm test -- --base-url https://petpro-app.onrender.com
@@ -223,6 +223,101 @@ async function main(): Promise<void> {
       'P2-13: creating a client with an email did not queue the portal invite'
     );
     pass('2. Client + 2 pets + search by pet name + portal invite queued');
+  }
+
+  // --- 2b. M-Connect: the payout gate, then onboarding ----------------------
+  // BLOCK (founder, 2026-08-29): until a walker's Connect account can actually
+  // take a card, collecting is refused — never a silent fallback to the
+  // platform account. This sits before every payment step on purpose: it has
+  // to prove the gate bites BEFORE the suite connects an account, and once
+  // connected everything downstream exercises the real connected-account
+  // charge path rather than the old platform-account one.
+  {
+    const me = await ok('GET', '/api/auth/me', undefined, '2b. Account');
+    const proAccountId = me.data.account.id as string;
+
+    const before = (await ok('GET', '/api/connect/status', undefined, '2b. Status')).data;
+    assert(
+      before.state === 'not_started' && before.payout_ready === false && before.connected === false,
+      '2b. Status',
+      `A fresh account should be not_started/not ready, got state=${before.state} ready=${before.payout_ready}`
+    );
+
+    const probe = (await ok('POST', '/api/invoices', {
+      client_id: client.id,
+      amount_cents: 1500,
+      description: 'E2E payout-gate probe',
+    }, '2b. Invoice')).data;
+
+    // Both money-collecting surfaces must refuse, not just checkout. Sending
+    // is gated too: emailing a client a pay link that dead-ends at Stripe
+    // spends the walker's credibility with their own client to surface our gate.
+    const blockedCheckout = await api('POST', `/api/invoices/${probe.id}/checkout`, {});
+    assert(
+      blockedCheckout.status === 403 && blockedCheckout.errorCode === 'payout_not_ready',
+      '2b. BLOCK checkout',
+      `Checkout with no payout account → ${blockedCheckout.status} ${blockedCheckout.errorCode ?? ''} (expected 403 payout_not_ready)`
+    );
+
+    const blockedSend = await api('POST', `/api/invoices/${probe.id}/send`, {});
+    assert(
+      blockedSend.status === 403 && blockedSend.errorCode === 'payout_not_ready',
+      '2b. BLOCK send',
+      `Send with no payout account → ${blockedSend.status} ${blockedSend.errorCode ?? ''} (expected 403 payout_not_ready)`
+    );
+
+    // Real onboarding: creates an Accounts V2 connected account at Stripe and
+    // a hosted onboarding link. Note this leaves one test-mode Connect account
+    // behind per run — Stripe test data, deletable in bulk from the dashboard.
+    const link = (await ok('POST', '/api/connect/onboarding-link', {}, '2b. Onboarding link')).data;
+    assert(
+      typeof link.url === 'string' && link.url.includes('stripe.com'),
+      '2b. Onboarding link',
+      `Expected a Stripe-hosted onboarding URL, got ${link.url}`
+    );
+    assert(
+      typeof link.account_id === 'string' && link.account_id.startsWith('acct_'),
+      '2b. Onboarding link',
+      `Expected a connected account id, got ${link.account_id}`
+    );
+
+    const started = (await ok('GET', '/api/connect/status', undefined, '2b. Status started')).data;
+    assert(
+      started.connected === true && started.state === 'incomplete' && started.payout_ready === false,
+      '2b. Status started',
+      `After starting onboarding expected connected/incomplete/not-ready, got connected=${started.connected} state=${started.state}`
+    );
+    // Still blocked: having an account is NOT the same as being able to charge
+    // on it, which is the whole distinction migration 026 exists to cache.
+    const stillBlocked = await api('POST', `/api/invoices/${probe.id}/checkout`, {});
+    assert(
+      stillBlocked.status === 403,
+      '2b. BLOCK mid-onboarding',
+      `An unverified connected account must still refuse charges, got ${stillBlocked.status}`
+    );
+
+    // The one step that cannot be automated: Stripe enabling the capability
+    // after identity + bank verification, which a real walker completes on the
+    // hosted form. Set the flag the account.updated webhook would have set.
+    const { supabaseAdmin } = await import('../src/config/supabase');
+    await supabaseAdmin
+      .from('accounts')
+      .update({ stripe_connect_charges_enabled: true, stripe_connect_details_submitted: true })
+      .eq('id', proAccountId);
+
+    const ready = (await ok('GET', '/api/connect/status', undefined, '2b. Status ready')).data;
+    assert(
+      ready.state === 'ready' && ready.payout_ready === true,
+      '2b. Status ready',
+      `Expected ready once charges are enabled, got ${ready.state}`
+    );
+
+    await ok('POST', `/api/invoices/${probe.id}/void`, {}, '2b. Cleanup');
+
+    pass(
+      '2b. M-Connect: BLOCK refuses checkout AND send with no payout account (403 payout_not_ready) and still refuses mid-onboarding; ' +
+      'onboarding creates a real Accounts-V2 connected account + hosted link; status walks not_started → incomplete → ready'
+    );
   }
 
   // --- 3. Contract: generate → sign → locked --------------------------------
@@ -535,19 +630,19 @@ async function main(): Promise<void> {
       `Cancelling walks must cancel their reminders; statuses: ${reminders.map((r) => r.status).join(', ')}`
     );
 
-    // Draining the queue is opt-in (PETPRO_E2E_SEND=1) and it must stay that
+    // Draining the queue is opt-in (SITSTAYPLAY_E2E_SEND=1) and it must stay that
     // way. Every recipient this suite creates is at example.com — an IANA
     // reserved domain that accepts no mail — so a real send pass produces one
     // hard bounce per queued row. That was harmless while the sandbox sender
     // refused non-owner recipients, but now that eastwestoak.com is verified
     // those bounces land against its reputation, which is slow to repair.
-    if (process.env.PETPRO_E2E_SEND === '1') {
+    if (process.env.SITSTAYPLAY_E2E_SEND === '1') {
       const processed = (await ok('POST', '/api/notifications/process', {}, '10. Process')).data as {
         configured: boolean; sent: number; failed: number;
       };
       pass(`10. Notifications: contract emails queued, cancelled walks' reminders cancelled, queue drained on request (configured=${processed.configured}, ${processed.sent} sent, ${processed.failed} failed — expect failures, these recipients don't exist)`);
     } else {
-      pass('10. Notifications: contract emails queued, cancelled walks\' reminders cancelled (send pass skipped so example.com recipients can\'t bounce against the verified domain — set PETPRO_E2E_SEND=1 to drain it deliberately)');
+      pass('10. Notifications: contract emails queued, cancelled walks\' reminders cancelled (send pass skipped so example.com recipients can\'t bounce against the verified domain — set SITSTAYPLAY_E2E_SEND=1 to drain it deliberately)');
     }
   }
 

@@ -1,4 +1,4 @@
-# PetPro Connect - Week 4 manual test: web UI is served + full flow works behind it
+# Sit.Stay.Play - Week 4 manual test: web UI is served + full flow works behind it
 #
 # Usage (local):    .\scripts\week4-test.ps1
 # Usage (Render):   .\scripts\week4-test.ps1 -BaseUrl "https://YOUR-SERVICE.onrender.com"
@@ -40,7 +40,7 @@ try {
   $css = Invoke-WebRequest -Uri "$BaseUrl/styles.css" -UseBasicParsing
   if ($css.Content -notmatch "--steel") { Fail "UI css" "styles.css missing brand tokens" }
   $js = Invoke-WebRequest -Uri "$BaseUrl/app.js" -UseBasicParsing
-  if ($js.Content -notmatch "PetPro Connect") { Fail "UI js" "app.js missing" }
+  if ($js.Content -notmatch "Sit.Stay.Play") { Fail "UI js" "app.js missing" }
   Write-Host "[PASS] 1. Web UI served (index.html, styles.css, app.js)" -ForegroundColor Green
 } catch { Fail "UI files" $_ }
 

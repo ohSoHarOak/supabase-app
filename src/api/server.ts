@@ -10,6 +10,7 @@ import {
   payLinkRouter,
   stripeWebhookRouter,
 } from './routes/billing';
+import { connectRouter } from './routes/connect';
 import { appointmentsRouter, servicesRouter } from './routes/scheduling';
 import { messagesRouter, threadsRouter } from './routes/messaging';
 import { notificationsRouter } from './routes/notifications';
@@ -60,7 +61,7 @@ export function createServer(): express.Express {
   });
 
   app.get('/health', (_req, res) => {
-    res.json({ ok: true, data: { service: 'petpro-connect', status: 'healthy' } });
+    res.json({ ok: true, data: { service: 'sitstayplay', status: 'healthy' } });
   });
 
   // Public config for the browser: the anon key is designed to be public
@@ -68,7 +69,15 @@ export function createServer(): express.Express {
   app.get('/api/config', (_req, res) => {
     res.json({
       ok: true,
-      data: { supabase_url: env.supabaseUrl, supabase_anon_key: env.supabaseAnonKey },
+      data: {
+        supabase_url: env.supabaseUrl,
+        supabase_anon_key: env.supabaseAnonKey,
+        // Publishable key, not the secret one. The embedded Connect components
+        // need it in the browser; it identifies the platform and authorises
+        // nothing on its own. Null when unset so the client can fall back to
+        // the hosted redirect rather than failing to mount.
+        stripe_publishable_key: env.stripePublishableKey ?? null,
+      },
     });
   });
 
@@ -96,6 +105,7 @@ export function createServer(): express.Express {
   app.use('/api/services', servicesRouter);
   app.use('/api/appointments', appointmentsRouter);
   app.use('/api/billable-items', billableItemsRouter);
+  app.use('/api/connect', connectRouter);
   app.use('/api/invoices', invoicesRouter);
   // Unauthenticated by design — see the note on payLinkRouter. Rate-limited
   // since it has no session in front of it.

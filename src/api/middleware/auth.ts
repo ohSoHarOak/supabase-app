@@ -12,7 +12,7 @@ declare global {
   }
 }
 
-/** Verifies the Supabase access token and attaches the PetPro account. */
+/** Verifies the Supabase access token and attaches the Sit.Stay.Play account. */
 export async function requireAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const header = req.headers.authorization;

@@ -1,7 +1,7 @@
 > # ⚠️ ARCHIVED — HISTORICAL PLAN, NOT THE AS-BUILT SYSTEM
 >
 > **Archived 2026-08-17 (Workstream 0, repo hygiene). Do not use this file to understand
-> how PetPro Connect works — large parts of it describe a stack that was abandoned before
+> how Sit.Stay.Play works — large parts of it describe a stack that was abandoned before
 > a line of the current system was written.**
 >
 > This is the summary of the **original scaffold package**, which was lost (the `files.zip`
@@ -28,15 +28,15 @@
 
 ---
 
-# PetPro Connect Phase 1 — Complete Build Package
+# Sit.Stay.Play Phase 1 — Complete Build Package
 
 ## What You Have
 
-A **production-ready foundation** for Phase 1 of PetPro Connect, built in **TypeScript/Node.js** with a **modular monolith architecture** supporting future expansion without redesign.
+A **production-ready foundation** for Phase 1 of Sit.Stay.Play, built in **TypeScript/Node.js** with a **modular monolith architecture** supporting future expansion without redesign.
 
 ---
 
-## Files Created (All in `/home/claude/petpro-connect/`)
+## Files Created (All in `/home/claude/sitstayplay/`)
 
 ### 📋 Documentation
 1. **README.md** — Project overview & stack
@@ -156,7 +156,7 @@ Every step is scaffolded:
 npm install
 
 # Create database
-createdb petpro_dev
+createdb sitstayplay_dev
 
 # Copy env template
 cp .env.example .env
@@ -440,7 +440,7 @@ logger.error('Payment webhook failed', { error, stripeEventId, ... });
 ## File Structure at a Glance
 
 ```
-petpro-connect/
+sitstayplay/
 ├── src/
 │   ├── api/routes/          ← REST endpoints (to implement)
 │   ├── api/middleware/       ← Auth, RBAC, error handling (to implement)

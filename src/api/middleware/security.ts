@@ -40,12 +40,33 @@ const supabaseWs = supabaseOrigin.replace(/^https:/, 'wss:'); // wss://<ref>.sup
  * HSTS is left on in production and disabled locally so it can't pin
  * http://localhost dev to https.
  */
+/**
+ * Stripe origins the embedded Connect components need (M-Connect, 2026-09-05).
+ *
+ * Listed explicitly rather than as `https://*.stripe.com` so the policy says
+ * what it actually permits. Each one earns its place:
+ *   - connect-js.stripe.com  the component loader and the iframes it opens
+ *   - js.stripe.com          Stripe.js, which connect-js pulls in itself
+ *   - api.stripe.com         XHR from inside those frames
+ *   - merchant-ui-api.stripe.com  the data endpoint the payments/disputes
+ *     components call; omitting it leaves the frame mounted but empty
+ *
+ * ⚠️ A missing origin here does NOT throw — the component renders blank or
+ * stalls. That is exactly how `M0-IMG-CSP` (2026-08-24) hid for three weeks.
+ * If a component mounts and stays empty, check the console for a CSP refusal
+ * before assuming the account or the session is wrong.
+ */
+const STRIPE_FRAME = ['https://connect-js.stripe.com', 'https://js.stripe.com'];
+const STRIPE_API = ['https://api.stripe.com', 'https://merchant-ui-api.stripe.com'];
+
 export const securityHeaders = helmet({
   contentSecurityPolicy: {
     useDefaults: true,
     directives: {
-      'connect-src': ["'self'", supabaseOrigin, supabaseWs],
+      'connect-src': ["'self'", supabaseOrigin, supabaseWs, ...STRIPE_API, ...STRIPE_FRAME],
       'img-src': ["'self'", 'data:', 'blob:', 'https:'],
+      'script-src': ["'self'", ...STRIPE_FRAME],
+      'frame-src': ["'self'", ...STRIPE_FRAME],
     },
   },
   // HSTS on in production; off locally so it can't pin http://localhost to https.

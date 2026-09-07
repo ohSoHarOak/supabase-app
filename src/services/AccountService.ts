@@ -143,7 +143,7 @@ export class AccountService {
 
     const account = await this.getAccountByAuthUserId(data.user.id);
     if (!account) {
-      throw new ServiceError('no_account', 'Auth user has no PetPro account.', 404);
+      throw new ServiceError('no_account', 'Auth user has no Sit.Stay.Play account.', 404);
     }
     // A deactivated account must never get a fresh session — even in the edge
     // case where its auth user outlived deactivation (auth-delete is
@@ -317,7 +317,10 @@ export class AccountService {
    *     the professional's bio / the owner's address. Retained clients (real
    *     people with signed agreements + live portal access) are NOT touched.
    *   - stripe_connect_account_id -> NULL (M-Connect seam: the connected
-   *     account is a replaceable link, dropped cleanly on relationship end).
+   *     account is a replaceable link, dropped cleanly on relationship end),
+   *     together with the 026 capability cache that describes it. Note this
+   *     deletes nothing at Stripe: the walker's connected account, its balance
+   *     and its payout history are theirs, not ours to remove.
    *   - Deletes the Supabase auth.users row, then severs auth_user_id, so the
    *     account can never authenticate again. Best-effort: the status gate is
    *     authoritative, so an auth-delete hiccup can't leave a usable login.
@@ -357,6 +360,13 @@ export class AccountService {
         email: deactivatedEmailTombstone(account.id),
         phone: null,
         stripe_connect_account_id: null,
+        // 026: the capability cache has to fall with the link it describes.
+        // Leaving `charges_enabled: true` on a nulled link would be a gate
+        // reading true for an account that no longer has anywhere to be paid.
+        stripe_connect_charges_enabled: false,
+        stripe_connect_payouts_enabled: false,
+        stripe_connect_details_submitted: false,
+        stripe_connect_synced_at: null,
       })
       .eq('id', account.id);
     if (acctError) throw new ServiceError('deactivate_failed', acctError.message, 500);

@@ -1,4 +1,4 @@
-# PetPro Connect — Phase 3 Roadmap
+# Sit.Stay.Play — Phase 3 Roadmap
 
 *Created 2026-07-19 at founder direction. Mirrors the `ROADMAP.md` (Phase 1) → `PHASE_2_ROADMAP.md` (Phase 2) split. This file collects work deferred past Phase 2. It is a **living document** — same status legend and update habits as the other two roadmaps. **Nothing here starts until the founder pulls it in.***
 
@@ -77,7 +77,7 @@ Split out of O-1 step 2 (2026-07-18) because nothing stores it. `services` rows 
 
 Design and logo work is tracked separately in **`PHASE_4_ROADMAP.md`** (created 2026-08-23) — the mark, the design language, the app redesign, app icon/splash/store creative, and branded email/print surfaces. Two touchpoints with this file:
 
-- **P2-7 (branded invoices)** puts *the walker's* logo on *their* invoices; Phase 4's E-2 designs the same document's PetPro-side branding and the print stylesheet it needs. Design them together, build them separately.
+- **P2-7 (branded invoices)** puts *the walker's* logo on *their* invoices; Phase 4's E-2 designs the same document's Sit.Stay.Play-side branding and the print stylesheet it needs. Design them together, build them separately.
 - **P2-11 (pet photos)** feeds Phase 4's A-4 (photo-based pet cards, per `SPEC.md`), and the **iOS port** carries Phase 4's N-6 (App Store icon, launch screen, screenshots).
 
 ---
